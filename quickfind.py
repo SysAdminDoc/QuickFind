@@ -1,0 +1,126 @@
+#!/usr/bin/env python3
+"""QuickFind v0.1.0 - Lightning-fast file search for Windows"""
+
+import sys
+import os
+
+def _bootstrap():
+    """Auto-install all dependencies before any imports."""
+    required = ['PyQt6']
+    import subprocess
+    for pkg in required:
+        try:
+            __import__(pkg.replace('-', '_').split('[')[0])
+        except ImportError:
+            subprocess.check_call([
+                sys.executable, '-m', 'pip', 'install', pkg,
+                '--break-system-packages', '-q'
+            ])
+
+_bootstrap()
+
+import ctypes
+import logging
+import traceback
+from pathlib import Path
+from datetime import datetime
+
+from PyQt6.QtWidgets import QApplication, QMessageBox
+from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtGui import QIcon, QFont
+
+# Crash logging
+LOG_DIR = Path.home() / '.quickfind'
+LOG_DIR.mkdir(exist_ok=True)
+LOG_FILE = LOG_DIR / 'quickfind.log'
+
+# Configure root logger with both file and console handlers
+_root_logger = logging.getLogger()
+_root_logger.setLevel(logging.DEBUG)
+
+# File handler — detailed debug log
+_file_handler = logging.FileHandler(str(LOG_FILE), encoding='utf-8')
+_file_handler.setLevel(logging.DEBUG)
+_file_handler.setFormatter(logging.Formatter(
+    '%(asctime)s.%(msecs)03d [%(levelname)-5s] %(name)s: %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+))
+_root_logger.addHandler(_file_handler)
+
+# Console handler — info and above
+_console_handler = logging.StreamHandler(sys.stdout)
+_console_handler.setLevel(logging.INFO)
+_console_handler.setFormatter(logging.Formatter(
+    '[%(levelname)-5s] %(name)s: %(message)s'
+))
+_root_logger.addHandler(_console_handler)
+
+logger = logging.getLogger('QuickFind')
+
+
+def excepthook(exc_type, exc_value, exc_tb):
+    """Global exception handler - log and show messagebox."""
+    msg = ''.join(traceback.format_exception(exc_type, exc_value, exc_tb))
+    logger.critical(f"Unhandled exception:\n{msg}")
+    try:
+        QMessageBox.critical(None, "QuickFind - Fatal Error", msg[:2000])
+    except Exception:
+        pass
+    sys.__excepthook__(exc_type, exc_value, exc_tb)
+
+
+sys.excepthook = excepthook
+
+VERSION = "0.1.0"
+APP_NAME = "QuickFind"
+
+
+def is_admin():
+    """Check if running with admin privileges."""
+    try:
+        return ctypes.windll.shell32.IsUserAnAdmin()
+    except Exception:
+        return False
+
+
+def elevate():
+    """Re-launch as admin via ShellExecute runas."""
+    ctypes.windll.shell32.ShellExecuteW(
+        None, "runas", sys.executable,
+        ' '.join([f'"{arg}"' for arg in sys.argv]),
+        None, 1
+    )
+    sys.exit(0)
+
+
+def main():
+    # Need admin for NTFS raw volume access
+    if not is_admin():
+        elevate()
+
+    # Hide console window
+    try:
+        hwnd = ctypes.windll.kernel32.GetConsoleWindow()
+        if hwnd:
+            ctypes.windll.user32.ShowWindow(hwnd, 0)
+    except Exception:
+        pass
+
+    app = QApplication(sys.argv)
+    app.setApplicationName(APP_NAME)
+    app.setApplicationVersion(VERSION)
+
+    # Import here after bootstrap
+    from gui.theme import apply_theme
+    from gui.main_window import MainWindow
+
+    apply_theme(app)
+
+    window = MainWindow()
+    window.show()
+
+    sys.exit(app.exec())
+
+
+if __name__ == '__main__':
+    main()
