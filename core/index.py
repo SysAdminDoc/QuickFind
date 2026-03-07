@@ -4,22 +4,26 @@ In-memory file index with path resolution and real-time USN journal monitoring.
 Maintains a dict of FRN -> FileEntry for each indexed volume, resolves full paths
 via parent-child FRN relationships, and runs a background thread to poll the
 USN journal for filesystem changes.
+
+v0.6.0: Batch DB writes, deferred path resolution, non-admin fallback (os.scandir).
 """
 
 import os
 import time
 import logging
 import threading
-from dataclasses import dataclass, field
+from collections import deque
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, Callable
 
-from PyQt6.QtCore import QObject, pyqtSignal, QThread
+from PyQt6.QtCore import QObject, pyqtSignal, QThread, QTimer
 
 from core.ntfs import (
-    NTFSVolume, FileRecord, USNRecord, get_ntfs_drives,
-    FILE_ATTRIBUTE_DIRECTORY, USN_REASON_FILE_CREATE, USN_REASON_FILE_DELETE,
+    NTFSVolume, FileRecord, USNRecord, get_ntfs_drives, get_all_drives, DriveInfo,
+    FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_ARCHIVE,
+    USN_REASON_FILE_CREATE, USN_REASON_FILE_DELETE,
     USN_REASON_RENAME_OLD_NAME, USN_REASON_RENAME_NEW_NAME,
     USN_REASON_CLOSE, USN_REASON_BASIC_INFO_CHANGE,
     USN_REASON_DATA_OVERWRITE, USN_REASON_DATA_EXTEND, USN_REASON_DATA_TRUNCATION
@@ -30,20 +34,32 @@ logger = logging.getLogger('QuickFind.Index')
 # Root directory FRN for NTFS is always 5
 NTFS_ROOT_FRN = 5
 
+# Deferred path resolution: batch resolve paths on a timer instead of per-entry
+_PATH_RESOLVE_INTERVAL_MS = 500
+_PATH_RESOLVE_BATCH_SIZE = 1000
 
-@dataclass
+
 class FileEntry:
-    """A file or folder in the index with resolved path information."""
-    frn: int
-    parent_frn: int
-    name: str
-    drive: str  # Drive letter (e.g., 'C')
-    attributes: int = 0
-    size: int = 0
-    date_modified: Optional[datetime] = None
-    date_created: Optional[datetime] = None
-    _path: Optional[str] = field(default=None, repr=False)
-    _stat_loaded: bool = field(default=False, repr=False)
+    """A file or folder in the index with resolved path information.
+    Uses __slots__ for minimal memory footprint across millions of entries.
+    """
+    __slots__ = ('frn', 'parent_frn', 'name', 'drive', 'attributes',
+                 'size', 'date_modified', 'date_created', '_path', '_stat_loaded')
+
+    def __init__(self, frn: int, parent_frn: int, name: str, drive: str,
+                 attributes: int = 0, size: int = 0,
+                 date_modified: Optional[datetime] = None,
+                 date_created: Optional[datetime] = None):
+        self.frn = frn
+        self.parent_frn = parent_frn
+        self.name = name
+        self.drive = drive
+        self.attributes = attributes
+        self.size = size
+        self.date_modified = date_modified
+        self.date_created = date_created
+        self._path: Optional[str] = None
+        self._stat_loaded: bool = False
 
     @property
     def is_dir(self) -> bool:
@@ -93,13 +109,17 @@ class IndexStats:
         self.volumes_indexed: list[str] = []
         self.index_time_ms = 0
         self.last_update: Optional[datetime] = None
+        self.entries_per_sec: float = 0.0  # Startup performance metric
 
 
 class FileIndex(QObject):
     """
     Central in-memory file index.
-    Indexes all NTFS volumes by reading MFT, resolves paths, and monitors
-    USN journals for real-time updates.
+    Indexes NTFS volumes via MFT and FAT/exFAT/ReFS volumes via os.scandir,
+    resolves paths, and monitors USN journals for real-time updates on NTFS.
+
+    v0.6.0: Non-admin fallback (os.scandir for all drives if no admin),
+             deferred path resolution, batch DB writes.
     """
     # Signals
     indexing_started = pyqtSignal()
@@ -108,18 +128,30 @@ class FileIndex(QObject):
     index_updated = pyqtSignal(int)  # number of changes applied
     error_occurred = pyqtSignal(str)
 
+    # Synthetic FRN counter for non-NTFS drives (start high to avoid NTFS FRN collisions)
+    _SYNTHETIC_FRN_BASE = 0x1_0000_0000
+
     def __init__(self, parent=None):
         super().__init__(parent)
         # Per-drive index: drive_letter -> {frn -> FileEntry}
         self._entries: dict[str, dict[int, FileEntry]] = {}
-        # Per-drive volume handles for journal monitoring
+        # Per-drive volume handles for journal monitoring (NTFS only)
         self._volumes: dict[str, NTFSVolume] = {}
+        # Drives indexed via os.scandir (FAT/exFAT/ReFS or non-admin fallback)
+        self._walked_drives: set[str] = set()
         # All entries flat list for search (rebuilt after indexing)
         self._all_entries: list[FileEntry] = []
         self._lock = threading.RLock()
         self._stats = IndexStats()
         self._monitor_thread: Optional[USNMonitorThread] = None
+        self._rescan_thread: Optional['FATRescanThread'] = None
         self._cancel_flag = False
+        self._next_synthetic_frn = self._SYNTHETIC_FRN_BASE
+        self._admin_mode: bool = True  # Assume admin; set False if MFT access fails
+
+        # Deferred path resolution queue
+        self._path_resolve_queue: deque[FileEntry] = deque()
+        self._path_resolve_timer: Optional[QTimer] = None
 
     @property
     def stats(self) -> IndexStats:
@@ -128,6 +160,10 @@ class FileIndex(QObject):
     @property
     def all_entries(self) -> list[FileEntry]:
         return self._all_entries
+
+    @property
+    def is_admin_mode(self) -> bool:
+        return self._admin_mode
 
     def get_entry(self, drive: str, frn: int) -> Optional[FileEntry]:
         """Get a specific entry by drive and FRN."""
@@ -173,9 +209,47 @@ class FileIndex(QObject):
     def _is_cancelled(self) -> bool:
         return self._cancel_flag
 
+    # ── Deferred Path Resolution ─────────────────────────
+
+    def queue_path_resolve(self, entry: FileEntry):
+        """Queue an entry for deferred path resolution."""
+        self._path_resolve_queue.append(entry)
+
+    def _start_path_resolve_timer(self):
+        """Start the deferred path resolution timer."""
+        if self._path_resolve_timer is None:
+            self._path_resolve_timer = QTimer()
+            self._path_resolve_timer.setInterval(_PATH_RESOLVE_INTERVAL_MS)
+            self._path_resolve_timer.timeout.connect(self._flush_path_resolve)
+        if not self._path_resolve_timer.isActive():
+            self._path_resolve_timer.start()
+
+    def _flush_path_resolve(self):
+        """Resolve queued paths in a batch."""
+        if not self._path_resolve_queue:
+            if self._path_resolve_timer:
+                self._path_resolve_timer.stop()
+            return
+
+        batch = []
+        count = 0
+        while self._path_resolve_queue and count < _PATH_RESOLVE_BATCH_SIZE:
+            entry = self._path_resolve_queue.popleft()
+            if entry._path is None:
+                entry._path = self.resolve_path(entry.drive, entry.frn)
+                batch.append(entry)
+            count += 1
+
+        if batch:
+            logger.debug(f"Deferred path resolve: {len(batch)} entries")
+
+    # ── Cache Load/Save ──────────────────────────────────
+
     def load_from_cache(self, drives: Optional[list[str]] = None) -> bool:
         """
-        Try to load the index from disk cache and catch up via USN journal.
+        Try to load the index from disk cache.
+        Emits indexing_complete immediately so the UI can display results,
+        then performs USN journal catchup in a separate pass.
         Returns True if cache was loaded successfully.
         """
         from core.cache import load_cache, cache_exists
@@ -191,50 +265,10 @@ class FileIndex(QObject):
         if usn_positions is None:
             return False
 
-        # Open volumes and catch up via USN journal
         if drives is None:
             drives = get_ntfs_drives()
 
-        total_changes = 0
-        for drive_letter in drives:
-            if self._cancel_flag:
-                break
-            if drive_letter not in self._entries:
-                continue
-
-            vol = NTFSVolume(drive_letter)
-            if not vol.open():
-                continue
-
-            vol_info = vol.get_volume_info()
-            if vol_info and vol_info.filesystem.upper() != 'NTFS':
-                vol.close()
-                continue
-
-            with self._lock:
-                self._volumes[drive_letter] = vol
-
-            # Restore USN position and catch up
-            journal_id, next_usn = usn_positions.get(drive_letter, (0, 0))
-            if vol.query_usn_journal():
-                # Check if journal is still the same (not recycled)
-                if vol.journal_id == journal_id and next_usn > 0:
-                    logger.info(f"Catching up USN on {drive_letter}: from USN {next_usn}")
-                    records = vol.read_usn_journal(start_usn=next_usn)
-                    changes = []
-                    for rec in records:
-                        if rec.is_close:
-                            changes.append((drive_letter, rec))
-                    if changes:
-                        self._apply_usn_changes(changes)
-                        total_changes += len(changes)
-                    self.indexing_progress.emit(drive_letter, len(self._entries.get(drive_letter, {})))
-                else:
-                    # Journal was recycled — need full re-index of this drive
-                    logger.warning(f"USN journal recycled on {drive_letter}, full re-index needed")
-                    self._reindex_drive(vol, drive_letter)
-
-        # Count stats
+        # Count stats from cached data
         total_files = 0
         total_folders = 0
         with self._lock:
@@ -248,18 +282,123 @@ class FileIndex(QObject):
                         total_files += 1
 
         elapsed = (time.perf_counter() - start_time) * 1000
+        total = total_files + total_folders
         self._stats.total_files = total_files
         self._stats.total_folders = total_folders
         self._stats.volumes_indexed = drives
         self._stats.index_time_ms = int(elapsed)
         self._stats.last_update = datetime.now()
+        self._stats.entries_per_sec = (total / (elapsed / 1000.0)) if elapsed > 0 else 0
 
         logger.info(
-            f"Cache loaded + USN catchup: {total_files} files, {total_folders} folders "
-            f"in {elapsed:.0f}ms ({total_changes} USN changes applied)"
+            f"Cache loaded: {total_files} files, {total_folders} folders in {elapsed:.0f}ms"
+            f" ({self._stats.entries_per_sec:,.0f} entries/sec)"
         )
+        # Emit immediately so UI shows cached results while USN catches up
         self.indexing_complete.emit(self._stats)
+
+        # Store positions for deferred USN catchup
+        self._pending_usn_positions = usn_positions
+        self._pending_usn_drives = drives
         return True
+
+    def usn_catchup(self):
+        """
+        Catch up the index via USN journal (NTFS) or re-walk (FAT/exFAT/ReFS)
+        after a cache load. Called on a worker thread after the UI is already
+        showing cached results.
+        """
+        usn_positions = getattr(self, '_pending_usn_positions', None)
+        drives = getattr(self, '_pending_usn_drives', None)
+        if not usn_positions or not drives:
+            return
+
+        start_time = time.perf_counter()
+        total_changes = 0
+        needs_reindex = []
+        walked_updated = False
+
+        for drive_letter in drives:
+            if self._cancel_flag:
+                break
+            if drive_letter not in self._entries:
+                continue
+
+            # Non-NTFS drives: re-walk to detect changes
+            if drive_letter in self._walked_drives:
+                logger.info(f"Re-walking non-NTFS drive {drive_letter}: for catchup")
+                old_count = len(self._entries.get(drive_letter, {}))
+                self._walk_drive(drive_letter)
+                new_count = len(self._entries.get(drive_letter, {}))
+                diff = abs(new_count - old_count)
+                if diff > 0:
+                    total_changes += diff
+                    walked_updated = True
+                continue
+
+            # NTFS drives: USN journal catchup
+            vol = NTFSVolume(drive_letter)
+            if not vol.open():
+                continue
+
+            vol_info = vol.get_volume_info()
+            if vol_info and vol_info.filesystem.upper() != 'NTFS':
+                vol.close()
+                continue
+
+            with self._lock:
+                self._volumes[drive_letter] = vol
+
+            journal_id, next_usn = usn_positions.get(drive_letter, (0, 0))
+            if vol.query_usn_journal():
+                if vol.journal_id == journal_id and next_usn > 0:
+                    logger.info(f"Catching up USN on {drive_letter}: from USN {next_usn}")
+                    records = vol.read_usn_journal(start_usn=next_usn)
+                    changes = []
+                    for rec in records:
+                        if rec.is_close:
+                            changes.append((drive_letter, rec))
+                    if changes:
+                        self._apply_usn_changes(changes)
+                        total_changes += len(changes)
+                else:
+                    logger.warning(f"USN journal recycled on {drive_letter}, full re-index needed")
+                    needs_reindex.append((vol, drive_letter))
+
+        # Handle NTFS drives that need full re-index
+        for vol, drive_letter in needs_reindex:
+            if self._cancel_flag:
+                break
+            self._reindex_drive(vol, drive_letter)
+
+        elapsed = (time.perf_counter() - start_time) * 1000
+
+        if total_changes > 0 or needs_reindex or walked_updated:
+            # Rebuild flat list if walked drives changed
+            if walked_updated:
+                self._rebuild_flat_list()
+            # Recount stats after catchup
+            total_files = 0
+            total_folders = 0
+            with self._lock:
+                for drive_entries in self._entries.values():
+                    for frn, entry in drive_entries.items():
+                        if frn == NTFS_ROOT_FRN:
+                            continue
+                        if entry.is_dir:
+                            total_folders += 1
+                        else:
+                            total_files += 1
+            self._stats.total_files = total_files
+            self._stats.total_folders = total_folders
+            self._stats.last_update = datetime.now()
+            self.index_updated.emit(total_changes)
+
+        logger.info(f"USN catchup: {total_changes} changes applied in {elapsed:.0f}ms")
+
+        # Cleanup
+        self._pending_usn_positions = None
+        self._pending_usn_drives = None
 
     def _reindex_drive(self, vol: NTFSVolume, drive_letter: str):
         """Full re-index of a single drive."""
@@ -293,99 +432,259 @@ class FileIndex(QObject):
 
         self._rebuild_flat_list()
 
-    def index_all_drives(self, drives: Optional[list[str]] = None):
+    def _index_single_ntfs_drive(self, drive_letter: str) -> tuple[str, dict[int, FileEntry], NTFSVolume, int, int]:
         """
-        Index all NTFS drives (or specified drives).
+        Index a single NTFS drive via MFT. Called from thread pool.
+        Returns (drive_letter, drive_entries, volume, file_count, folder_count).
+        """
+        vol = NTFSVolume(drive_letter)
+        if not vol.open():
+            return (drive_letter, {}, None, 0, 0)
+
+        vol_info = vol.get_volume_info()
+        if vol_info and vol_info.filesystem.upper() != 'NTFS':
+            logger.info(f"Skipping unsupported volume {drive_letter}: ({vol_info.filesystem})")
+            vol.close()
+            return (drive_letter, {}, None, 0, 0)
+
+        def progress_cb(record, count):
+            self.indexing_progress.emit(drive_letter, count)
+
+        records = vol.enumerate_mft_direct(
+            callback=progress_cb,
+            cancel_check=self._is_cancelled
+        )
+
+        drive_entries: dict[int, FileEntry] = {}
+        drive_entries[NTFS_ROOT_FRN] = FileEntry(
+            frn=NTFS_ROOT_FRN, parent_frn=0, name="",
+            drive=drive_letter, attributes=FILE_ATTRIBUTE_DIRECTORY,
+        )
+
+        files = 0
+        folders = 0
+        for rec in records:
+            entry = FileEntry(
+                frn=rec.frn, parent_frn=rec.parent_frn, name=rec.name,
+                drive=drive_letter, attributes=rec.attributes,
+                size=rec.size,
+                date_modified=rec.timestamp,
+                date_created=rec.date_created,
+            )
+            entry._stat_loaded = rec.mft_metadata
+            drive_entries[rec.frn] = entry
+
+            if rec.is_dir:
+                folders += 1
+            else:
+                files += 1
+
+        vol.query_usn_journal()
+        self.indexing_progress.emit(drive_letter, len(records))
+
+        return (drive_letter, drive_entries, vol, files, folders)
+
+    def _walk_drive(self, drive_letter: str):
+        """
+        Index a non-NTFS drive (FAT32, exFAT, ReFS) or fallback drive via recursive os.scandir.
+        Generates synthetic FRNs and pre-resolves full paths.
+        """
+        root = f"{drive_letter}:\\"
+        logger.info(f"Walking drive {drive_letter}: via os.scandir...")
+
+        drive_entries: dict[int, FileEntry] = {}
+        # Root entry
+        root_frn = NTFS_ROOT_FRN
+        drive_entries[root_frn] = FileEntry(
+            frn=root_frn, parent_frn=0, name="",
+            drive=drive_letter, attributes=FILE_ATTRIBUTE_DIRECTORY,
+        )
+
+        # Map directory paths to their synthetic FRN for parent resolution
+        dir_frn_map: dict[str, int] = {root: root_frn}
+        total = 0
+        callback_interval = 10000
+
+        stack = [root]
+        while stack:
+            if self._cancel_flag:
+                break
+
+            current_dir = stack.pop()
+            parent_frn = dir_frn_map.get(current_dir, root_frn)
+
+            try:
+                with os.scandir(current_dir) as it:
+                    for de in it:
+                        if self._cancel_flag:
+                            break
+                        try:
+                            name = de.name
+                            is_dir = de.is_dir(follow_symlinks=False)
+                            st = de.stat(follow_symlinks=False)
+
+                            self._next_synthetic_frn += 1
+                            frn = self._next_synthetic_frn
+
+                            attrs = FILE_ATTRIBUTE_DIRECTORY if is_dir else FILE_ATTRIBUTE_ARCHIVE
+
+                            entry = FileEntry(
+                                frn=frn,
+                                parent_frn=parent_frn,
+                                name=name,
+                                drive=drive_letter,
+                                attributes=attrs,
+                                size=st.st_size if not is_dir else 0,
+                                date_modified=datetime.fromtimestamp(st.st_mtime),
+                                date_created=datetime.fromtimestamp(st.st_ctime),
+                            )
+                            entry._stat_loaded = True
+                            drive_entries[frn] = entry
+                            total += 1
+
+                            if is_dir:
+                                full_path = de.path
+                                dir_frn_map[full_path] = frn
+                                stack.append(full_path)
+
+                            if total % callback_interval == 0:
+                                self.indexing_progress.emit(drive_letter, total)
+
+                        except (OSError, PermissionError):
+                            continue
+            except (OSError, PermissionError):
+                continue
+
+        with self._lock:
+            self._entries[drive_letter] = drive_entries
+            self._walked_drives.add(drive_letter)
+
+        logger.info(f"Walk complete on {drive_letter}: {total:,} entries")
+        self.indexing_progress.emit(drive_letter, total)
+        return total
+
+    def index_all_drives(self, drives: Optional[list[str]] = None,
+                         force_walk: bool = False):
+        """
+        Index all supported drives (NTFS via MFT in parallel, FAT/exFAT/ReFS via os.scandir).
+        If force_walk=True or MFT access fails, falls back to os.scandir for all drives.
         This should be called from a worker thread.
         """
         self._cancel_flag = False
         self.indexing_started.emit()
 
+        # Build drive info map for all available drives
+        all_drive_info = {d.letter: d for d in get_all_drives()}
+
         if drives is None:
-            drives = get_ntfs_drives()
+            drives = [d.letter for d in all_drive_info.values()]
 
         start_time = time.perf_counter()
         total_files = 0
         total_folders = 0
 
+        # Separate NTFS and non-NTFS drives
+        ntfs_drives = []
+        non_ntfs_drives = []
         for drive_letter in drives:
+            info = all_drive_info.get(drive_letter)
+            if force_walk or (info and info.needs_walk):
+                non_ntfs_drives.append(drive_letter)
+            elif info and info.is_ntfs:
+                ntfs_drives.append(drive_letter)
+            else:
+                # Unknown filesystem — try walk
+                non_ntfs_drives.append(drive_letter)
+
+        # Index non-NTFS drives sequentially (they use synthetic FRNs with shared counter)
+        for drive_letter in non_ntfs_drives:
             if self._cancel_flag:
                 break
-
-            logger.info(f"Indexing drive {drive_letter}:...")
-            vol = NTFSVolume(drive_letter)
-            if not vol.open():
-                self.error_occurred.emit(f"Failed to open volume {drive_letter}:")
-                continue
-
-            vol_info = vol.get_volume_info()
-            if vol_info and vol_info.filesystem.upper() != 'NTFS':
-                logger.info(f"Skipping non-NTFS volume {drive_letter}:")
-                vol.close()
-                continue
-
-            def progress_cb(record, count):
-                self.indexing_progress.emit(drive_letter, count)
-
-            records = vol.enumerate_mft_direct(
-                callback=progress_cb,
-                cancel_check=self._is_cancelled
-            )
-
-            # Build drive index
-            drive_entries: dict[int, FileEntry] = {}
-
-            # Add root entry
-            drive_entries[NTFS_ROOT_FRN] = FileEntry(
-                frn=NTFS_ROOT_FRN,
-                parent_frn=0,
-                name="",
-                drive=drive_letter,
-                attributes=FILE_ATTRIBUTE_DIRECTORY,
-            )
-
-            for rec in records:
-                entry = FileEntry(
-                    frn=rec.frn,
-                    parent_frn=rec.parent_frn,
-                    name=rec.name,
-                    drive=drive_letter,
-                    attributes=rec.attributes,
-                    size=rec.size,
-                    date_modified=rec.timestamp,
-                    date_created=rec.date_created,
-                )
-                entry._stat_loaded = rec.mft_metadata  # Only skip os.stat if data came from direct MFT reading
-                drive_entries[rec.frn] = entry
-
-                if rec.is_dir:
+            info = all_drive_info.get(drive_letter)
+            logger.info(f"Indexing drive {drive_letter}: ({info.filesystem if info else 'unknown'}) via os.scandir...")
+            self._walk_drive(drive_letter)
+            drive_entries = self._entries.get(drive_letter, {})
+            for frn, entry in drive_entries.items():
+                if frn == NTFS_ROOT_FRN:
+                    continue
+                if entry.is_dir:
                     total_folders += 1
                 else:
                     total_files += 1
 
-            with self._lock:
-                self._entries[drive_letter] = drive_entries
-                self._volumes[drive_letter] = vol
+        # Index NTFS drives in parallel (one thread per drive)
+        mft_failed_drives = []
+        if ntfs_drives and not self._cancel_flag:
+            max_workers = min(len(ntfs_drives), os.cpu_count() or 4)
+            logger.info(f"Parallel MFT scan: {len(ntfs_drives)} NTFS drives with {max_workers} threads")
 
-            # Setup USN journal for monitoring
-            vol.query_usn_journal()
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                futures = {
+                    executor.submit(self._index_single_ntfs_drive, dl): dl
+                    for dl in ntfs_drives
+                }
 
-            self.indexing_progress.emit(drive_letter, len(records))
+                for future in as_completed(futures):
+                    if self._cancel_flag:
+                        break
+                    try:
+                        drive_letter, drive_entries, vol, files, folders = future.result()
+                        if not drive_entries:
+                            # MFT access failed — queue for os.scandir fallback
+                            mft_failed_drives.append(drive_letter)
+                            continue
+
+                        with self._lock:
+                            self._entries[drive_letter] = drive_entries
+                            if vol:
+                                self._volumes[drive_letter] = vol
+
+                        total_files += files
+                        total_folders += folders
+                        logger.info(f"Drive {drive_letter}: indexed: {files:,} files, {folders:,} folders")
+
+                    except Exception as e:
+                        dl = futures[future]
+                        logger.error(f"Error indexing drive {dl}: {e}")
+                        mft_failed_drives.append(dl)
+
+        # Non-admin fallback: walk NTFS drives that failed MFT access
+        if mft_failed_drives and not self._cancel_flag:
+            self._admin_mode = False
+            logger.warning(
+                f"MFT access failed for {', '.join(mft_failed_drives)}. "
+                f"Falling back to os.scandir (non-admin mode)."
+            )
+            for drive_letter in mft_failed_drives:
+                if self._cancel_flag:
+                    break
+                self._walk_drive(drive_letter)
+                drive_entries = self._entries.get(drive_letter, {})
+                for frn, entry in drive_entries.items():
+                    if frn == NTFS_ROOT_FRN:
+                        continue
+                    if entry.is_dir:
+                        total_folders += 1
+                    else:
+                        total_files += 1
 
         # Rebuild flat list
         self._rebuild_flat_list()
 
         elapsed = (time.perf_counter() - start_time) * 1000
+        total = total_files + total_folders
 
         self._stats.total_files = total_files
         self._stats.total_folders = total_folders
         self._stats.volumes_indexed = drives
         self._stats.index_time_ms = int(elapsed)
         self._stats.last_update = datetime.now()
+        self._stats.entries_per_sec = (total / (elapsed / 1000.0)) if elapsed > 0 else 0
 
         logger.info(
             f"Indexing complete: {total_files} files, {total_folders} folders "
             f"in {elapsed:.0f}ms across {len(drives)} drives"
+            f" ({self._stats.entries_per_sec:,.0f} entries/sec)"
         )
         self.indexing_complete.emit(self._stats)
 
@@ -402,31 +701,63 @@ class FileIndex(QObject):
             self._all_entries = new_list
 
     def start_monitoring(self):
-        """Start the USN journal monitor thread."""
+        """Start the USN journal monitor thread and FAT rescan thread."""
         if self._monitor_thread and self._monitor_thread.isRunning():
-            return
+            pass  # Already running
+        else:
+            self._monitor_thread = USNMonitorThread(self)
+            self._monitor_thread.changes_detected.connect(self._apply_usn_changes)
+            self._monitor_thread.start()
+            logger.info("USN journal monitoring started")
 
-        self._monitor_thread = USNMonitorThread(self)
-        self._monitor_thread.changes_detected.connect(self._apply_usn_changes)
-        self._monitor_thread.start()
-        logger.info("USN journal monitoring started")
+        # Start periodic rescan for non-NTFS drives
+        if self._walked_drives:
+            if not self._rescan_thread or not self._rescan_thread.isRunning():
+                self._rescan_thread = FATRescanThread(self)
+                self._rescan_thread.rescan_complete.connect(self._on_fat_rescan)
+                self._rescan_thread.start()
+                logger.info(f"FAT rescan thread started for drives: {', '.join(sorted(self._walked_drives))}")
+
+        # Start deferred path resolution timer
+        self._start_path_resolve_timer()
 
     def stop_monitoring(self):
-        """Stop the USN journal monitor thread."""
+        """Stop the USN journal monitor thread and FAT rescan thread."""
         if self._monitor_thread:
             self._monitor_thread.stop()
             self._monitor_thread.wait(3000)
             self._monitor_thread = None
             logger.info("USN journal monitoring stopped")
+        if self._rescan_thread:
+            self._rescan_thread.stop()
+            self._rescan_thread.wait(5000)
+            self._rescan_thread = None
+            logger.info("FAT rescan thread stopped")
+        if self._path_resolve_timer:
+            self._path_resolve_timer.stop()
+
+    def _on_fat_rescan(self, changes: int):
+        """Handle FAT rescan completion."""
+        if changes > 0:
+            self._rebuild_flat_list()
+            self._stats.last_update = datetime.now()
+            self.index_updated.emit(changes)
 
     def _apply_usn_changes(self, changes: list):
-        """Apply USN journal changes to the index."""
+        """Apply USN journal changes to the index and batch-sync to DB."""
         if not changes:
             return
+
+        from core.cache import db_batch_apply
 
         added = 0
         removed = 0
         modified = 0
+
+        # Collect batch operations for single-transaction DB write
+        db_inserts = []
+        db_deletes = []
+        db_updates = []
 
         with self._lock:
             for drive, record in changes:
@@ -437,6 +768,7 @@ class FileIndex(QObject):
                     if record.frn in drive_entries:
                         del drive_entries[record.frn]
                         removed += 1
+                        db_deletes.append((drive, record.frn))
 
                 elif record.is_create and record.is_close:
                     # New file created
@@ -451,6 +783,8 @@ class FileIndex(QObject):
                     )
                     drive_entries[record.frn] = entry
                     added += 1
+                    path = entry.get_path(self)
+                    db_inserts.append((entry, path))
 
                 elif record.is_rename and (record.reason & USN_REASON_RENAME_NEW_NAME) and record.is_close:
                     # File renamed - update name
@@ -460,6 +794,8 @@ class FileIndex(QObject):
                         existing.parent_frn = record.parent_frn
                         existing.invalidate_path()
                         modified += 1
+                        path = existing.get_path(self)
+                        db_updates.append((existing, path))
                     else:
                         entry = FileEntry(
                             frn=record.frn,
@@ -471,6 +807,8 @@ class FileIndex(QObject):
                         )
                         drive_entries[record.frn] = entry
                         added += 1
+                        path = entry.get_path(self)
+                        db_inserts.append((entry, path))
 
                 elif record.is_modify and record.is_close:
                     # File modified
@@ -485,6 +823,11 @@ class FileIndex(QObject):
                         ):
                             existing._stat_loaded = False
                         modified += 1
+                        db_updates.append((existing, ""))
+
+        # Single-transaction batch DB write
+        if db_inserts or db_deletes or db_updates:
+            db_batch_apply(db_inserts, db_deletes, db_updates)
 
         if added or removed:
             self._rebuild_flat_list()
@@ -567,9 +910,55 @@ class USNMonitorThread(QThread):
         logger.info("USN monitor thread stopped")
 
 
+class FATRescanThread(QThread):
+    """Background thread that periodically re-walks non-NTFS drives to detect changes."""
+    rescan_complete = pyqtSignal(int)  # total changed entries
+
+    def __init__(self, index: FileIndex, interval_seconds: int = 60):
+        super().__init__()
+        self._index = index
+        self._interval = interval_seconds
+        self._running = False
+
+    def stop(self):
+        self._running = False
+
+    def run(self):
+        self._running = True
+        logger.info("FAT rescan thread started")
+
+        while self._running:
+            # Sleep first — initial data was just loaded/walked
+            elapsed = 0.0
+            while elapsed < self._interval and self._running:
+                time.sleep(0.5)
+                elapsed += 0.5
+
+            if not self._running:
+                break
+
+            total_changes = 0
+            for drive_letter in list(self._index._walked_drives):
+                if not self._running:
+                    break
+                try:
+                    old_count = len(self._index._entries.get(drive_letter, {}))
+                    self._index._walk_drive(drive_letter)
+                    new_count = len(self._index._entries.get(drive_letter, {}))
+                    total_changes += abs(new_count - old_count)
+                except Exception as e:
+                    logger.error(f"Error re-walking {drive_letter}: {e}")
+
+            if total_changes > 0:
+                self.rescan_complete.emit(total_changes)
+
+        logger.info("FAT rescan thread stopped")
+
+
 class IndexWorker(QThread):
     """Worker thread for initial MFT indexing."""
     finished = pyqtSignal()
+    cache_loaded = pyqtSignal()  # Emitted when cache is loaded (before USN catchup)
 
     def __init__(self, index: FileIndex, drives: Optional[list[str]] = None,
                  use_cache: bool = True):
@@ -582,6 +971,9 @@ class IndexWorker(QThread):
         if self._use_cache:
             loaded = self._index.load_from_cache(self._drives)
             if loaded:
+                self.cache_loaded.emit()
+                # USN catchup happens after UI has displayed cached results
+                self._index.usn_catchup()
                 self.finished.emit()
                 return
             logger.info("No cache found, performing full MFT scan")

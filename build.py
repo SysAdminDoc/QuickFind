@@ -1,0 +1,120 @@
+#!/usr/bin/env python3
+"""
+QuickFind Build Script - PyInstaller packaging
+Produces a single-folder or single-file distribution.
+
+Usage:
+    python build.py              # Build single-folder dist
+    python build.py --onefile    # Build single-file exe
+    python build.py --clean      # Clean build artifacts
+"""
+
+import subprocess
+import sys
+import shutil
+from pathlib import Path
+
+ROOT = Path(__file__).parent
+DIST = ROOT / 'dist'
+BUILD = ROOT / 'build'
+SPEC = ROOT / 'QuickFind.spec'
+ASSETS = ROOT / 'assets'
+ICON = ASSETS / 'quickfind.ico'
+
+APP_NAME = "QuickFind"
+ENTRY = "quickfind.py"
+VERSION = "0.6.0"
+
+
+def ensure_pyinstaller():
+    """Install PyInstaller if not present."""
+    try:
+        import PyInstaller
+    except ImportError:
+        print("[*] Installing PyInstaller...")
+        subprocess.check_call([
+            sys.executable, '-m', 'pip', 'install', 'pyinstaller',
+            '--break-system-packages', '-q'
+        ])
+
+
+def clean():
+    """Remove build artifacts."""
+    for d in [DIST, BUILD]:
+        if d.exists():
+            shutil.rmtree(d)
+            print(f"[*] Removed {d}")
+    if SPEC.exists():
+        SPEC.unlink()
+        print(f"[*] Removed {SPEC}")
+
+
+def build(onefile=False):
+    """Build the application with PyInstaller."""
+    ensure_pyinstaller()
+
+    cmd = [
+        sys.executable, '-m', 'PyInstaller',
+        '--name', APP_NAME,
+        '--noconfirm',
+        '--clean',
+        '--windowed',
+    ]
+
+    if onefile:
+        cmd.append('--onefile')
+    else:
+        cmd.append('--onedir')
+
+    # Icon
+    if ICON.exists():
+        cmd.extend(['--icon', str(ICON)])
+
+    # Hidden imports for dynamic modules
+    hidden = [
+        'core.ntfs', 'core.index', 'core.cache', 'core.search',
+        'gui.main_window', 'gui.results_view', 'gui.settings_dialog',
+        'gui.theme', 'gui.tray', 'cli.es', 'server.http_server',
+    ]
+    for h in hidden:
+        cmd.extend(['--hidden-import', h])
+
+    # Add data files
+    if ASSETS.exists():
+        cmd.extend(['--add-data', f'{ASSETS};assets'])
+
+    # Entry point
+    cmd.append(str(ROOT / ENTRY))
+
+    print(f"[*] Building {APP_NAME} v{VERSION} ({'onefile' if onefile else 'onedir'})...")
+    print(f"    Command: {' '.join(cmd)}")
+
+    result = subprocess.run(cmd, cwd=str(ROOT))
+    if result.returncode == 0:
+        if onefile:
+            exe_path = DIST / f'{APP_NAME}.exe'
+        else:
+            exe_path = DIST / APP_NAME / f'{APP_NAME}.exe'
+        print(f"\n[+] Build successful!")
+        print(f"    Output: {exe_path}")
+    else:
+        print(f"\n[-] Build failed with exit code {result.returncode}")
+        sys.exit(1)
+
+
+def main():
+    import argparse
+    parser = argparse.ArgumentParser(description=f'Build {APP_NAME}')
+    parser.add_argument('--onefile', action='store_true', help='Build single-file exe')
+    parser.add_argument('--clean', action='store_true', help='Clean build artifacts')
+    args = parser.parse_args()
+
+    if args.clean:
+        clean()
+        return
+
+    build(onefile=args.onefile)
+
+
+if __name__ == '__main__':
+    main()

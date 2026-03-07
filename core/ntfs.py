@@ -782,6 +782,10 @@ class NTFSVolume:
                         if callback and len(records) % callback_interval == 0:
                             callback(record, len(records))
 
+                    # Check cancel every 4096 records for responsive cancellation
+                    if cancel_check and frn % 4096 == 0 and cancel_check():
+                        break
+
                 if cancel_check and cancel_check():
                     break
 
@@ -861,6 +865,7 @@ class NTFSVolume:
     def read_usn_journal(self, start_usn: Optional[int] = None) -> list[USNRecord]:
         """
         Read new USN journal records since start_usn (or the last read position).
+        Supports USN_RECORD V2, V3, and V4 formats.
 
         Returns:
             List of USNRecord entries.
@@ -910,23 +915,55 @@ class NTFSVolume:
 
         offset = 8
         while offset < returned:
-            if offset + 64 > returned:
+            if offset + 4 > returned:
                 break
 
             record_len = struct.unpack_from('<I', data, offset)[0]
             if record_len == 0 or offset + record_len > returned:
                 break
 
-            frn, parent_frn = struct.unpack_from('<QQ', data, offset + 8)
-            usn = struct.unpack_from('<Q', data, offset + 24)[0]
-            timestamp_raw = struct.unpack_from('<Q', data, offset + 32)[0]
-            reason = struct.unpack_from('<I', data, offset + 40)[0]
-            attributes = struct.unpack_from('<I', data, offset + 52)[0]
-            name_len = struct.unpack_from('<H', data, offset + 56)[0]
-            name_offset = struct.unpack_from('<H', data, offset + 58)[0]
+            # Detect record version (MajorVersion at offset +4)
+            if offset + 6 > returned:
+                break
+            major_ver = struct.unpack_from('<H', data, offset + 4)[0]
 
-            frn_index = frn & 0x0000FFFFFFFFFFFF
-            parent_index = parent_frn & 0x0000FFFFFFFFFFFF
+            if major_ver == 3 or major_ver == 4:
+                # USN_RECORD_V3/V4: uses 128-bit file IDs (ReFS)
+                # Layout: RecordLength(4), MajorVersion(2), MinorVersion(2),
+                #   FileReferenceNumber(16), ParentFileReferenceNumber(16),
+                #   Usn(8), TimeStamp(8), Reason(4), SourceInfo(4),
+                #   SecurityId(4), FileAttributes(4), FileNameLength(2),
+                #   FileNameOffset(2), FileName(variable)
+                if offset + 76 > returned:
+                    break
+
+                # 128-bit file IDs — take lower 64 bits for our FRN
+                frn_lo = struct.unpack_from('<Q', data, offset + 8)[0]
+                parent_lo = struct.unpack_from('<Q', data, offset + 24)[0]
+                usn = struct.unpack_from('<Q', data, offset + 40)[0]
+                timestamp_raw = struct.unpack_from('<Q', data, offset + 48)[0]
+                reason = struct.unpack_from('<I', data, offset + 56)[0]
+                attributes = struct.unpack_from('<I', data, offset + 64)[0]
+                name_len = struct.unpack_from('<H', data, offset + 68)[0]
+                name_offset = struct.unpack_from('<H', data, offset + 70)[0]
+
+                frn_index = frn_lo & 0x0000FFFFFFFFFFFF
+                parent_index = parent_lo & 0x0000FFFFFFFFFFFF
+            else:
+                # USN_RECORD_V2 (standard NTFS)
+                if offset + 64 > returned:
+                    break
+
+                frn, parent_frn = struct.unpack_from('<QQ', data, offset + 8)
+                usn = struct.unpack_from('<Q', data, offset + 24)[0]
+                timestamp_raw = struct.unpack_from('<Q', data, offset + 32)[0]
+                reason = struct.unpack_from('<I', data, offset + 40)[0]
+                attributes = struct.unpack_from('<I', data, offset + 52)[0]
+                name_len = struct.unpack_from('<H', data, offset + 56)[0]
+                name_offset = struct.unpack_from('<H', data, offset + 58)[0]
+
+                frn_index = frn & 0x0000FFFFFFFFFFFF
+                parent_index = parent_frn & 0x0000FFFFFFFFFFFF
 
             name_start = offset + name_offset
             name_end = name_start + name_len
@@ -970,29 +1007,74 @@ class NTFSVolume:
         self.close()
 
 
-def get_ntfs_drives() -> list[str]:
-    """Return a list of drive letters for fixed NTFS volumes."""
+@dataclass
+class DriveInfo:
+    """Information about a detected drive."""
+    letter: str
+    filesystem: str  # 'NTFS', 'FAT32', 'exFAT', etc.
+    drive_type: int  # DRIVE_FIXED, DRIVE_REMOVABLE, etc.
+    label: str = ""
+
+    @property
+    def is_ntfs(self) -> bool:
+        return self.filesystem.upper() == 'NTFS'
+
+    @property
+    def is_refs(self) -> bool:
+        return self.filesystem.upper() == 'REFS'
+
+    @property
+    def is_fat(self) -> bool:
+        return self.filesystem.upper() in ('FAT', 'FAT32', 'EXFAT')
+
+    @property
+    def needs_walk(self) -> bool:
+        """True if this drive requires os.scandir (no MFT/USN support)."""
+        return self.is_fat or self.is_refs
+
+
+# Supported filesystems for indexing
+SUPPORTED_FILESYSTEMS = {'NTFS', 'FAT', 'FAT32', 'EXFAT', 'REFS'}
+
+
+def get_all_drives() -> list[DriveInfo]:
+    """Return info for all fixed/removable drives with supported filesystems."""
     buf = ctypes.create_unicode_buffer(512)
     length = GetLogicalDriveStringsW(512, buf)
     if length == 0:
         return []
 
     drives = []
-    # buf.value stops at first null; we need the full buffer for multi-string
     raw = ctypes.wstring_at(buf, length)
     for part in raw.split('\x00'):
         part = part.strip()
         if not part:
             continue
         letter = part[0].upper()
-        drive_type = GetDriveTypeW(part)
-        if drive_type in (DRIVE_FIXED, DRIVE_REMOVABLE):
-            # Check if NTFS
-            fs_name = ctypes.create_unicode_buffer(32)
-            ok = GetVolumeInformationW(
-                part, None, 0, None, None, None, fs_name, 32
-            )
-            if ok and fs_name.value.upper() == 'NTFS':
-                drives.append(letter)
+        dt = GetDriveTypeW(part)
+        if dt not in (DRIVE_FIXED, DRIVE_REMOVABLE):
+            continue
 
-    return sorted(drives)
+        vol_name = ctypes.create_unicode_buffer(256)
+        fs_name = ctypes.create_unicode_buffer(32)
+        ok = GetVolumeInformationW(
+            part, vol_name, 256, None, None, None, fs_name, 32
+        )
+        if not ok:
+            continue
+
+        fs = fs_name.value.upper() if fs_name.value else ""
+        if fs in SUPPORTED_FILESYSTEMS:
+            drives.append(DriveInfo(
+                letter=letter,
+                filesystem=fs,
+                drive_type=dt,
+                label=vol_name.value or "",
+            ))
+
+    return sorted(drives, key=lambda d: d.letter)
+
+
+def get_ntfs_drives() -> list[str]:
+    """Return a list of drive letters for fixed NTFS volumes."""
+    return [d.letter for d in get_all_drives() if d.is_ntfs]

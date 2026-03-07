@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""QuickFind v0.1.0 - Lightning-fast file search for Windows"""
+"""QuickFind v0.6.0 - Lightning-fast file search for Windows"""
 
 import sys
 import os
@@ -38,7 +38,7 @@ LOG_FILE = LOG_DIR / 'quickfind.log'
 _root_logger = logging.getLogger()
 _root_logger.setLevel(logging.DEBUG)
 
-# File handler — detailed debug log
+# File handler -- detailed debug log
 _file_handler = logging.FileHandler(str(LOG_FILE), encoding='utf-8')
 _file_handler.setLevel(logging.DEBUG)
 _file_handler.setFormatter(logging.Formatter(
@@ -47,7 +47,7 @@ _file_handler.setFormatter(logging.Formatter(
 ))
 _root_logger.addHandler(_file_handler)
 
-# Console handler — info and above
+# Console handler -- info and above
 _console_handler = logging.StreamHandler(sys.stdout)
 _console_handler.setLevel(logging.INFO)
 _console_handler.setFormatter(logging.Formatter(
@@ -56,6 +56,9 @@ _console_handler.setFormatter(logging.Formatter(
 _root_logger.addHandler(_console_handler)
 
 logger = logging.getLogger('QuickFind')
+
+VERSION = "0.6.0"
+APP_NAME = "QuickFind"
 
 
 def excepthook(exc_type, exc_value, exc_tb):
@@ -71,9 +74,6 @@ def excepthook(exc_type, exc_value, exc_tb):
 
 sys.excepthook = excepthook
 
-VERSION = "0.1.0"
-APP_NAME = "QuickFind"
-
 
 def is_admin():
     """Check if running with admin privileges."""
@@ -83,20 +83,29 @@ def is_admin():
         return False
 
 
-def elevate():
-    """Re-launch as admin via ShellExecute runas."""
-    ctypes.windll.shell32.ShellExecuteW(
-        None, "runas", sys.executable,
-        ' '.join([f'"{arg}"' for arg in sys.argv]),
-        None, 1
-    )
-    sys.exit(0)
+def try_elevate() -> bool:
+    """Attempt to re-launch as admin. Returns False if user declined or it failed."""
+    try:
+        result = ctypes.windll.shell32.ShellExecuteW(
+            None, "runas", sys.executable,
+            ' '.join([f'"{arg}"' for arg in sys.argv]),
+            None, 1
+        )
+        # ShellExecuteW returns > 32 on success
+        if result > 32:
+            sys.exit(0)
+        return False
+    except Exception:
+        return False
 
 
 def main():
-    # Need admin for NTFS raw volume access
-    if not is_admin():
-        elevate()
+    admin = is_admin()
+    if not admin:
+        logger.info("Not running as admin - attempting elevation for MFT access...")
+        if not try_elevate():
+            logger.warning("UAC declined or elevation failed - running in non-admin mode "
+                           "(MFT scanning disabled, using os.scandir fallback)")
 
     # Hide console window
     try:
@@ -113,8 +122,13 @@ def main():
     # Import here after bootstrap
     from gui.theme import apply_theme
     from gui.main_window import MainWindow
+    from gui.tray import get_app_icon, generate_ico_file
 
     apply_theme(app)
+
+    # Generate icon on first run
+    generate_ico_file()
+    app.setWindowIcon(get_app_icon())
 
     window = MainWindow()
     window.show()

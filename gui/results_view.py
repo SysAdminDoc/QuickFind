@@ -1,6 +1,10 @@
 """
-Results view with sortable table model and thumbnail grid mode.
-Everything-style compact, information-dense display.
+Results view with sortable table model, thumbnail grid mode,
+result virtualization (fetchMore), drag & drop, column menu,
+keyboard navigation, result highlighting, and inline column filters.
+
+v0.6.0: Column right-click menu, keyboard nav, match highlighting delegate,
+         inline filter row below headers.
 """
 
 import os
@@ -10,15 +14,16 @@ from typing import Optional
 
 from PyQt6.QtWidgets import (
     QTableView, QAbstractItemView, QHeaderView, QWidget,
-    QListView, QStackedWidget, QVBoxLayout, QStyledItemDelegate,
-    QStyle, QApplication, QFileIconProvider
+    QListView, QStackedWidget, QVBoxLayout, QHBoxLayout, QStyledItemDelegate,
+    QStyle, QApplication, QFileIconProvider, QMenu, QLineEdit
 )
 from PyQt6.QtCore import (
     Qt, QAbstractTableModel, QModelIndex, QSize, QSortFilterProxyModel,
-    pyqtSignal, QTimer, QVariant, QFileInfo
+    pyqtSignal, QTimer, QVariant, QFileInfo, QUrl, QMimeData, QRect
 )
 from PyQt6.QtGui import (
-    QIcon, QPixmap, QImage, QPainter, QColor, QFont
+    QIcon, QPixmap, QImage, QPainter, QColor, QFont, QDrag,
+    QFontMetrics, QPen, QKeyEvent, QTextDocument, QAbstractTextDocumentLayout
 )
 
 from core.index import FileEntry, FileIndex
@@ -44,6 +49,9 @@ COLUMN_DATE_MOD = 3
 COLUMN_DATE_CREATE = 4
 COLUMN_TYPE = 5
 COLUMN_ATTRIB = 6
+
+# Number of rows to load at a time for virtualization
+FETCH_BATCH_SIZE = 5000
 
 
 def format_size(size: int) -> str:
@@ -110,28 +118,137 @@ class FileIconCache:
         return cls._cache.get(key, QIcon())
 
 
+# ── Match Highlighting Delegate ──────────────────────────
+
+class HighlightDelegate(QStyledItemDelegate):
+    """Custom delegate that highlights search query matches in accent color."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._highlight_text = ""
+        self._accent_color = QColor(MOCHA['blue'])
+
+    def set_highlight(self, text: str):
+        self._highlight_text = text.lower()
+
+    def paint(self, painter: QPainter, option, index):
+        # Draw background (selection, alternating rows)
+        self.initStyleOption(option, index)
+        style = option.widget.style() if option.widget else QApplication.style()
+
+        # Let the style draw background and focus rect
+        painter.save()
+        style.drawPrimitive(QStyle.PrimitiveElement.PE_PanelItemViewItem, option, painter, option.widget)
+
+        # Draw icon for column 0
+        col = index.column()
+        if col == COLUMN_NAME:
+            icon = index.data(Qt.ItemDataRole.DecorationRole)
+            if icon and not icon.isNull():
+                icon_rect = QRect(option.rect.left() + 2, option.rect.top() + 1,
+                                  option.rect.height() - 2, option.rect.height() - 2)
+                icon.paint(painter, icon_rect)
+                text_rect = option.rect.adjusted(option.rect.height() + 2, 0, 0, 0)
+            else:
+                text_rect = option.rect.adjusted(4, 0, 0, 0)
+        else:
+            text_rect = option.rect.adjusted(4, 0, -4, 0)
+
+        text = index.data(Qt.ItemDataRole.DisplayRole) or ""
+
+        # Right-align size column
+        alignment = index.data(Qt.ItemDataRole.TextAlignmentRole)
+        if alignment:
+            text_align = Qt.AlignmentFlag(alignment) | Qt.AlignmentFlag.AlignVCenter
+        else:
+            text_align = Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
+
+        # If there's a highlight match and this is a highlightable column
+        if self._highlight_text and col in (COLUMN_NAME, COLUMN_PATH) and text:
+            self._draw_highlighted(painter, text_rect, text, text_align, option)
+        else:
+            text_color = QColor(MOCHA['text']) if option.state & QStyle.StateFlag.State_Selected else QColor(MOCHA['text'])
+            painter.setPen(text_color)
+            painter.setFont(option.font)
+            painter.drawText(text_rect, text_align, text)
+
+        painter.restore()
+
+    def _draw_highlighted(self, painter: QPainter, rect: QRect, text: str,
+                          alignment, option):
+        """Draw text with highlighted match substrings."""
+        lower_text = text.lower()
+        hl = self._highlight_text
+        font = option.font
+        fm = QFontMetrics(font)
+        painter.setFont(font)
+
+        x = rect.left()
+        y_center = rect.center().y() + fm.ascent() // 2 - 1
+        max_x = rect.right()
+
+        pos = 0
+        while pos < len(text):
+            idx = lower_text.find(hl, pos)
+            if idx < 0:
+                # Draw remaining text normally
+                segment = text[pos:]
+                painter.setPen(QColor(MOCHA['text']))
+                painter.drawText(x, y_center, segment)
+                break
+
+            # Draw text before match
+            if idx > pos:
+                before = text[pos:idx]
+                painter.setPen(QColor(MOCHA['text']))
+                painter.drawText(x, y_center, before)
+                x += fm.horizontalAdvance(before)
+
+            # Draw match in accent color
+            match = text[idx:idx + len(hl)]
+            painter.setPen(self._accent_color)
+            painter.drawText(x, y_center, match)
+            x += fm.horizontalAdvance(match)
+
+            pos = idx + len(hl)
+
+            if x > max_x:
+                break
+
+
 class ResultsTableModel(QAbstractTableModel):
-    """Table model backed by a list of FileEntry objects."""
+    """Table model with fetchMore virtualization and drag & drop support."""
 
     def __init__(self, index: FileIndex, parent=None):
         super().__init__(parent)
         self._index = index
-        self._entries: list[FileEntry] = []
+        self._all_results: list[FileEntry] = []  # Full result set
+        self._entries: list[FileEntry] = []       # Currently loaded (visible) subset
+        self._loaded_count = 0
 
     def set_results(self, entries: list[FileEntry]):
         logger.debug(f"Model set_results: {len(entries)} entries")
         self.beginResetModel()
-        self._entries = entries
+        self._all_results = entries
+        # Load initial batch
+        self._loaded_count = min(len(entries), FETCH_BATCH_SIZE)
+        self._entries = entries[:self._loaded_count]
         self.endResetModel()
 
     def clear(self):
         self.beginResetModel()
+        self._all_results.clear()
         self._entries.clear()
+        self._loaded_count = 0
         self.endResetModel()
 
     @property
     def entries(self) -> list[FileEntry]:
-        return self._entries
+        return self._all_results
+
+    @property
+    def total_count(self) -> int:
+        return len(self._all_results)
 
     def entry_at(self, row: int) -> Optional[FileEntry]:
         if 0 <= row < len(self._entries):
@@ -143,6 +260,55 @@ class ResultsTableModel(QAbstractTableModel):
 
     def columnCount(self, parent=QModelIndex()):
         return len(COLUMNS)
+
+    # ── Virtualization via fetchMore ──────────────────
+
+    def canFetchMore(self, parent=QModelIndex()) -> bool:
+        return self._loaded_count < len(self._all_results)
+
+    def fetchMore(self, parent=QModelIndex()):
+        remaining = len(self._all_results) - self._loaded_count
+        fetch_count = min(remaining, FETCH_BATCH_SIZE)
+        if fetch_count <= 0:
+            return
+
+        self.beginInsertRows(
+            QModelIndex(),
+            self._loaded_count,
+            self._loaded_count + fetch_count - 1
+        )
+        self._entries = self._all_results[:self._loaded_count + fetch_count]
+        self._loaded_count += fetch_count
+        self.endInsertRows()
+
+    # ── Drag & Drop ──────────────────────────────────
+
+    def flags(self, index: QModelIndex) -> Qt.ItemFlag:
+        default = super().flags(index)
+        if index.isValid():
+            return default | Qt.ItemFlag.ItemIsDragEnabled
+        return default
+
+    def mimeTypes(self) -> list[str]:
+        return ['text/uri-list']
+
+    def mimeData(self, indexes: list[QModelIndex]) -> QMimeData:
+        mime = QMimeData()
+        urls = []
+        seen_rows = set()
+        for idx in indexes:
+            row = idx.row()
+            if row in seen_rows:
+                continue
+            seen_rows.add(row)
+            entry = self.entry_at(row)
+            if entry:
+                path = entry.get_path(self._index)
+                urls.append(QUrl.fromLocalFile(path))
+        mime.setUrls(urls)
+        return mime
+
+    # ── Data display ─────────────────────────────────
 
     def headerData(self, section, orientation, role=Qt.ItemDataRole.DisplayRole):
         if orientation == Qt.Orientation.Horizontal and role == Qt.ItemDataRole.DisplayRole:
@@ -165,6 +331,10 @@ class ResultsTableModel(QAbstractTableModel):
             if col == COLUMN_NAME:
                 return entry.name
             elif col == COLUMN_PATH:
+                if entry._path:
+                    # Use cached path's parent directory
+                    idx = entry._path.rfind('\\')
+                    return entry._path[:idx] if idx > 0 else entry._path
                 return self._index.resolve_parent_path(entry.drive, entry.parent_frn)
             elif col == COLUMN_SIZE:
                 if entry.is_dir:
@@ -205,61 +375,133 @@ class ResultsTableModel(QAbstractTableModel):
     def sort(self, column: int, order=Qt.SortOrder.AscendingOrder):
         self.beginResetModel()
         reverse = order == Qt.SortOrder.DescendingOrder
-        count = len(self._entries)
 
-        # MFT provides metadata at index time; ensure_stat is a no-op for most entries.
-        # Only USN-modified entries (with _stat_loaded reset) need lazy os.stat.
+        # Sort the full result set, then re-slice
         needs_stat = column in (COLUMN_SIZE, COLUMN_DATE_MOD, COLUMN_DATE_CREATE)
         if needs_stat:
-            unfilled = sum(1 for e in self._entries if not e._stat_loaded)
+            unfilled = sum(1 for e in self._all_results if not e._stat_loaded)
             if unfilled > 0 and unfilled <= 100_000:
                 import time as _time
                 t0 = _time.perf_counter()
-                for entry in self._entries:
+                for entry in self._all_results:
                     entry.ensure_stat(self._index)
                 elapsed = (_time.perf_counter() - t0) * 1000
                 logger.debug(f"Table sort: loaded stats for {unfilled} entries in {elapsed:.0f}ms")
 
         try:
             if column == COLUMN_NAME:
-                self._entries.sort(key=lambda e: e.name.lower(), reverse=reverse)
+                self._all_results.sort(key=lambda e: e.name.lower(), reverse=reverse)
             elif column == COLUMN_PATH:
-                self._entries.sort(
-                    key=lambda e: self._index.resolve_parent_path(e.drive, e.parent_frn).lower(),
+                self._all_results.sort(
+                    key=lambda e: (e._path or self._index.resolve_parent_path(e.drive, e.parent_frn)).lower(),
                     reverse=reverse
                 )
             elif column == COLUMN_SIZE:
-                self._entries.sort(
+                self._all_results.sort(
                     key=lambda e: e.size if e._stat_loaded else -1,
                     reverse=reverse
                 )
             elif column == COLUMN_DATE_MOD:
                 _dt_min = datetime.min
-                self._entries.sort(
+                self._all_results.sort(
                     key=lambda e: e.date_modified or _dt_min,
                     reverse=reverse
                 )
             elif column == COLUMN_DATE_CREATE:
                 _dt_min = datetime.min
-                self._entries.sort(
+                self._all_results.sort(
                     key=lambda e: e.date_created or _dt_min,
                     reverse=reverse
                 )
             elif column == COLUMN_TYPE:
-                self._entries.sort(key=lambda e: e.extension, reverse=reverse)
+                self._all_results.sort(key=lambda e: e.extension, reverse=reverse)
             elif column == COLUMN_ATTRIB:
-                self._entries.sort(key=lambda e: e.attributes, reverse=reverse)
+                self._all_results.sort(key=lambda e: e.attributes, reverse=reverse)
         except Exception as exc:
             logger.error(f"Table sort failed: {exc}")
 
+        # Re-slice visible entries
+        self._entries = self._all_results[:self._loaded_count]
         self.endResetModel()
 
 
+# ── Inline Column Filter Row ─────────────────────────────
+
+class ColumnFilterRow(QWidget):
+    """A row of filter inputs below the table header for per-column filtering."""
+    filter_changed = pyqtSignal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._inputs: list[QLineEdit] = []
+        self._layout = QHBoxLayout(self)
+        self._layout.setContentsMargins(0, 0, 0, 0)
+        self._layout.setSpacing(0)
+        self.setFixedHeight(22)
+        self.hide()
+
+        style = f"""
+            QLineEdit {{
+                background: {MOCHA['surface0']};
+                color: {MOCHA['text']};
+                border: 1px solid {MOCHA['surface1']};
+                border-radius: 0px;
+                padding: 1px 4px;
+                font-size: 11px;
+            }}
+            QLineEdit:focus {{
+                border-color: {MOCHA['blue']};
+            }}
+        """
+        self.setStyleSheet(style)
+
+    def setup_columns(self, count: int):
+        """Create filter inputs for each column."""
+        for inp in self._inputs:
+            inp.deleteLater()
+        self._inputs.clear()
+
+        for i in range(count):
+            inp = QLineEdit()
+            inp.setPlaceholderText("Filter...")
+            inp.textChanged.connect(self.filter_changed)
+            self._layout.addWidget(inp)
+            self._inputs.append(inp)
+
+    def get_filter(self, column: int) -> str:
+        if 0 <= column < len(self._inputs):
+            return self._inputs[column].text().strip().lower()
+        return ""
+
+    def has_active_filters(self) -> bool:
+        return any(inp.text().strip() for inp in self._inputs)
+
+    def clear_all(self):
+        for inp in self._inputs:
+            inp.blockSignals(True)
+            inp.clear()
+            inp.blockSignals(False)
+        self.filter_changed.emit()
+
+    def sync_widths(self, header: QHeaderView):
+        """Sync filter input widths to match column header widths."""
+        for i, inp in enumerate(self._inputs):
+            if i < header.count():
+                w = header.sectionSize(i)
+                inp.setFixedWidth(w)
+                inp.setVisible(not header.isSectionHidden(i))
+
+
 class ResultsTableView(QTableView):
-    """Everything-style compact table view for search results."""
+    """Everything-style compact table view for search results with drag support,
+    column right-click menu, and keyboard navigation."""
 
     item_activated = pyqtSignal(object)  # FileEntry
     selection_changed = pyqtSignal(object)  # FileEntry or None
+    open_folder_requested = pyqtSignal(object)  # FileEntry
+    delete_requested = pyqtSignal(object)  # list[FileEntry]
+    rename_requested = pyqtSignal(object)  # FileEntry
+    column_visibility_changed = pyqtSignal(dict)  # {column_index: bool}
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -274,6 +516,11 @@ class ResultsTableView(QTableView):
         self.setHorizontalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
         self.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
 
+        # Enable drag support
+        self.setDragEnabled(True)
+        self.setDragDropMode(QAbstractItemView.DragDropMode.DragOnly)
+        self.setDefaultDropAction(Qt.DropAction.CopyAction)
+
         # Column sizing
         header = self.horizontalHeader()
         header.setStretchLastSection(False)
@@ -283,7 +530,20 @@ class ResultsTableView(QTableView):
         header.setSortIndicatorShown(True)
         header.setHighlightSections(False)
 
+        # Column right-click menu
+        header.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        header.customContextMenuRequested.connect(self._show_column_menu)
+
+        # Highlight delegate
+        self._highlight_delegate = HighlightDelegate(self)
+        self.setItemDelegate(self._highlight_delegate)
+
         self.doubleClicked.connect(self._on_double_click)
+
+    def set_highlight(self, text: str):
+        """Set the text to highlight in results."""
+        self._highlight_delegate.set_highlight(text)
+        self.viewport().update()
 
     def set_model(self, model: ResultsTableModel):
         """Set the model and configure column widths."""
@@ -307,6 +567,64 @@ class ResultsTableView(QTableView):
 
         # Default sort: Date Modified descending (MFT provides timestamps natively)
         self.sortByColumn(COLUMN_DATE_MOD, Qt.SortOrder.DescendingOrder)
+
+    def keyPressEvent(self, event: QKeyEvent):
+        """Keyboard navigation: Enter=open, Delete=recycle, F2=rename, Ctrl+Enter=open folder."""
+        key = event.key()
+        mods = event.modifiers()
+
+        if key == Qt.Key.Key_Return or key == Qt.Key.Key_Enter:
+            entries = self.selected_entries()
+            if entries:
+                if mods & Qt.KeyboardModifier.ControlModifier:
+                    # Ctrl+Enter: open containing folder
+                    self.open_folder_requested.emit(entries[0])
+                else:
+                    # Enter: open file/folder
+                    self.item_activated.emit(entries[0])
+            return
+
+        if key == Qt.Key.Key_Delete:
+            entries = self.selected_entries()
+            if entries:
+                self.delete_requested.emit(entries)
+            return
+
+        if key == Qt.Key.Key_F2:
+            entries = self.selected_entries()
+            if entries and len(entries) == 1:
+                self.rename_requested.emit(entries[0])
+            return
+
+        super().keyPressEvent(event)
+
+    def _show_column_menu(self, pos):
+        """Show column visibility context menu on header right-click."""
+        menu = QMenu(self)
+        header = self.horizontalHeader()
+
+        for i, (name, _) in enumerate(COLUMNS):
+            action = menu.addAction(name)
+            action.setCheckable(True)
+            action.setChecked(not header.isSectionHidden(i))
+            action.triggered.connect(lambda checked, col=i: self._toggle_column(col, checked))
+
+        menu.exec(header.mapToGlobal(pos))
+
+    def _toggle_column(self, column: int, visible: bool):
+        """Toggle column visibility."""
+        self.setColumnHidden(column, not visible)
+        # Emit signal so settings can persist
+        vis = {}
+        header = self.horizontalHeader()
+        for i in range(len(COLUMNS)):
+            vis[i] = not header.isSectionHidden(i)
+        self.column_visibility_changed.emit(vis)
+
+    def apply_column_visibility(self, visibility: dict):
+        """Apply saved column visibility from settings."""
+        for col, visible in visibility.items():
+            self.setColumnHidden(int(col), not visible)
 
     def _on_double_click(self, index: QModelIndex):
         model = self.model()
@@ -405,6 +723,10 @@ class ThumbnailListView(QListView):
         self.setItemDelegate(ThumbnailDelegate(self))
         self.setGridSize(QSize(144, 172))
 
+        # Enable drag
+        self.setDragEnabled(True)
+        self.setDragDropMode(QAbstractItemView.DragDropMode.DragOnly)
+
         self.doubleClicked.connect(self._on_double_click)
 
     def _on_double_click(self, index: QModelIndex):
@@ -420,6 +742,10 @@ class ResultsView(QStackedWidget):
 
     item_activated = pyqtSignal(object)
     selection_changed = pyqtSignal(object)
+    open_folder_requested = pyqtSignal(object)
+    delete_requested = pyqtSignal(object)
+    rename_requested = pyqtSignal(object)
+    column_visibility_changed = pyqtSignal(dict)
 
     def __init__(self, index: FileIndex, parent=None):
         super().__init__(parent)
@@ -431,6 +757,10 @@ class ResultsView(QStackedWidget):
         self.table_view.set_model(self._model)
         self.table_view.item_activated.connect(self.item_activated)
         self.table_view.selection_changed.connect(self.selection_changed)
+        self.table_view.open_folder_requested.connect(self.open_folder_requested)
+        self.table_view.delete_requested.connect(self.delete_requested)
+        self.table_view.rename_requested.connect(self.rename_requested)
+        self.table_view.column_visibility_changed.connect(self.column_visibility_changed)
         self.addWidget(self.table_view)
 
         # Thumbnail view (index 1)
@@ -445,6 +775,9 @@ class ResultsView(QStackedWidget):
 
     def set_results(self, entries: list[FileEntry]):
         self._model.set_results(entries)
+
+    def set_highlight(self, text: str):
+        self.table_view.set_highlight(text)
 
     def clear(self):
         self._model.clear()
@@ -462,4 +795,4 @@ class ResultsView(QStackedWidget):
 
     @property
     def result_count(self) -> int:
-        return self._model.rowCount()
+        return self._model.total_count

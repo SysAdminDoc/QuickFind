@@ -1,5 +1,6 @@
 """
 Search engine with Everything-compatible modifiers, regex, wildcards, and filters.
+Routes simple queries through SQLite for speed, falls back to in-memory for complex queries.
 
 Supports: plain text, regex:, wildcards:, case:, path:, file:, folder:,
 wholeword:, wholefilename:, content:, size:, dm: (date modified),
@@ -185,7 +186,6 @@ def _parse_date(date_str: str) -> Optional[datetime]:
     if date_str in shortcuts:
         return shortcuts[date_str]
 
-    # Try common date formats
     for fmt in ('%Y-%m-%d', '%Y/%m/%d', '%m/%d/%Y', '%d/%m/%Y'):
         try:
             return datetime.strptime(date_str, fmt)
@@ -216,7 +216,7 @@ class ParsedQuery:
     attrib_exclude: int = 0
     content_search: str = ""
     dupe_mode: bool = False
-    or_groups: list[list[str]] = field(default_factory=list)  # OR-separated terms
+    or_groups: list[list[str]] = field(default_factory=list)
     exclude_terms: list[str] = field(default_factory=list)
 
 
@@ -228,10 +228,7 @@ ATTRIB_MAP = {
 
 
 def parse_query(raw_query: str, base_options: Optional[SearchOptions] = None) -> ParsedQuery:
-    """
-    Parse a search query string into a ParsedQuery with modifiers extracted.
-    Supports Everything-compatible modifier syntax.
-    """
+    """Parse a search query string into a ParsedQuery with modifiers extracted."""
     parsed = ParsedQuery()
     if base_options:
         parsed.options = SearchOptions(
@@ -253,7 +250,6 @@ def parse_query(raw_query: str, base_options: Optional[SearchOptions] = None) ->
 
     query = raw_query.strip()
 
-    # Extract quoted strings first
     quoted_parts = []
     def replace_quoted(m):
         quoted_parts.append(m.group(1))
@@ -261,7 +257,6 @@ def parse_query(raw_query: str, base_options: Optional[SearchOptions] = None) ->
 
     query = re.sub(r'"([^"]*)"', replace_quoted, query)
 
-    # Split into tokens
     tokens = query.split()
     remaining_terms = []
 
@@ -270,12 +265,10 @@ def parse_query(raw_query: str, base_options: Optional[SearchOptions] = None) ->
         token = tokens[i]
         lower = token.lower()
 
-        # Handle modifiers (modifier:value)
         if ':' in token:
             mod, _, val = token.partition(':')
             mod_lower = mod.lower()
 
-            # Restore quoted values
             for j, qp in enumerate(quoted_parts):
                 val = val.replace(f'\x00QUOTED{j}\x00', qp)
 
@@ -342,7 +335,6 @@ def parse_query(raw_query: str, base_options: Optional[SearchOptions] = None) ->
                     )
                 i += 1; continue
             elif mod_lower == 'size':
-                # size:>1mb  size:<500kb  size:100kb..1mb
                 if '..' in val:
                     lo, hi = val.split('..', 1)
                     parsed.size_min = _parse_size(lo)
@@ -398,11 +390,9 @@ def parse_query(raw_query: str, base_options: Optional[SearchOptions] = None) ->
             elif mod_lower == 'dupe':
                 parsed.dupe_mode = True
                 i += 1; continue
-            # Fall through - not a recognized modifier
             remaining_terms.append(token)
             i += 1; continue
 
-        # Handle exclusion with ! prefix
         elif token.startswith('!') and len(token) > 1:
             parsed.exclude_terms.append(token[1:])
             i += 1; continue
@@ -411,11 +401,9 @@ def parse_query(raw_query: str, base_options: Optional[SearchOptions] = None) ->
             remaining_terms.append(token)
             i += 1
 
-    # Restore quoted parts in remaining terms
     for j, qp in enumerate(quoted_parts):
         remaining_terms = [t.replace(f'\x00QUOTED{j}\x00', qp) for t in remaining_terms]
 
-    # Process OR groups (terms separated by |)
     final_terms = []
     combined = ' '.join(remaining_terms)
 
@@ -427,7 +415,6 @@ def parse_query(raw_query: str, base_options: Optional[SearchOptions] = None) ->
 
     parsed.terms = final_terms
 
-    # Auto-detect wildcards
     if not parsed.options.use_regex:
         for term in parsed.terms:
             if '*' in term or '?' in term:
@@ -437,34 +424,169 @@ def parse_query(raw_query: str, base_options: Optional[SearchOptions] = None) ->
     return parsed
 
 
+# ── Sort field mapping for DB queries ────────────────────
+
+_SORT_FIELD_TO_DB = {
+    SortField.NAME: 'name',
+    SortField.PATH: 'path',
+    SortField.SIZE: 'size',
+    SortField.DATE_MODIFIED: 'date_modified_ms',
+    SortField.DATE_CREATED: 'date_created_ms',
+    SortField.EXTENSION: 'name',
+    SortField.ATTRIBUTES: 'attributes',
+}
+
+
+def _dt_to_ms(dt: Optional[datetime]) -> int:
+    if dt is None:
+        return 0
+    try:
+        return int(dt.timestamp() * 1000)
+    except (OSError, OverflowError, ValueError):
+        return 0
+
+
+def _ms_to_dt(ms: int) -> Optional[datetime]:
+    if ms <= 0:
+        return None
+    try:
+        return datetime.fromtimestamp(ms / 1000.0)
+    except (OSError, OverflowError, ValueError):
+        return None
+
+
 class SearchEngine:
     """
-    Executes searches against the FileIndex using parsed queries.
+    Executes searches against the FileIndex.
+    Routes simple queries through SQLite DB for speed.
+    Falls back to in-memory iteration for complex queries.
     """
 
     def __init__(self, index: FileIndex):
         self._index = index
 
+    def _can_use_db(self, parsed: ParsedQuery) -> bool:
+        """Check if the query can be executed via DB search."""
+        # These features require in-memory processing
+        if parsed.options.use_regex:
+            return False
+        if parsed.options.match_case:
+            return False
+        if parsed.options.match_whole_word:
+            return False
+        if parsed.options.match_whole_filename:
+            return False
+        if parsed.options.use_wildcards:
+            return False
+        if parsed.content_search:
+            return False
+        if parsed.dupe_mode:
+            return False
+        if parsed.or_groups:
+            return False
+        if parsed.attrib_include:
+            return False
+        if parsed.name_len_min or parsed.name_len_max:
+            return False
+        if parsed.parent_filter:
+            return False
+
+        # Multiple search terms need AND logic — DB can handle one
+        if len(parsed.terms) > 1:
+            return False
+
+        from core.cache import cache_exists
+        return cache_exists()
+
+    def _db_search(self, parsed: ParsedQuery,
+                   active_filter: Optional[SearchFilter],
+                   limit: int = 0, offset: int = 0) -> list[FileEntry]:
+        """Execute search via SQLite database."""
+        from core.cache import db_search
+
+        query_text = parsed.terms[0] if parsed.terms else ""
+
+        extensions = parsed.ext_filter
+        if active_filter and active_filter.extensions:
+            extensions = active_filter.extensions
+
+        files_only = parsed.options.files_only or (active_filter and active_filter.files_only)
+        folders_only = parsed.options.folders_only or (active_filter and active_filter.folders_only)
+
+        size_min = parsed.size_min or (active_filter.min_size if active_filter else 0)
+        size_max = parsed.size_max or (active_filter.max_size if active_filter else 0)
+
+        exclude_paths = []
+        if active_filter and active_filter.exclude_paths:
+            exclude_paths = active_filter.exclude_paths
+
+        # Path includes
+        match_path = parsed.options.match_path
+        if parsed.path_includes:
+            match_path = True
+            if not query_text and parsed.path_includes:
+                query_text = parsed.path_includes[0]
+
+        sort_col = _SORT_FIELD_TO_DB.get(parsed.options.sort_by, 'date_modified_ms')
+        sort_desc = parsed.options.sort_order == SortOrder.DESCENDING
+
+        rows, _ = db_search(
+            query=query_text,
+            match_path=match_path,
+            extensions=extensions if extensions else None,
+            files_only=files_only,
+            folders_only=folders_only,
+            size_min=size_min,
+            size_max=size_max,
+            date_mod_after_ms=_dt_to_ms(parsed.date_mod_after),
+            date_mod_before_ms=_dt_to_ms(parsed.date_mod_before),
+            date_create_after_ms=_dt_to_ms(parsed.date_create_after),
+            date_create_before_ms=_dt_to_ms(parsed.date_create_before),
+            exclude_paths=exclude_paths if exclude_paths else None,
+            limit=limit,
+            offset=offset,
+            sort_column=sort_col,
+            sort_desc=sort_desc,
+        )
+
+        # Convert DB rows to FileEntry objects
+        results = []
+        for frn, drive, parent_frn, name, path, attrs, size, mtime_ms, ctime_ms in rows:
+            # Try to get from in-memory index first (has full state)
+            existing = self._index.get_entry(drive, frn)
+            if existing:
+                results.append(existing)
+            else:
+                entry = FileEntry(
+                    frn=frn, parent_frn=parent_frn, name=name,
+                    drive=drive, attributes=attrs,
+                )
+                if path:
+                    entry._path = path
+                if size or mtime_ms or ctime_ms:
+                    entry.size = size
+                    entry.date_modified = _ms_to_dt(mtime_ms)
+                    entry.date_created = _ms_to_dt(ctime_ms)
+                    entry._stat_loaded = True
+                results.append(entry)
+
+        # Apply exclude terms in Python (simple post-filter)
+        if parsed.exclude_terms:
+            exclude_matchers = self._compile_exclude_matchers(parsed)
+            results = [e for e in results if not any(m(e.name) for m in exclude_matchers)]
+
+        return results
+
     def search(self, query: str, active_filter: Optional[SearchFilter] = None,
                base_options: Optional[SearchOptions] = None,
                cancel_check: Optional[Callable[[], bool]] = None,
-               max_results: int = 0) -> list[FileEntry]:  # noqa: C901
-        """
-        Execute a search and return matching FileEntry results.
-
-        Args:
-            query: Raw search query string
-            active_filter: Optional active filter to apply
-            base_options: Base search options (from UI toggles)
-            cancel_check: Optional callable returning True to cancel
-            max_results: Override max results (0 = use from options)
-        """
+               max_results: int = 0) -> list[FileEntry]:
+        """Execute a search and return matching FileEntry results."""
         parsed = parse_query(query, base_options)
         if max_results:
             parsed.options.max_results = max_results
 
         # Apply active filter
-        filter_exclude_paths = []
         if active_filter:
             if active_filter.files_only:
                 parsed.options.files_only = True
@@ -476,23 +598,29 @@ class SearchEngine:
                 parsed.size_min = active_filter.min_size
             if active_filter.max_size:
                 parsed.size_max = active_filter.max_size
-            if active_filter.exclude_paths:
-                filter_exclude_paths = [p.lower() for p in active_filter.exclude_paths]
 
-        # Empty query with no constraints = show everything
-        has_constraints = (
-            parsed.terms or parsed.or_groups or parsed.ext_filter or
-            parsed.size_min or parsed.size_max or
-            parsed.date_mod_after or parsed.date_mod_before or
-            parsed.date_create_after or parsed.date_create_before or
-            parsed.path_includes or parsed.parent_filter or
-            parsed.name_len_min or parsed.name_len_max or
-            parsed.attrib_include or parsed.content_search or
-            parsed.dupe_mode or parsed.options.files_only or
-            parsed.options.folders_only or parsed.exclude_terms
-        )
+        # Try DB search first for simple queries
+        if self._can_use_db(parsed):
+            try:
+                limit = parsed.options.max_results or 0
+                results = self._db_search(parsed, active_filter, limit=limit)
+                if results is not None:
+                    logger.debug(f"DB search returned {len(results)} results")
+                    return results
+            except Exception as e:
+                logger.debug(f"DB search failed, falling back to in-memory: {e}")
 
-        # Compile matchers
+        # Fall back to in-memory search
+        return self._memory_search(parsed, active_filter, cancel_check)
+
+    def _memory_search(self, parsed: ParsedQuery,
+                       active_filter: Optional[SearchFilter],
+                       cancel_check: Optional[Callable[[], bool]] = None) -> list[FileEntry]:
+        """In-memory search (original implementation)."""
+        filter_exclude_paths = []
+        if active_filter and active_filter.exclude_paths:
+            filter_exclude_paths = [p.lower() for p in active_filter.exclude_paths]
+
         term_matchers = self._compile_term_matchers(parsed)
         exclude_matchers = self._compile_exclude_matchers(parsed)
         or_matchers = self._compile_or_matchers(parsed)
@@ -511,30 +639,25 @@ class SearchEngine:
             if self._matches(entry, parsed, term_matchers, exclude_matchers, or_matchers, filter_exclude_paths):
                 results.append(entry)
 
-        # Sort results
         if cancel_check and cancel_check():
             return results
-        logger.debug(f"Search matched {len(results)} entries, sorting by {parsed.options.sort_by.name} {parsed.options.sort_order.name}")
         results = self._sort_results(results, parsed.options, cancel_check)
 
         return results
 
     def _compile_term_matchers(self, parsed: ParsedQuery) -> list:
-        """Compile search terms into matcher functions."""
         matchers = []
         for term in parsed.terms:
             matchers.append(self._make_matcher(term, parsed.options))
         return matchers
 
     def _compile_exclude_matchers(self, parsed: ParsedQuery) -> list:
-        """Compile exclusion terms into matcher functions."""
         matchers = []
         for term in parsed.exclude_terms:
             matchers.append(self._make_matcher(term, parsed.options))
         return matchers
 
     def _compile_or_matchers(self, parsed: ParsedQuery) -> list:
-        """Compile OR groups into lists of matcher functions."""
         groups = []
         for group in parsed.or_groups:
             group_matchers = []
@@ -546,14 +669,12 @@ class SearchEngine:
         return groups
 
     def _make_matcher(self, term: str, options: SearchOptions):
-        """Create a matcher function for a single search term."""
         if options.use_regex:
             flags = 0 if options.match_case else re.IGNORECASE
             try:
                 pattern = re.compile(term, flags)
                 return lambda text, p=pattern: p.search(text) is not None
             except re.error:
-                # Invalid regex, fall back to literal
                 pass
 
         if options.use_wildcards or ('*' in term or '?' in term):
@@ -578,7 +699,6 @@ class SearchEngine:
                 t_lower = term.lower()
                 return lambda text, t=t_lower: text.lower() == t
 
-        # Default: case-insensitive substring
         if options.match_case:
             return lambda text, t=term: t in text
         else:
@@ -589,41 +709,34 @@ class SearchEngine:
                  term_matchers: list, exclude_matchers: list,
                  or_matchers: list,
                  filter_exclude_paths: list[str] = None) -> bool:
-        """Check if a FileEntry matches the parsed query."""
 
-        # Filter exclude paths (e.g. $Recycle.Bin)
         if filter_exclude_paths:
             path = entry.get_path(self._index).lower()
             for ep in filter_exclude_paths:
                 if ep in path:
                     return False
 
-        # File/folder filter
         if parsed.options.files_only and entry.is_dir:
             return False
         if parsed.options.folders_only and not entry.is_dir:
             return False
 
-        # Extension filter
         if parsed.ext_filter:
             if entry.is_dir:
                 return False
             if entry.extension not in parsed.ext_filter:
                 return False
 
-        # Attribute filter
         if parsed.attrib_include:
             if not (entry.attributes & parsed.attrib_include):
                 return False
 
-        # Name length filter
         name_len = len(entry.name)
         if parsed.name_len_min and name_len < parsed.name_len_min:
             return False
         if parsed.name_len_max and name_len > parsed.name_len_max:
             return False
 
-        # Date filters
         if parsed.date_mod_after and entry.date_modified:
             if entry.date_modified < parsed.date_mod_after:
                 return False
@@ -637,36 +750,30 @@ class SearchEngine:
             if entry.date_created > parsed.date_create_before:
                 return False
 
-        # Get match target (name or full path)
         if parsed.options.match_path or parsed.path_includes:
             target = entry.get_path(self._index)
         else:
             target = entry.name
 
-        # Path includes filter
         if parsed.path_includes:
             path_text = target.lower()
             for pi in parsed.path_includes:
                 if pi.lower() not in path_text:
                     return False
 
-        # Parent filter
         if parsed.parent_filter:
             parent_path = self._index.resolve_parent_path(entry.drive, entry.parent_frn)
             if parsed.parent_filter.lower() not in parent_path.lower():
                 return False
 
-        # Exclusion terms (must NOT match any)
         for matcher in exclude_matchers:
             if matcher(target):
                 return False
 
-        # OR groups (must match at least one term in each group)
         for group in or_matchers:
             if not any(matcher(target) for matcher in group):
                 return False
 
-        # AND terms (must match all)
         for matcher in term_matchers:
             if not matcher(target):
                 return False
@@ -676,12 +783,9 @@ class SearchEngine:
     def _sort_results(self, results: list[FileEntry],
                       options: SearchOptions,
                       cancel_check: Optional[Callable[[], bool]] = None) -> list[FileEntry]:
-        """Sort results by the specified field and order."""
         reverse = options.sort_order == SortOrder.DESCENDING
         sort_field = options.sort_by
 
-        # For stat-dependent sorts, only load stats for entries that need it
-        # (and only if there aren't too many — avoid blocking on millions of os.stat calls)
         if sort_field in (SortField.DATE_MODIFIED, SortField.DATE_CREATED, SortField.SIZE):
             needs_stat = sum(1 for e in results if not e._stat_loaded)
             if 0 < needs_stat <= 100_000:
@@ -694,7 +798,6 @@ class SearchEngine:
                 elapsed = (_time.perf_counter() - t0) * 1000
                 logger.debug(f"Loaded stats for {needs_stat} entries (of {len(results)}) in {elapsed:.0f}ms")
 
-        # Use minimal key functions for fast sorting
         _dt_min = datetime.min
 
         key_funcs = {
@@ -717,7 +820,6 @@ class SearchEngine:
         return results
 
     def find_duplicates(self, entries: Optional[list[FileEntry]] = None) -> dict[str, list[FileEntry]]:
-        """Find files with duplicate names."""
         if entries is None:
             entries = self._index.all_entries
 
@@ -733,11 +835,10 @@ class SearchEngine:
 
     def content_search(self, entry: FileEntry, search_text: str,
                        case_sensitive: bool = False) -> bool:
-        """Search file content (slow - reads file from disk)."""
         try:
             path = entry.get_path(self._index)
             with open(path, 'r', encoding='utf-8', errors='ignore') as f:
-                content = f.read(1024 * 1024)  # Read up to 1MB
+                content = f.read(1024 * 1024)
                 if case_sensitive:
                     return search_text in content
                 return search_text.lower() in content.lower()

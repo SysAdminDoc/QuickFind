@@ -1,11 +1,13 @@
 """
 HTTP server for remote web browser access to QuickFind search.
 Provides a lightweight web interface for searching the index remotely.
+Supports optional token-based authentication.
 """
 
 import json
 import logging
 import os
+import secrets
 import threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
@@ -112,10 +114,13 @@ a:hover {{ text-decoration: underline; }}
 <script>
 let timer;
 const search = document.getElementById('search');
+const token = new URLSearchParams(window.location.search).get('token') || '';
 search.addEventListener('input', () => {{
     clearTimeout(timer);
     timer = setTimeout(() => {{
-        fetch('/api/search?q=' + encodeURIComponent(search.value))
+        const params = new URLSearchParams({{q: search.value}});
+        if (token) params.set('token', token);
+        fetch('/api/search?' + params)
             .then(r => r.json())
             .then(data => {{
                 document.getElementById('count').textContent = data.count + ' results';
@@ -142,13 +147,33 @@ class SearchHandler(BaseHTTPRequestHandler):
 
     file_index: FileIndex = None
     search_engine: SearchEngine = None
+    auth_token: str = ""
 
     def log_message(self, format, *args):
         logger.debug(format % args)
 
+    def _check_auth(self, params) -> bool:
+        """Validate token if authentication is enabled."""
+        if not self.auth_token:
+            return True
+        request_token = params.get('token', [''])[0]
+        if not request_token:
+            # Also check Authorization header
+            auth_header = self.headers.get('Authorization', '')
+            if auth_header.startswith('Bearer '):
+                request_token = auth_header[7:]
+        return secrets.compare_digest(request_token, self.auth_token)
+
     def do_GET(self):
         parsed = urlparse(self.path)
         params = parse_qs(parsed.query)
+
+        if not self._check_auth(params):
+            self.send_response(401)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+            return
 
         if parsed.path == '/api/search':
             self._handle_api_search(params)
@@ -236,7 +261,7 @@ class QuickFindHTTPServer:
     """Wrapper to run the HTTP server in a background thread."""
 
     def __init__(self, file_index: FileIndex, search_engine: SearchEngine,
-                 host: str = '127.0.0.1', port: int = 8080):
+                 host: str = '127.0.0.1', port: int = 8080, auth_token: str = ''):
         self._host = host
         self._port = port
         self._server: Optional[HTTPServer] = None
@@ -245,6 +270,7 @@ class QuickFindHTTPServer:
         # Inject dependencies into handler class
         SearchHandler.file_index = file_index
         SearchHandler.search_engine = search_engine
+        SearchHandler.auth_token = auth_token
 
     def start(self):
         """Start the HTTP server in a background thread."""
@@ -252,7 +278,8 @@ class QuickFindHTTPServer:
             self._server = HTTPServer((self._host, self._port), SearchHandler)
             self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
             self._thread.start()
-            logger.info(f"HTTP server started on {self._host}:{self._port}")
+            auth_status = " (auth enabled)" if SearchHandler.auth_token else ""
+            logger.info(f"HTTP server started on {self._host}:{self._port}{auth_status}")
         except Exception as e:
             logger.error(f"Failed to start HTTP server: {e}")
 
