@@ -11,7 +11,7 @@ from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QTabWidget, QWidget,
     QFormLayout, QCheckBox, QSpinBox, QComboBox, QLineEdit,
     QGroupBox, QPushButton, QDialogButtonBox, QLabel,
-    QListWidget, QListWidgetItem, QFileDialog
+    QListWidget, QListWidgetItem, QFileDialog, QMessageBox
 )
 from PyQt6.QtCore import Qt, pyqtSignal
 
@@ -22,13 +22,22 @@ logger = logging.getLogger('QuickFind.Settings')
 CONFIG_DIR = Path.home() / '.quickfind'
 SETTINGS_FILE = CONFIG_DIR / 'settings.json'
 
+DEFAULT_COLUMN_VISIBILITY = {
+    'name': True,
+    'path': True,
+    'size': True,
+    'modified': True,
+    'created': False,
+    'attributes': False,
+}
+
 
 @dataclass
 class Settings:
     """Application settings."""
     # Indexing
     index_on_startup: bool = True
-    index_drives: list[str] = field(default_factory=list)  # Empty = all NTFS
+    index_drives: list[str] = field(default_factory=list)  # Empty = all supported drives
     monitor_usn: bool = True
     usn_poll_interval_ms: int = 1000
     exclude_hidden: bool = False
@@ -51,11 +60,13 @@ class Settings:
     window_width: int = 1200
     window_height: int = 700
     start_maximized: bool = True
+    column_visibility: dict = field(default_factory=lambda: dict(DEFAULT_COLUMN_VISIBILITY))
 
     # Network
     enable_http_server: bool = False
     http_port: int = 8080
     http_bind: str = "127.0.0.1"
+    http_auth_token: str = ""
 
     # EFU file lists
     efu_files: list[str] = field(default_factory=list)
@@ -84,6 +95,22 @@ class Settings:
             logger.error(f"Failed to load settings: {e}")
             return Settings()
 
+    def export_to_file(self, path: str):
+        """Export settings to a JSON file."""
+        with open(path, 'w') as f:
+            json.dump(asdict(self), f, indent=2)
+
+    @staticmethod
+    def import_from_file(path: str) -> 'Settings':
+        """Import settings from a JSON file."""
+        with open(path, 'r') as f:
+            data = json.load(f)
+        s = Settings()
+        for k, v in data.items():
+            if hasattr(s, k):
+                setattr(s, k, v)
+        return s
+
 
 class SettingsDialog(QDialog):
     """Settings dialog with tabbed pages."""
@@ -105,7 +132,7 @@ class SettingsDialog(QDialog):
         tabs = QTabWidget()
         layout.addWidget(tabs)
 
-        # ── General Tab ─────────────────────────────────
+        # -- General Tab -----------------------------------
         general = QWidget()
         general_layout = QVBoxLayout(general)
 
@@ -156,7 +183,7 @@ class SettingsDialog(QDialog):
         general_layout.addStretch()
         tabs.addTab(general, "General")
 
-        # ── UI Tab ──────────────────────────────────────
+        # -- UI Tab ----------------------------------------
         ui = QWidget()
         ui_layout = QVBoxLayout(ui)
 
@@ -185,29 +212,45 @@ class SettingsDialog(QDialog):
         ui_form.addRow(self._remember_size)
 
         ui_layout.addWidget(ui_group)
+
+        # Column visibility group
+        col_group = QGroupBox("Column Visibility")
+        col_form = QFormLayout(col_group)
+
+        self._col_checks = {}
+        for col_name, default_vis in DEFAULT_COLUMN_VISIBILITY.items():
+            cb = QCheckBox(col_name.capitalize())
+            self._col_checks[col_name] = cb
+            col_form.addRow(cb)
+
+        ui_layout.addWidget(col_group)
         ui_layout.addStretch()
         tabs.addTab(ui, "UI")
 
-        # ── Drives Tab ──────────────────────────────────
+        # -- Drives Tab ------------------------------------
         drives_tab = QWidget()
         drives_layout = QVBoxLayout(drives_tab)
 
-        drives_label = QLabel("Drives to index (leave empty to auto-detect all NTFS drives):")
+        drives_label = QLabel("Drives to index (NTFS uses MFT, FAT/exFAT/ReFS uses directory walk):")
         drives_layout.addWidget(drives_label)
 
         self._drives_list = QListWidget()
         drives_layout.addWidget(self._drives_list)
 
-        # Populate with available drives
-        from core.ntfs import get_ntfs_drives
-        for d in get_ntfs_drives():
-            item = QListWidgetItem(f"{d}:")
+        # Populate with all supported drives
+        from core.ntfs import get_all_drives
+        for d in get_all_drives():
+            label = f"{d.letter}: [{d.filesystem}]"
+            if d.label:
+                label += f" {d.label}"
+            item = QListWidgetItem(label)
+            item.setData(Qt.ItemDataRole.UserRole, d.letter)
             item.setCheckState(Qt.CheckState.Checked)
             self._drives_list.addItem(item)
 
         tabs.addTab(drives_tab, "Drives")
 
-        # ── EFU Tab ─────────────────────────────────────
+        # -- EFU Tab ---------------------------------------
         efu_tab = QWidget()
         efu_layout = QVBoxLayout(efu_tab)
 
@@ -229,7 +272,7 @@ class SettingsDialog(QDialog):
 
         tabs.addTab(efu_tab, "File Lists")
 
-        # ── HTTP Server Tab ─────────────────────────────
+        # -- HTTP Server Tab -------------------------------
         http_tab = QWidget()
         http_layout = QVBoxLayout(http_tab)
 
@@ -246,11 +289,25 @@ class SettingsDialog(QDialog):
         self._http_bind = QLineEdit()
         http_form.addRow("Bind address:", self._http_bind)
 
+        self._http_auth_token = QLineEdit()
+        self._http_auth_token.setPlaceholderText("Leave empty to disable authentication")
+        http_form.addRow("Auth token:", self._http_auth_token)
+
         http_layout.addWidget(http_group)
         http_layout.addStretch()
         tabs.addTab(http_tab, "HTTP Server")
 
-        # ── Dialog buttons ──────────────────────────────
+        # -- Export/Import + Dialog buttons ----------------
+        bottom_layout = QHBoxLayout()
+
+        export_btn = QPushButton("Export Settings...")
+        export_btn.clicked.connect(self._export_settings)
+        import_btn = QPushButton("Import Settings...")
+        import_btn.clicked.connect(self._import_settings)
+        bottom_layout.addWidget(export_btn)
+        bottom_layout.addWidget(import_btn)
+        bottom_layout.addStretch()
+
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok |
             QDialogButtonBox.StandardButton.Cancel |
@@ -259,7 +316,9 @@ class SettingsDialog(QDialog):
         buttons.accepted.connect(self._apply_and_accept)
         buttons.rejected.connect(self.reject)
         buttons.button(QDialogButtonBox.StandardButton.Apply).clicked.connect(self._apply)
-        layout.addWidget(buttons)
+        bottom_layout.addWidget(buttons)
+
+        layout.addLayout(bottom_layout)
 
     def _load_values(self):
         s = self._settings
@@ -282,6 +341,12 @@ class SettingsDialog(QDialog):
         self._enable_http.setChecked(s.enable_http_server)
         self._http_port.setValue(s.http_port)
         self._http_bind.setText(s.http_bind)
+        self._http_auth_token.setText(s.http_auth_token)
+
+        # Column visibility
+        for col_name, cb in self._col_checks.items():
+            visible = s.column_visibility.get(col_name, DEFAULT_COLUMN_VISIBILITY.get(col_name, True))
+            cb.setChecked(visible)
 
         for path in s.efu_files:
             self._efu_list.addItem(path)
@@ -307,13 +372,20 @@ class SettingsDialog(QDialog):
         s.enable_http_server = self._enable_http.isChecked()
         s.http_port = self._http_port.value()
         s.http_bind = self._http_bind.text()
+        s.http_auth_token = self._http_auth_token.text()
+
+        # Column visibility
+        for col_name, cb in self._col_checks.items():
+            s.column_visibility[col_name] = cb.isChecked()
 
         # Drives
         drives = []
         for i in range(self._drives_list.count()):
             item = self._drives_list.item(i)
             if item.checkState() == Qt.CheckState.Checked:
-                drives.append(item.text().rstrip(':'))
+                letter = item.data(Qt.ItemDataRole.UserRole)
+                if letter:
+                    drives.append(letter)
         s.index_drives = drives
 
         # EFU files
@@ -339,6 +411,31 @@ class SettingsDialog(QDialog):
         row = self._efu_list.currentRow()
         if row >= 0:
             self._efu_list.takeItem(row)
+
+    def _export_settings(self):
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Export Settings", "quickfind_settings.json",
+            "JSON Files (*.json);;All Files (*)"
+        )
+        if path:
+            try:
+                self._apply()
+                self._settings.export_to_file(path)
+            except Exception as e:
+                QMessageBox.critical(self, "Export Failed", str(e))
+
+    def _import_settings(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Import Settings", "",
+            "JSON Files (*.json);;All Files (*)"
+        )
+        if path:
+            try:
+                imported = Settings.import_from_file(path)
+                self._settings = imported
+                self._load_values()
+            except Exception as e:
+                QMessageBox.critical(self, "Import Failed", str(e))
 
     def get_settings(self) -> Settings:
         return self._settings

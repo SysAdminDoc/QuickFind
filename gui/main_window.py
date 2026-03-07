@@ -1,5 +1,7 @@
 """
 QuickFind Main Window - Everything-compatible file search UI.
+v0.6.0: Search history/autocomplete, keyboard shortcuts, syntax help tooltip,
+         startup performance metrics, column visibility persistence.
 """
 
 import os
@@ -9,9 +11,10 @@ from typing import Optional
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLineEdit,
     QSplitter, QStatusBar, QLabel, QMenuBar, QMenu, QComboBox,
-    QProgressBar, QApplication, QMessageBox
+    QProgressBar, QApplication, QMessageBox, QTabWidget, QTabBar,
+    QCompleter, QToolTip
 )
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QSize, QThread, pyqtSlot
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QSize, QThread, pyqtSlot, QStringListModel, QPoint
 from PyQt6.QtGui import (
     QAction, QIcon, QPixmap, QPainter, QColor, QFont, QKeySequence,
     QCloseEvent
@@ -34,8 +37,26 @@ from core.hidden_paths import HiddenPathsManager
 
 logger = logging.getLogger('QuickFind.MainWindow')
 
-VERSION = "0.2.0"
+VERSION = "0.6.0"
 APP_TITLE = f"QuickFind v{VERSION}"
+
+# Search syntax help text
+SYNTAX_HELP = """Search Syntax:
+  *.ext           Extension filter (e.g., *.py)
+  ext:pdf         Extension modifier
+  size:>1mb       Size filter (kb, mb, gb)
+  dm:today        Date modified (today, yesterday, thisweek, thismonth)
+  dc:>2024-01-01  Date created range
+  parent:folder   Parent directory name
+  len:>10         Filename length
+  attrib:H        Attribute filter (R,H,S,D,A)
+  dupe:name       Find duplicates by name/size
+  regex:pattern   Regex search
+  content:text    Content search (slow)
+  "exact match"   Quoted exact phrase
+  term1 term2     AND (both must match)
+  term1 | term2   OR (either matches)
+  !term           NOT (exclude matches)"""
 
 
 class SearchWorker(QThread):
@@ -65,6 +86,15 @@ class SearchWorker(QThread):
             self.results_ready.emit(results)
 
 
+class SearchTab:
+    """State for a single search tab."""
+    def __init__(self, file_index: FileIndex):
+        self.results_view = ResultsView(file_index)
+        self.query = ""
+        self.filter_index = 0
+        self.search_worker: Optional[SearchWorker] = None
+
+
 class MainWindow(QMainWindow):
     """Main application window."""
 
@@ -86,6 +116,14 @@ class MainWindow(QMainWindow):
         self._search_timer.setInterval(self._settings.search_delay_ms)
         self._search_timer.timeout.connect(self._execute_search)
 
+        # Live status bar refresh timer
+        self._status_refresh_timer = QTimer()
+        self._status_refresh_timer.setInterval(5000)  # Update every 5 seconds
+        self._status_refresh_timer.timeout.connect(self._refresh_status_bar)
+
+        # Search history completer model
+        self._history_model = QStringListModel()
+
         self._setup_ui()
         self._setup_menus()
         self._setup_tray()
@@ -99,6 +137,12 @@ class MainWindow(QMainWindow):
         # Start indexing — try cache first for instant startup
         if self._settings.index_on_startup:
             QTimer.singleShot(100, self._start_indexing_with_cache)
+
+        # Start live status bar updates
+        self._status_refresh_timer.start()
+
+        # Load search history for autocomplete
+        self._refresh_search_history()
 
     def _setup_ui(self):
         """Build the UI layout."""
@@ -134,13 +178,60 @@ class MainWindow(QMainWindow):
         self._build_filter_combo()
         search_layout.addWidget(self._filter_combo)
 
-        # Search input (fills remaining space)
+        # Search input (fills remaining space) with autocomplete
         self._search_input = QLineEdit()
         self._search_input.setFixedHeight(22)
         self._search_input.setClearButtonEnabled(True)
+        self._search_input.setPlaceholderText("Search files and folders...")
+        self._search_input.setToolTip(SYNTAX_HELP)
+
+        # Autocomplete from search history
+        self._completer = QCompleter()
+        self._completer.setModel(self._history_model)
+        self._completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        self._completer.setFilterMode(Qt.MatchFlag.MatchContains)
+        self._completer.setMaxVisibleItems(10)
+        self._completer.setCompletionMode(QCompleter.CompletionMode.PopupCompletion)
+        self._search_input.setCompleter(self._completer)
+
         search_layout.addWidget(self._search_input)
 
         main_layout.addWidget(search_row)
+
+        # ── Tab widget for multi-tab search ──
+        self._tab_widget = QTabWidget()
+        self._tab_widget.setTabsClosable(True)
+        self._tab_widget.setMovable(True)
+        self._tab_widget.setDocumentMode(True)
+        self._tab_widget.tabCloseRequested.connect(self._close_tab)
+        self._tab_widget.currentChanged.connect(self._on_tab_changed)
+        self._tab_widget.setStyleSheet(f"""
+            QTabWidget::pane {{
+                border: none;
+            }}
+            QTabBar::tab {{
+                background: {MOCHA['surface0']};
+                color: {MOCHA['subtext0']};
+                padding: 4px 12px;
+                border: none;
+                border-right: 1px solid {MOCHA['base']};
+                min-width: 80px;
+            }}
+            QTabBar::tab:selected {{
+                background: {MOCHA['base']};
+                color: {MOCHA['text']};
+            }}
+            QTabBar::tab:hover {{
+                background: {MOCHA['surface1']};
+            }}
+            QTabBar::close-button {{
+                image: none;
+                subcontrol-position: right;
+            }}
+            QTabBar::close-button:hover {{
+                background: {MOCHA['surface2']};
+            }}
+        """)
 
         # ── Main content area (results dominate) ──
         self._splitter = QSplitter(Qt.Orientation.Horizontal)
@@ -151,15 +242,16 @@ class MainWindow(QMainWindow):
         self._bookmarks_panel.setMaximumWidth(300)
         self._bookmarks_panel.hide()
 
-        # Results view (center — takes all space)
-        self._results_view = ResultsView(self._file_index)
+        # First search tab
+        self._tabs: list[SearchTab] = []
+        self._add_new_tab("Search")
 
         # Preview pane (right, hidden by default)
         self._preview_pane = PreviewPane(self._file_index)
         self._preview_pane.setMinimumWidth(200)
 
         self._splitter.addWidget(self._bookmarks_panel)
-        self._splitter.addWidget(self._results_view)
+        self._splitter.addWidget(self._tab_widget)
         self._splitter.addWidget(self._preview_pane)
         self._splitter.setStretchFactor(0, 0)
         self._splitter.setStretchFactor(1, 1)
@@ -168,7 +260,7 @@ class MainWindow(QMainWindow):
 
         main_layout.addWidget(self._splitter, 1)
 
-        # ── Status bar (compact, Everything-style) ──
+        # ── Status bar (compact, Everything-style with live stats) ──
         self._status_bar = QStatusBar()
         self._status_bar.setSizeGripEnabled(True)
         self.setStatusBar(self._status_bar)
@@ -180,6 +272,20 @@ class MainWindow(QMainWindow):
         self._status_label = QLabel("")
         self._status_label.setStyleSheet(f"color: {MOCHA['overlay0']}; font-size: 11px;")
         self._status_bar.addWidget(self._status_label, 1)
+
+        # Live DB stats
+        self._db_stats_label = QLabel("")
+        self._db_stats_label.setStyleSheet(f"color: {MOCHA['overlay1']}; font-size: 11px; padding: 0 6px;")
+        self._status_bar.addPermanentWidget(self._db_stats_label)
+
+        # Startup performance metrics
+        self._perf_label = QLabel("")
+        self._perf_label.setStyleSheet(f"color: {MOCHA['overlay1']}; font-size: 11px; padding: 0 6px;")
+        self._status_bar.addPermanentWidget(self._perf_label)
+
+        self._last_update_label = QLabel("")
+        self._last_update_label.setStyleSheet(f"color: {MOCHA['overlay1']}; font-size: 11px; padding: 0 6px;")
+        self._status_bar.addPermanentWidget(self._last_update_label)
 
         self._index_status = QLabel("")
         self._index_status.setStyleSheet(f"color: {MOCHA['subtext0']}; font-size: 11px; padding: 0 4px;")
@@ -195,6 +301,69 @@ class MainWindow(QMainWindow):
         # Keep FilterBar reference for compatibility (hidden, manages custom filters)
         self._filter_bar = FilterBar()
         self._filter_bar.hide()
+
+    # ── Tab management ────────────────────────────────
+
+    def _add_new_tab(self, title: str = "Search") -> SearchTab:
+        tab = SearchTab(self._file_index)
+        self._tabs.append(tab)
+        idx = self._tab_widget.addTab(tab.results_view, title)
+
+        # Connect signals for the new tab's results view
+        tab.results_view.item_activated.connect(self._on_item_activated)
+        tab.results_view.selection_changed.connect(self._on_selection_changed)
+        tab.results_view.open_folder_requested.connect(self._on_open_folder)
+        tab.results_view.delete_requested.connect(self._on_delete_requested)
+        tab.results_view.rename_requested.connect(self._on_rename_requested)
+        tab.results_view.column_visibility_changed.connect(self._on_column_visibility_changed)
+        tab.results_view.table_view.setContextMenuPolicy(
+            Qt.ContextMenuPolicy.CustomContextMenu
+        )
+        tab.results_view.table_view.customContextMenuRequested.connect(
+            self._show_context_menu
+        )
+
+        self._tab_widget.setCurrentIndex(idx)
+        return tab
+
+    def _close_tab(self, index: int):
+        if self._tab_widget.count() <= 1:
+            return  # Don't close the last tab
+        tab = self._tabs[index]
+        if tab.search_worker and tab.search_worker.isRunning():
+            tab.search_worker.cancel()
+            tab.search_worker.wait(1000)
+        self._tab_widget.removeTab(index)
+        self._tabs.pop(index)
+
+    def _on_tab_changed(self, index: int):
+        if index < 0 or index >= len(self._tabs):
+            return
+        tab = self._tabs[index]
+        # Restore search input and filter for this tab
+        self._search_input.blockSignals(True)
+        self._search_input.setText(tab.query)
+        self._search_input.blockSignals(False)
+        self._filter_combo.blockSignals(True)
+        self._filter_combo.setCurrentIndex(tab.filter_index)
+        self._filter_combo.blockSignals(False)
+        # Update result count
+        count = tab.results_view.result_count
+        self._result_count_label.setText(f"{count:,} object{'s' if count != 1 else ''}")
+
+    def _current_tab(self) -> Optional[SearchTab]:
+        idx = self._tab_widget.currentIndex()
+        if 0 <= idx < len(self._tabs):
+            return self._tabs[idx]
+        return None
+
+    @property
+    def _results_view(self) -> ResultsView:
+        """Get the current tab's results view (backwards-compatible property)."""
+        tab = self._current_tab()
+        if tab:
+            return tab.results_view
+        return self._tabs[0].results_view if self._tabs else None
 
     def _build_filter_combo(self):
         """Populate the filter dropdown with built-in and custom filters."""
@@ -258,6 +427,14 @@ class MainWindow(QMainWindow):
         new_window.setShortcut(QKeySequence("Ctrl+N"))
         new_window.triggered.connect(self._new_window)
 
+        new_tab = file_menu.addAction("New &Tab")
+        new_tab.setShortcut(QKeySequence("Ctrl+T"))
+        new_tab.triggered.connect(lambda: self._add_new_tab("Search"))
+
+        close_tab = file_menu.addAction("&Close Tab")
+        close_tab.setShortcut(QKeySequence("Ctrl+W"))
+        close_tab.triggered.connect(lambda: self._close_tab(self._tab_widget.currentIndex()))
+
         file_menu.addSeparator()
 
         open_efu = file_menu.addAction("Open File &List...")
@@ -317,6 +494,11 @@ class MainWindow(QMainWindow):
         self._match_whole_action.setCheckable(True)
         self._match_whole_action.setShortcut(QKeySequence("Alt+W"))
         self._match_whole_action.toggled.connect(lambda: self._trigger_search())
+
+        search_menu.addSeparator()
+
+        clear_history = search_menu.addAction("Clear Search &History")
+        clear_history.triggered.connect(self._clear_search_history)
 
         search_menu.addSeparator()
 
@@ -396,6 +578,11 @@ class MainWindow(QMainWindow):
         # ── Help menu ───────────────────────────────
         help_menu = menubar.addMenu("&Help")
 
+        syntax_help = help_menu.addAction("Search &Syntax")
+        syntax_help.triggered.connect(self._show_syntax_help)
+
+        help_menu.addSeparator()
+
         about_action = help_menu.addAction("&About QuickFind")
         about_action.triggered.connect(self._show_about)
 
@@ -412,16 +599,6 @@ class MainWindow(QMainWindow):
         # Search
         self._search_input.textChanged.connect(self._on_search_text_changed)
         self._filter_combo.currentIndexChanged.connect(self._on_filter_changed)
-
-        # Results
-        self._results_view.item_activated.connect(self._on_item_activated)
-        self._results_view.selection_changed.connect(self._on_selection_changed)
-        self._results_view.table_view.setContextMenuPolicy(
-            Qt.ContextMenuPolicy.CustomContextMenu
-        )
-        self._results_view.table_view.customContextMenuRequested.connect(
-            self._show_context_menu
-        )
 
         # Index
         self._file_index.indexing_started.connect(self._on_indexing_started)
@@ -445,14 +622,30 @@ class MainWindow(QMainWindow):
         self._match_case_action.setChecked(s.default_match_case)
         self._regex_action.setChecked(s.default_regex)
 
+        # Restore column visibility
+        if hasattr(s, 'column_visibility') and s.column_visibility:
+            for tab in self._tabs:
+                tab.results_view.table_view.apply_column_visibility(s.column_visibility)
+
     # ── Search ─────────────────────────────────────────
 
     def _on_search_text_changed(self, text: str):
         """Debounced search trigger."""
+        # Save query to current tab
+        tab = self._current_tab()
+        if tab:
+            tab.query = text
+            # Update tab title
+            idx = self._tab_widget.currentIndex()
+            title = text[:20] if text.strip() else "Search"
+            self._tab_widget.setTabText(idx, title)
         self._search_timer.start()
 
     def _on_filter_changed(self, index: int):
         """Re-execute search when filter changes."""
+        tab = self._current_tab()
+        if tab:
+            tab.filter_index = index
         self._trigger_search()
 
     def _trigger_search(self):
@@ -462,13 +655,18 @@ class MainWindow(QMainWindow):
 
     def _execute_search(self):
         """Execute the search in a background thread."""
+        tab = self._current_tab()
+        if not tab:
+            return
+
         # Reset debounce interval back to normal for user-typed searches
         self._search_timer.setInterval(self._settings.search_delay_ms)
 
-        if self._search_worker and self._search_worker.isRunning():
-            self._search_worker.cancel()
-            self._search_worker.wait(3000)
-            if self._search_worker.isRunning():
+        # Cancel any running search for this tab
+        if tab.search_worker and tab.search_worker.isRunning():
+            tab.search_worker.cancel()
+            tab.search_worker.wait(3000)
+            if tab.search_worker.isRunning():
                 logger.warning("Previous search worker still running, skipping new search")
                 return
 
@@ -500,17 +698,26 @@ class MainWindow(QMainWindow):
                     exclude_paths=merged,
                 )
 
-        self._search_worker = SearchWorker(
+        # Update result highlighting
+        tab.results_view.set_highlight(query)
+
+        worker = SearchWorker(
             self._search_engine, query, active_filter, options
         )
-        self._search_worker.results_ready.connect(self._on_search_results)
-        self._search_worker.start()
+        worker.results_ready.connect(self._on_search_results)
+        tab.search_worker = worker
+        self._search_worker = worker  # Keep reference for backwards compat
+        worker.start()
 
     @pyqtSlot(list)
     def _on_search_results(self, results: list):
         """Handle search results from worker thread."""
+        tab = self._current_tab()
+        if not tab:
+            return
+
         logger.debug(f"Search returned {len(results)} results")
-        self._results_view.set_results(results)
+        tab.results_view.set_results(results)
         count = len(results)
         self._result_count_label.setText(f"{count:,} object{'s' if count != 1 else ''}")
 
@@ -518,8 +725,29 @@ class MainWindow(QMainWindow):
         query = self._search_input.text().strip()
         if query:
             self.setWindowTitle(f"{query} - {count:,} objects - {APP_TITLE}")
+            # Save to search history
+            from core.cache import add_search_history
+            add_search_history(query, count)
+            # Refresh autocomplete
+            self._refresh_search_history()
         else:
             self.setWindowTitle(f"{count:,} objects - {APP_TITLE}")
+
+    def _refresh_search_history(self):
+        """Refresh the search history autocomplete list."""
+        from core.cache import get_search_history
+        try:
+            history = get_search_history(limit=50)
+            self._history_model.setStringList(history)
+        except Exception:
+            pass
+
+    def _clear_search_history(self):
+        """Clear all search history."""
+        from core.cache import clear_search_history
+        clear_search_history()
+        self._history_model.setStringList([])
+        self._status_label.setText("Search history cleared")
 
     # ── Indexing ───────────────────────────────────────
 
@@ -530,6 +758,7 @@ class MainWindow(QMainWindow):
 
         drives = self._settings.index_drives if self._settings.index_drives else None
         self._index_worker = IndexWorker(self._file_index, drives, use_cache=True)
+        self._index_worker.cache_loaded.connect(self._on_cache_loaded)
         self._index_worker.finished.connect(self._on_index_worker_done)
         self._index_worker.start()
 
@@ -558,6 +787,18 @@ class MainWindow(QMainWindow):
         )
         self._status_label.setText("")
 
+        # Show startup performance metric
+        if stats.entries_per_sec > 0:
+            self._perf_label.setText(f"{stats.entries_per_sec:,.0f} entries/sec")
+        else:
+            self._perf_label.setText("")
+
+        # Show non-admin mode indicator
+        if not self._file_index.is_admin_mode:
+            self._status_label.setText("Running in non-admin mode (os.scandir fallback)")
+
+        self._refresh_status_bar()
+
         # Load EFU files
         for efu_path in self._settings.efu_files:
             if os.path.exists(efu_path):
@@ -569,18 +810,29 @@ class MainWindow(QMainWindow):
                     self._file_index._entries[drive][entry.frn] = entry
                 self._file_index._rebuild_flat_list()
 
-        # Save index to cache for instant startup next time
-        self._file_index.save_to_cache()
-
-        # Start USN monitoring
+        # Start USN monitoring (no-op if already started by _on_cache_loaded)
         if self._settings.monitor_usn:
             self._file_index.start_monitoring()
 
         # Run initial search (show all)
         self._trigger_search()
 
+    def _on_cache_loaded(self):
+        """Cache loaded — start USN monitoring early so catchup changes get tracked."""
+        if self._settings.monitor_usn:
+            self._file_index.start_monitoring()
+
     def _on_index_worker_done(self):
-        pass
+        """Worker finished (either full index or cache+USN catchup)."""
+        # Save updated cache after USN catchup
+        try:
+            self._file_index.save_to_cache()
+        except Exception:
+            pass
+        # Refresh results to pick up any USN changes
+        if self._search_input.text().strip() or self._file_index.all_entries:
+            self._trigger_search()
+        self._refresh_status_bar()
 
     def _on_index_updated(self, count: int):
         # Debounce: don't re-search on every USN tick
@@ -591,14 +843,69 @@ class MainWindow(QMainWindow):
             self._search_timer.setInterval(5000)
             self._search_timer.start()
 
+    # ── Live Status Bar ───────────────────────────────
+
+    def _refresh_status_bar(self):
+        """Update the live status bar with DB stats."""
+        from core.cache import db_count, db_size_bytes
+
+        try:
+            entry_count = db_count()
+            db_size = db_size_bytes()
+
+            if entry_count > 0:
+                if db_size >= 1024 * 1024:
+                    size_str = f"{db_size / (1024 * 1024):.1f} MB"
+                elif db_size >= 1024:
+                    size_str = f"{db_size // 1024} KB"
+                else:
+                    size_str = f"{db_size} B"
+                self._db_stats_label.setText(f"DB: {entry_count:,} entries ({size_str})")
+            else:
+                self._db_stats_label.setText("")
+
+            if self._file_index.stats.last_update:
+                self._last_update_label.setText(
+                    f"Updated: {self._file_index.stats.last_update.strftime('%H:%M:%S')}"
+                )
+            else:
+                self._last_update_label.setText("")
+        except Exception:
+            pass
+
     # ── Results interaction ─────────────────────────────
 
     def _on_item_activated(self, entry: FileEntry):
-        """Open a file/folder when double-clicked."""
+        """Open a file/folder when double-clicked or Enter pressed."""
         path = entry.get_path(self._file_index)
         try:
             os.startfile(path)
         except OSError:
+            pass
+
+    def _on_open_folder(self, entry: FileEntry):
+        """Open containing folder (Ctrl+Enter)."""
+        path = entry.get_path(self._file_index)
+        folder = os.path.dirname(path) if not entry.is_dir else path
+        try:
+            os.startfile(folder)
+        except OSError:
+            pass
+
+    def _on_delete_requested(self, entries):
+        """Delete selected entries to recycle bin."""
+        from gui.context_menu import recycle_file
+        for entry in entries:
+            path = entry.get_path(self._file_index)
+            recycle_file(path)
+
+    def _on_rename_requested(self, entry: FileEntry):
+        """Rename a file (F2). Opens explorer rename dialog."""
+        path = entry.get_path(self._file_index)
+        try:
+            import subprocess
+            subprocess.Popen(['explorer', '/select,', path])
+        except Exception:
             pass
 
     def _on_selection_changed(self, entry: Optional[FileEntry]):
@@ -643,6 +950,13 @@ class MainWindow(QMainWindow):
         self._search_input.setFocus()
         self._search_input.selectAll()
 
+    # ── Column visibility ────────────────────────────
+
+    def _on_column_visibility_changed(self, visibility: dict):
+        """Persist column visibility to settings."""
+        self._settings.column_visibility = visibility
+        self._settings.save()
+
     # ── View toggles ───────────────────────────────────
 
     def _set_view_mode(self, mode: str):
@@ -666,6 +980,16 @@ class MainWindow(QMainWindow):
 
     def _toggle_status_bar(self, show: bool):
         self._status_bar.setVisible(show)
+
+    # ── Syntax Help ───────────────────────────────────
+
+    def _show_syntax_help(self):
+        """Show search syntax help dialog."""
+        QMessageBox.information(
+            self, "Search Syntax Help",
+            f"<pre style='font-family: Consolas, monospace; font-size: 12px;'>"
+            f"{SYNTAX_HELP}</pre>"
+        )
 
     # ── Bookmarks ──────────────────────────────────────
 
@@ -847,6 +1171,8 @@ class MainWindow(QMainWindow):
         self._search_input.selectAll()
 
     def _quit(self):
+        # Stop status bar timer
+        self._status_refresh_timer.stop()
         # Save cache before shutdown for instant next startup
         try:
             self._file_index.save_to_cache()
@@ -862,11 +1188,12 @@ class MainWindow(QMainWindow):
         QApplication.quit()
 
     def _show_about(self):
+        admin_mode = "MFT + USN Journal" if self._file_index.is_admin_mode else "os.scandir (non-admin)"
         QMessageBox.about(
             self, "About QuickFind",
             f"<h3>QuickFind v{VERSION}</h3>"
             f"<p>Lightning-fast file search for Windows.</p>"
-            f"<p>Powered by NTFS MFT + USN Journal.</p>"
+            f"<p>Engine: {admin_mode}</p>"
             f"<p style='color: {MOCHA['subtext0']}'>Built with Python + PyQt6</p>"
         )
 

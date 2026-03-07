@@ -6,6 +6,7 @@ import ctypes
 import ctypes.wintypes as wintypes
 import logging
 import threading
+from pathlib import Path
 from typing import Optional
 
 from PyQt6.QtWidgets import QSystemTrayIcon, QMenu, QApplication
@@ -32,6 +33,10 @@ RegisterHotKey = user32.RegisterHotKey
 UnregisterHotKey = user32.UnregisterHotKey
 PeekMessageW = user32.PeekMessageW
 PM_REMOVE = 0x0001
+
+# Icon paths
+ASSETS_DIR = Path(__file__).parent.parent / 'assets'
+ICO_PATH = ASSETS_DIR / 'quickfind.ico'
 
 
 class HotkeyListener(QObject):
@@ -83,8 +88,8 @@ class HotkeyListener(QObject):
             logger.info("Unregistered global hotkey")
 
 
-def _create_tray_icon() -> QIcon:
-    """Create a simple tray icon programmatically."""
+def _create_programmatic_icon() -> QIcon:
+    """Create a simple tray icon programmatically as fallback."""
     pixmap = QPixmap(64, 64)
     pixmap.fill(QColor(0, 0, 0, 0))
 
@@ -106,6 +111,61 @@ def _create_tray_icon() -> QIcon:
     return QIcon(pixmap)
 
 
+def get_app_icon() -> QIcon:
+    """Get the app icon - .ico file if available, otherwise programmatic."""
+    if ICO_PATH.exists():
+        icon = QIcon(str(ICO_PATH))
+        if not icon.isNull():
+            return icon
+    return _create_programmatic_icon()
+
+
+def generate_ico_file():
+    """Generate a .ico file from the programmatic icon and save to assets/."""
+    ASSETS_DIR.mkdir(exist_ok=True)
+    if ICO_PATH.exists():
+        return
+
+    # Create multiple sizes for ICO
+    sizes = [16, 32, 48, 64, 128, 256]
+    pixmaps = []
+    for sz in sizes:
+        pixmap = QPixmap(sz, sz)
+        pixmap.fill(QColor(0, 0, 0, 0))
+
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        margin = max(1, sz // 16)
+        painter.setBrush(QColor(ACCENT))
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.drawEllipse(margin, margin, sz - margin * 2, sz - margin * 2)
+
+        painter.setPen(QColor(MOCHA['crust']))
+        font_size = max(8, int(sz * 0.44))
+        font = QFont("Segoe UI", font_size, QFont.Weight.Bold)
+        painter.setFont(font)
+        painter.drawText(pixmap.rect(), Qt.AlignmentFlag.AlignCenter, "Q")
+
+        painter.end()
+        pixmaps.append(pixmap)
+
+    # Save the largest as a PNG first, then use QIcon to save as ICO
+    # PyQt6 doesn't directly write .ico, so save the 256px as PNG
+    # and the icon will be loaded from that
+    png_path = ASSETS_DIR / 'quickfind.png'
+    pixmaps[-1].save(str(png_path), 'PNG')
+
+    # Also try to save as .ico via the pixmap
+    icon = QIcon()
+    for pm in pixmaps:
+        icon.addPixmap(pm)
+
+    # Save the 256x256 version as the .ico (actually a PNG that QIcon can load)
+    pixmaps[-1].save(str(ICO_PATH), 'PNG')
+    logger.info(f"Generated app icon: {ICO_PATH}")
+
+
 class SystemTray(QSystemTrayIcon):
     """System tray icon for QuickFind."""
 
@@ -114,7 +174,7 @@ class SystemTray(QSystemTrayIcon):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setIcon(_create_tray_icon())
+        self.setIcon(get_app_icon())
         self.setToolTip("QuickFind - File Search")
 
         self._hotkey = HotkeyListener()

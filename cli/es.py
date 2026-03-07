@@ -17,6 +17,7 @@ Options:
     -o, --offset <n>     Skip first N results
     --csv                Output as CSV
     --json               Output as JSON
+    --reindex            Force full reindex (ignore cache)
     -h, --help           Show this help
 
 Examples:
@@ -36,9 +37,10 @@ import time
 # Add parent directory to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from core.ntfs import get_ntfs_drives
+from core.ntfs import get_all_drives
 from core.index import FileIndex, FileEntry
 from core.search import SearchEngine, SearchOptions, SortField, SortOrder
+from core.cache import load_cache, DB_PATH
 
 
 def parse_args():
@@ -63,6 +65,7 @@ def parse_args():
     parser.add_argument('--json', action='store_true', help='JSON output')
     parser.add_argument('--drives', type=str, help='Comma-separated drive letters (e.g., C,D)')
     parser.add_argument('--no-index-time', action='store_true', help='Hide indexing time')
+    parser.add_argument('--reindex', action='store_true', help='Force full reindex (ignore cache)')
 
     return parser.parse_args()
 
@@ -76,24 +79,48 @@ def main():
         print("Try 'es --help' for more information.", file=sys.stderr)
         sys.exit(1)
 
-    # Index
     file_index = FileIndex()
 
     drives = None
     if args.drives:
         drives = [d.strip().upper() for d in args.drives.split(',')]
 
-    if not args.no_index_time:
-        print("Indexing...", file=sys.stderr, end='', flush=True)
+    # Try loading from DB cache first for instant results
+    cache_loaded = False
+    if not args.reindex and DB_PATH.exists():
+        if not args.no_index_time:
+            print("Loading cache...", file=sys.stderr, end='', flush=True)
+        start = time.perf_counter()
+        cached = load_cache()
+        load_time = time.perf_counter() - start
 
-    start = time.perf_counter()
-    file_index.index_all_drives(drives)
-    index_time = time.perf_counter() - start
+        if cached:
+            for entry in cached:
+                file_index._entries[entry.frn] = entry
+                if entry.drive not in file_index._drive_entries:
+                    file_index._drive_entries[entry.drive] = {}
+                file_index._drive_entries[entry.drive][entry.frn] = entry
+            cache_loaded = True
+            if not args.no_index_time:
+                print(f" {len(cached):,} entries in {load_time:.2f}s (cached)",
+                      file=sys.stderr)
+        else:
+            if not args.no_index_time:
+                print(" empty, will reindex", file=sys.stderr)
 
-    if not args.no_index_time:
-        stats = file_index.stats
-        print(f" {stats.total_files + stats.total_folders:,} entries in {index_time:.1f}s",
-              file=sys.stderr)
+    # Fall back to full indexing if cache miss or --reindex
+    if not cache_loaded:
+        if not args.no_index_time:
+            print("Indexing...", file=sys.stderr, end='', flush=True)
+
+        start = time.perf_counter()
+        file_index.index_all_drives(drives)
+        index_time = time.perf_counter() - start
+
+        if not args.no_index_time:
+            stats = file_index.stats
+            print(f" {stats.total_files + stats.total_folders:,} entries in {index_time:.1f}s",
+                  file=sys.stderr)
 
     # Search
     sort_map = {
