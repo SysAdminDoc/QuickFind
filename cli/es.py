@@ -40,7 +40,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from core.ntfs import get_all_drives
 from core.index import FileIndex, FileEntry
 from core.search import SearchEngine, SearchOptions, SortField, SortOrder
-from core.cache import load_cache, DB_PATH
+from core.cache import DB_FILE, load_entries_from_cache, close_all_connections
 
 
 def parse_args():
@@ -87,26 +87,29 @@ def main():
 
     # Try loading from DB cache first for instant results
     cache_loaded = False
-    if not args.reindex and DB_PATH.exists():
+    if not args.reindex and DB_FILE.exists():
         if not args.no_index_time:
             print("Loading cache...", file=sys.stderr, end='', flush=True)
         start = time.perf_counter()
-        cached = load_cache()
-        load_time = time.perf_counter() - start
 
-        if cached:
-            for entry in cached:
-                file_index._entries[entry.frn] = entry
-                if entry.drive not in file_index._drive_entries:
-                    file_index._drive_entries[entry.drive] = {}
-                file_index._drive_entries[entry.drive][entry.frn] = entry
-            cache_loaded = True
+        try:
+            all_entries, drive_entries = load_entries_from_cache()
+            load_time = time.perf_counter() - start
+
+            if all_entries:
+                # Populate the FileIndex from cached data
+                file_index._entries = drive_entries
+                file_index._all_entries = all_entries
+                cache_loaded = True
+                if not args.no_index_time:
+                    print(f" {len(all_entries):,} entries in {load_time:.2f}s (cached)",
+                          file=sys.stderr)
+            else:
+                if not args.no_index_time:
+                    print(" empty, will reindex", file=sys.stderr)
+        except Exception as e:
             if not args.no_index_time:
-                print(f" {len(cached):,} entries in {load_time:.2f}s (cached)",
-                      file=sys.stderr)
-        else:
-            if not args.no_index_time:
-                print(" empty, will reindex", file=sys.stderr)
+                print(f" failed ({e}), will reindex", file=sys.stderr)
 
     # Fall back to full indexing if cache miss or --reindex
     if not cache_loaded:
@@ -159,6 +162,7 @@ def main():
         _output_text(results, file_index)
 
     file_index.shutdown()
+    close_all_connections()
 
 
 def _output_text(results, index):

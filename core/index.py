@@ -23,6 +23,7 @@ from PyQt6.QtCore import QObject, pyqtSignal, QThread, QTimer
 from core.ntfs import (
     NTFSVolume, FileRecord, USNRecord, get_ntfs_drives, get_all_drives, DriveInfo,
     FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_ARCHIVE,
+    FILE_ATTRIBUTE_HIDDEN, FILE_ATTRIBUTE_SYSTEM,
     USN_REASON_FILE_CREATE, USN_REASON_FILE_DELETE,
     USN_REASON_RENAME_OLD_NAME, USN_REASON_RENAME_NEW_NAME,
     USN_REASON_CLOSE, USN_REASON_BASIC_INFO_CHANGE,
@@ -148,6 +149,11 @@ class FileIndex(QObject):
         self._cancel_flag = False
         self._next_synthetic_frn = self._SYNTHETIC_FRN_BASE
         self._admin_mode: bool = True  # Assume admin; set False if MFT access fails
+
+        # Filtering options (set from settings before indexing)
+        self._exclude_hidden: bool = False
+        self._exclude_system: bool = False
+        self._usn_poll_interval_ms: int = 1000
 
         # Deferred path resolution queue
         self._path_resolve_queue: deque[FileEntry] = deque()
@@ -688,6 +694,14 @@ class FileIndex(QObject):
         )
         self.indexing_complete.emit(self._stats)
 
+    def _should_exclude(self, entry: FileEntry) -> bool:
+        """Check if an entry should be excluded based on attribute filters."""
+        if self._exclude_hidden and (entry.attributes & FILE_ATTRIBUTE_HIDDEN):
+            return True
+        if self._exclude_system and (entry.attributes & FILE_ATTRIBUTE_SYSTEM):
+            return True
+        return False
+
     def _rebuild_flat_list(self):
         """Rebuild the flat list of all entries for searching.
         Builds into a new list first to avoid a window where all_entries is empty.
@@ -697,7 +711,8 @@ class FileIndex(QObject):
             for drive_entries in self._entries.values():
                 for frn, entry in drive_entries.items():
                     if frn != NTFS_ROOT_FRN and entry.name:
-                        new_list.append(entry)
+                        if not self._should_exclude(entry):
+                            new_list.append(entry)
             self._all_entries = new_list
 
     def start_monitoring(self):
@@ -705,10 +720,10 @@ class FileIndex(QObject):
         if self._monitor_thread and self._monitor_thread.isRunning():
             pass  # Already running
         else:
-            self._monitor_thread = USNMonitorThread(self)
+            self._monitor_thread = USNMonitorThread(self, poll_interval_ms=self._usn_poll_interval_ms)
             self._monitor_thread.changes_detected.connect(self._apply_usn_changes)
             self._monitor_thread.start()
-            logger.info("USN journal monitoring started")
+            logger.info(f"USN journal monitoring started (poll interval: {self._usn_poll_interval_ms}ms)")
 
         # Start periodic rescan for non-NTFS drives
         if self._walked_drives:
@@ -825,12 +840,19 @@ class FileIndex(QObject):
                         modified += 1
                         db_updates.append((existing, ""))
 
-        # Single-transaction batch DB write
+            # Rebuild flat list under same lock to prevent concurrent modification
+            if added or removed:
+                new_list = []
+                for de in self._entries.values():
+                    for frn, entry in de.items():
+                        if frn != NTFS_ROOT_FRN and entry.name:
+                            if not self._should_exclude(entry):
+                                new_list.append(entry)
+                self._all_entries = new_list
+
+        # Single-transaction batch DB write (outside lock to avoid holding it during I/O)
         if db_inserts or db_deletes or db_updates:
             db_batch_apply(db_inserts, db_deletes, db_updates)
-
-        if added or removed:
-            self._rebuild_flat_list()
 
         total_changes = added + removed + modified
         if total_changes > 0:

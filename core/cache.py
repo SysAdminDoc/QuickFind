@@ -783,3 +783,77 @@ def cache_age_seconds() -> float:
     if OLD_CACHE_FILE.exists():
         return time.time() - OLD_CACHE_FILE.stat().st_mtime
     return float('inf')
+
+
+def close_all_connections():
+    """Close thread-local connection. Call at shutdown to prevent leaks."""
+    _close_connection()
+
+
+def load_entries_from_cache() -> tuple[list, dict]:
+    """
+    Load entries directly from DB for CLI use (no FileIndex required).
+    Returns (entries_list, drive_entries_dict) where:
+      - entries_list: list of FileEntry objects
+      - drive_entries_dict: dict of drive -> {frn -> FileEntry}
+    Returns ([], {}) on failure.
+    """
+    if not DB_FILE.exists():
+        return [], {}
+
+    if not ensure_db_healthy():
+        return [], {}
+
+    try:
+        conn = _get_connection()
+        _init_schema(conn)
+
+        drive_rows = conn.execute(
+            "SELECT letter FROM drives"
+        ).fetchall()
+
+        if not drive_rows:
+            return [], {}
+
+        all_entries = []
+        drive_entries = {}
+
+        for (drive,) in drive_rows:
+            d_entries = {}
+            d_entries[NTFS_ROOT_FRN] = FileEntry(
+                frn=NTFS_ROOT_FRN, parent_frn=0, name="",
+                drive=drive, attributes=FILE_ATTRIBUTE_DIRECTORY,
+            )
+
+            rows = conn.execute(
+                "SELECT frn, parent_frn, name, path, attributes, size, "
+                "date_modified_ms, date_created_ms "
+                "FROM entries WHERE drive=?",
+                (drive,)
+            ).fetchall()
+
+            for frn, parent_frn, name, path, attrs, size, mtime_ms, ctime_ms in rows:
+                entry = FileEntry(
+                    frn=frn, parent_frn=parent_frn, name=name,
+                    drive=drive, attributes=attrs,
+                )
+                if path:
+                    entry._path = path
+                if size or mtime_ms or ctime_ms:
+                    entry.size = size
+                    entry.date_modified = _ms_to_dt(mtime_ms)
+                    entry.date_created = _ms_to_dt(ctime_ms)
+                    entry._stat_loaded = True
+
+                d_entries[frn] = entry
+                if name:
+                    all_entries.append(entry)
+
+            drive_entries[drive] = d_entries
+
+        logger.info(f"load_entries_from_cache: {len(all_entries):,} entries loaded")
+        return all_entries, drive_entries
+
+    except Exception as e:
+        logger.error(f"load_entries_from_cache failed: {e}")
+        return [], {}

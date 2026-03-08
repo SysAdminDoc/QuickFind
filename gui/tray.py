@@ -1,17 +1,18 @@
 """
-System tray icon with global hotkey support.
+System tray icon with global hotkey support and proper .ico generation.
 """
 
 import ctypes
 import ctypes.wintypes as wintypes
 import logging
+import struct
 import threading
 from pathlib import Path
 from typing import Optional
 
 from PyQt6.QtWidgets import QSystemTrayIcon, QMenu, QApplication
-from PyQt6.QtGui import QIcon, QPixmap, QPainter, QColor, QFont, QAction
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QObject
+from PyQt6.QtGui import QIcon, QPixmap, QPainter, QColor, QFont, QAction, QImage
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QObject, QBuffer, QIODevice
 
 from gui.theme import MOCHA, ACCENT
 
@@ -64,7 +65,6 @@ class HotkeyListener(QObject):
 
     def _listen(self):
         """Register hotkey and poll for messages."""
-        # Register Ctrl+Shift+F
         result = RegisterHotKey(None, HOTKEY_ID, MOD_CONTROL | MOD_SHIFT | MOD_NOREPEAT, VK_F)
         if not result:
             logger.warning("Failed to register global hotkey Ctrl+Shift+F")
@@ -88,27 +88,80 @@ class HotkeyListener(QObject):
             logger.info("Unregistered global hotkey")
 
 
-def _create_programmatic_icon() -> QIcon:
-    """Create a simple tray icon programmatically as fallback."""
-    pixmap = QPixmap(64, 64)
+def _render_icon_pixmap(size: int) -> QPixmap:
+    """Render the QuickFind 'Q' icon at the given size."""
+    pixmap = QPixmap(size, size)
     pixmap.fill(QColor(0, 0, 0, 0))
 
     painter = QPainter(pixmap)
     painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
-    # Circle background
+    margin = max(1, size // 16)
     painter.setBrush(QColor(ACCENT))
     painter.setPen(Qt.PenStyle.NoPen)
-    painter.drawEllipse(4, 4, 56, 56)
+    painter.drawEllipse(margin, margin, size - margin * 2, size - margin * 2)
 
-    # "Q" letter
     painter.setPen(QColor(MOCHA['crust']))
-    font = QFont("Segoe UI", 28, QFont.Weight.Bold)
+    font_size = max(8, int(size * 0.44))
+    font = QFont("Segoe UI", font_size, QFont.Weight.Bold)
     painter.setFont(font)
     painter.drawText(pixmap.rect(), Qt.AlignmentFlag.AlignCenter, "Q")
 
     painter.end()
-    return QIcon(pixmap)
+    return pixmap
+
+
+def _create_programmatic_icon() -> QIcon:
+    """Create a multi-size tray icon programmatically as fallback."""
+    icon = QIcon()
+    for sz in [16, 32, 48, 64, 128, 256]:
+        icon.addPixmap(_render_icon_pixmap(sz))
+    return icon
+
+
+def _pixmap_to_png_bytes(pixmap: QPixmap) -> bytes:
+    """Convert a QPixmap to PNG bytes."""
+    buf = QBuffer()
+    buf.open(QIODevice.OpenModeFlag.WriteOnly)
+    pixmap.save(buf, "PNG")
+    return bytes(buf.data())
+
+
+def _build_ico_file(sizes: list[int]) -> bytes:
+    """
+    Build a proper .ico file with real ICO headers.
+    Uses PNG-compressed images (supported by Windows Vista+).
+    """
+    images = []
+    for sz in sizes:
+        pixmap = _render_icon_pixmap(sz)
+        png_data = _pixmap_to_png_bytes(pixmap)
+        images.append((sz, png_data))
+
+    # ICO header: reserved(2) + type(2) + count(2)
+    num_images = len(images)
+    header = struct.pack('<HHH', 0, 1, num_images)
+
+    # Each directory entry is 16 bytes
+    dir_entries_size = num_images * 16
+    data_offset = 6 + dir_entries_size
+
+    dir_entries = b''
+    image_data = b''
+
+    for sz, png_data in images:
+        w = 0 if sz >= 256 else sz
+        h = 0 if sz >= 256 else sz
+
+        entry = struct.pack('<BBBBHHII',
+                            w, h, 0, 0,
+                            1, 32,
+                            len(png_data),
+                            data_offset + len(image_data))
+        dir_entries += entry
+        image_data += png_data
+
+    return header + dir_entries + image_data
 
 
 def get_app_icon() -> QIcon:
@@ -121,49 +174,23 @@ def get_app_icon() -> QIcon:
 
 
 def generate_ico_file():
-    """Generate a .ico file from the programmatic icon and save to assets/."""
+    """Generate a proper .ico file with multi-size images and save to assets/."""
     ASSETS_DIR.mkdir(exist_ok=True)
     if ICO_PATH.exists():
         return
 
-    # Create multiple sizes for ICO
-    sizes = [16, 32, 48, 64, 128, 256]
-    pixmaps = []
-    for sz in sizes:
-        pixmap = QPixmap(sz, sz)
-        pixmap.fill(QColor(0, 0, 0, 0))
-
-        painter = QPainter(pixmap)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-
-        margin = max(1, sz // 16)
-        painter.setBrush(QColor(ACCENT))
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.drawEllipse(margin, margin, sz - margin * 2, sz - margin * 2)
-
-        painter.setPen(QColor(MOCHA['crust']))
-        font_size = max(8, int(sz * 0.44))
-        font = QFont("Segoe UI", font_size, QFont.Weight.Bold)
-        painter.setFont(font)
-        painter.drawText(pixmap.rect(), Qt.AlignmentFlag.AlignCenter, "Q")
-
-        painter.end()
-        pixmaps.append(pixmap)
-
-    # Save the largest as a PNG first, then use QIcon to save as ICO
-    # PyQt6 doesn't directly write .ico, so save the 256px as PNG
-    # and the icon will be loaded from that
-    png_path = ASSETS_DIR / 'quickfind.png'
-    pixmaps[-1].save(str(png_path), 'PNG')
-
-    # Also try to save as .ico via the pixmap
-    icon = QIcon()
-    for pm in pixmaps:
-        icon.addPixmap(pm)
-
-    # Save the 256x256 version as the .ico (actually a PNG that QIcon can load)
-    pixmaps[-1].save(str(ICO_PATH), 'PNG')
-    logger.info(f"Generated app icon: {ICO_PATH}")
+    try:
+        ico_data = _build_ico_file([16, 32, 48, 64, 128, 256])
+        with open(ICO_PATH, 'wb') as f:
+            f.write(ico_data)
+        logger.info(f"Generated app icon: {ICO_PATH} ({len(ico_data):,} bytes)")
+    except Exception as e:
+        logger.warning(f"Failed to generate .ico file: {e}")
+        # Fallback: save 256px PNG
+        try:
+            _render_icon_pixmap(256).save(str(ICO_PATH), 'PNG')
+        except Exception:
+            pass
 
 
 class SystemTray(QSystemTrayIcon):
@@ -207,3 +234,7 @@ class SystemTray(QSystemTrayIcon):
 
     def stop_hotkey(self):
         self._hotkey.stop()
+
+    def update_tooltip(self, text: str):
+        """Update tray tooltip (e.g., with indexing progress)."""
+        self.setToolTip(text)
