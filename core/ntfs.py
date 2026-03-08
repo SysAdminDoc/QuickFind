@@ -578,25 +578,23 @@ class NTFSVolume:
         return info
 
     def enumerate_mft(self, callback: Optional[Callable[[FileRecord, int], None]] = None,
-                      cancel_check: Optional[Callable[[], bool]] = None) -> list[FileRecord]:
+                      cancel_check: Optional[Callable[[], bool]] = None):
         """
         Enumerate all files and folders on the volume using FSCTL_ENUM_USN_DATA.
-        This reads the MFT and returns FileRecord objects for every entry.
+        Yields FileRecord objects one at a time to avoid holding the full list in memory.
 
         Args:
             callback: Optional progress callback(record, total_so_far)
             cancel_check: Optional callable returning True to cancel
 
-        Returns:
-            List of all FileRecord entries on the volume.
+        Yields:
+            FileRecord entries on the volume.
         """
-        records = []
-
         # MFT_ENUM_DATA_V0: StartFileReferenceNumber(8), LowUsn(8), HighUsn(8)
         # We use 0 for start, 0 for low USN, and max for high USN
         med_input = struct.pack('<QQQ', 0, 0, 0x7FFFFFFFFFFFFFFF)
 
-        # Use a large output buffer for performance (64KB)
+        # Use a large output buffer for performance (64KB) — allocated once
         OUT_BUF_SIZE = 65536
         out_buf = ctypes.create_string_buffer(OUT_BUF_SIZE)
         bytes_returned = wintypes.DWORD(0)
@@ -629,6 +627,7 @@ class NTFSVolume:
             if returned <= 8:
                 break
 
+            # Work directly with buffer bytes (single copy)
             data = out_buf.raw[:returned]
 
             # First 8 bytes: next StartFileReferenceNumber for continuation
@@ -644,22 +643,6 @@ class NTFSVolume:
                 record_len = struct.unpack_from('<I', data, offset)[0]
                 if record_len == 0 or offset + record_len > returned:
                     break
-
-                # Parse fields
-                # Offset within record:
-                # 0: RecordLength (4)
-                # 4: MajorVersion (2), MinorVersion (2)
-                # 8: FileReferenceNumber (8)
-                # 16: ParentFileReferenceNumber (8)
-                # 24: Usn (8)
-                # 32: TimeStamp (8) - FILETIME
-                # 40: Reason (4)
-                # 44: SourceInfo (4)
-                # 48: SecurityId (4)
-                # 52: FileAttributes (4)
-                # 56: FileNameLength (2)
-                # 58: FileNameOffset (2)
-                # 60: FileName (variable, UTF-16LE)
 
                 frn, parent_frn = struct.unpack_from('<QQ', data, offset + 8)
                 timestamp_raw = struct.unpack_from('<Q', data, offset + 32)[0]
@@ -690,7 +673,7 @@ class NTFSVolume:
                         attributes=attributes,
                         timestamp=filetime_to_datetime(timestamp_raw),
                     )
-                    records.append(record)
+                    yield record
                     total += 1
 
                     if callback and total % callback_interval == 0:
@@ -702,12 +685,12 @@ class NTFSVolume:
             med_input = struct.pack('<QQQ', next_frn, 0, 0x7FFFFFFFFFFFFFFF)
 
         logger.info(f"Enumerated {total} records from {self.drive_letter}:")
-        return records
 
     def enumerate_mft_direct(self, callback: Optional[Callable[[FileRecord, int], None]] = None,
-                             cancel_check: Optional[Callable[[], bool]] = None) -> list[FileRecord]:
+                             cancel_check: Optional[Callable[[], bool]] = None):
         """
         Enumerate all files/folders by reading the $MFT file directly.
+        Yields FileRecord objects one at a time to avoid holding the full list in memory.
         Extracts full metadata (timestamps, file sizes) from MFT records
         in a single sequential pass — no per-file os.stat() needed.
 
@@ -716,7 +699,8 @@ class NTFSVolume:
         vol_info = self.get_volume_info()
         if not vol_info:
             logger.warning(f"No volume info for {self.drive_letter}:, falling back to USN enum")
-            return self.enumerate_mft(callback, cancel_check)
+            yield from self.enumerate_mft(callback, cancel_check)
+            return
 
         record_size = vol_info.bytes_per_file_record
         if record_size <= 0:
@@ -743,44 +727,51 @@ class NTFSVolume:
         if mft_handle == INVALID_HANDLE_VALUE or mft_handle is None:
             err = ctypes.GetLastError()
             logger.warning(f"Cannot open $MFT on {self.drive_letter}: (error {err}), falling back to USN enum")
-            return self.enumerate_mft(callback, cancel_check)
+            yield from self.enumerate_mft(callback, cancel_check)
+            return
 
         logger.info(f"Reading $MFT directly on {self.drive_letter}: (record_size={record_size})")
 
+        fallback_needed = False
         try:
-            records = []
             frn = 0
+            record_count = 0
             records_per_chunk = 4096
             chunk_size = record_size * records_per_chunk
             callback_interval = 10000
+
+            # Allocate read buffer and record buffer ONCE — reused every iteration
+            buf = ctypes.create_string_buffer(chunk_size)
+            record_buf = bytearray(record_size)
+            bytes_read = wintypes.DWORD(0)
 
             while True:
                 if cancel_check and cancel_check():
                     logger.info("MFT direct read cancelled")
                     break
 
-                buf = ctypes.create_string_buffer(chunk_size)
-                bytes_read = wintypes.DWORD(0)
                 ok = ReadFile(mft_handle, buf, chunk_size, ctypes.byref(bytes_read), None)
 
                 if not ok or bytes_read.value == 0:
                     break
 
-                data = buf.raw[:bytes_read.value]
+                read_len = bytes_read.value
 
-                for pos in range(0, len(data), record_size):
-                    if pos + record_size > len(data):
+                for pos in range(0, read_len, record_size):
+                    if pos + record_size > read_len:
                         break
 
-                    record_data = bytearray(data[pos:pos + record_size])
-                    record = _parse_mft_record(record_data, frn, bytes_per_sector)
+                    # Copy into reusable record buffer instead of allocating new bytearray
+                    record_buf[:] = buf.raw[pos:pos + record_size]
+                    record = _parse_mft_record(record_buf, frn, bytes_per_sector)
                     frn += 1
 
                     if record is not None:
-                        records.append(record)
+                        yield record
+                        record_count += 1
 
-                        if callback and len(records) % callback_interval == 0:
-                            callback(record, len(records))
+                        if callback and record_count % callback_interval == 0:
+                            callback(record, record_count)
 
                     # Check cancel every 4096 records for responsive cancellation
                     if cancel_check and frn % 4096 == 0 and cancel_check():
@@ -790,17 +781,19 @@ class NTFSVolume:
                     break
 
             logger.info(
-                f"Direct MFT read: {len(records)} records from {self.drive_letter}: "
+                f"Direct MFT read: {record_count} records from {self.drive_letter}: "
                 f"({frn} MFT entries scanned)"
             )
-            return records
 
         except Exception as e:
             logger.error(f"Error reading $MFT on {self.drive_letter}: {e}, falling back to USN enum")
-            return self.enumerate_mft(callback, cancel_check)
+            fallback_needed = True
 
         finally:
             CloseHandle(mft_handle)
+
+        if fallback_needed:
+            yield from self.enumerate_mft(callback, cancel_check)
 
     def query_usn_journal(self) -> bool:
         """Query the USN journal to get the journal ID and current USN."""

@@ -411,18 +411,17 @@ class FileIndex(QObject):
         def progress_cb(record, count):
             self.indexing_progress.emit(drive_letter, count)
 
-        records = vol.enumerate_mft_direct(
-            callback=progress_cb,
-            cancel_check=self._is_cancelled
-        )
-
         drive_entries: dict[int, FileEntry] = {}
         drive_entries[NTFS_ROOT_FRN] = FileEntry(
             frn=NTFS_ROOT_FRN, parent_frn=0, name="",
             drive=drive_letter, attributes=FILE_ATTRIBUTE_DIRECTORY,
         )
 
-        for rec in records:
+        # Consume generator directly — no intermediate list
+        for rec in vol.enumerate_mft_direct(
+            callback=progress_cb,
+            cancel_check=self._is_cancelled
+        ):
             entry = FileEntry(
                 frn=rec.frn, parent_frn=rec.parent_frn, name=rec.name,
                 drive=drive_letter, attributes=rec.attributes,
@@ -456,11 +455,6 @@ class FileIndex(QObject):
         def progress_cb(record, count):
             self.indexing_progress.emit(drive_letter, count)
 
-        records = vol.enumerate_mft_direct(
-            callback=progress_cb,
-            cancel_check=self._is_cancelled
-        )
-
         drive_entries: dict[int, FileEntry] = {}
         drive_entries[NTFS_ROOT_FRN] = FileEntry(
             frn=NTFS_ROOT_FRN, parent_frn=0, name="",
@@ -469,7 +463,12 @@ class FileIndex(QObject):
 
         files = 0
         folders = 0
-        for rec in records:
+        # Consume generator directly — FileRecord objects are immediately
+        # converted to FileEntry and discarded, halving peak memory
+        for rec in vol.enumerate_mft_direct(
+            callback=progress_cb,
+            cancel_check=self._is_cancelled
+        ):
             entry = FileEntry(
                 frn=rec.frn, parent_frn=rec.parent_frn, name=rec.name,
                 drive=drive_letter, attributes=rec.attributes,
@@ -486,7 +485,7 @@ class FileIndex(QObject):
                 files += 1
 
         vol.query_usn_journal()
-        self.indexing_progress.emit(drive_letter, len(records))
+        self.indexing_progress.emit(drive_letter, files + folders)
 
         return (drive_letter, drive_entries, vol, files, folders)
 
@@ -506,7 +505,9 @@ class FileIndex(QObject):
             drive=drive_letter, attributes=FILE_ATTRIBUTE_DIRECTORY,
         )
 
-        # Map directory paths to their synthetic FRN for parent resolution
+        # Map directory paths to their synthetic FRN for parent resolution.
+        # Entries are popped after processing so memory stays proportional
+        # to current stack depth rather than total directory count.
         dir_frn_map: dict[str, int] = {root: root_frn}
         total = 0
         callback_interval = 10000
@@ -517,7 +518,10 @@ class FileIndex(QObject):
                 break
 
             current_dir = stack.pop()
-            parent_frn = dir_frn_map.get(current_dir, root_frn)
+            # Pop instead of get — this directory's FRN is no longer needed
+            # in the map once we've retrieved it (children look up their own
+            # path, not their parent's)
+            parent_frn = dir_frn_map.pop(current_dir, root_frn)
 
             try:
                 with os.scandir(current_dir) as it:
@@ -560,6 +564,9 @@ class FileIndex(QObject):
                             continue
             except (OSError, PermissionError):
                 continue
+
+        # Explicitly clear — shouldn't have entries but ensures no lingering refs
+        dir_frn_map.clear()
 
         with self._lock:
             self._entries[drive_letter] = drive_entries
@@ -752,10 +759,13 @@ class FileIndex(QObject):
             self._path_resolve_timer.stop()
 
     def _on_fat_rescan(self, changes: int):
-        """Handle FAT rescan completion."""
+        """Handle FAT rescan completion.
+        Always rebuilds flat list to release stale FileEntry references
+        from the previous walk (even when count is unchanged, entries were replaced).
+        """
+        self._rebuild_flat_list()
+        self._stats.last_update = datetime.now()
         if changes > 0:
-            self._rebuild_flat_list()
-            self._stats.last_update = datetime.now()
             self.index_updated.emit(changes)
 
     def _apply_usn_changes(self, changes: list):
@@ -959,6 +969,7 @@ class FATRescanThread(QThread):
             if not self._running:
                 break
 
+            walked_any = False
             total_changes = 0
             for drive_letter in list(self._index._walked_drives):
                 if not self._running:
@@ -968,10 +979,14 @@ class FATRescanThread(QThread):
                     self._index._walk_drive(drive_letter)
                     new_count = len(self._index._entries.get(drive_letter, {}))
                     total_changes += abs(new_count - old_count)
+                    walked_any = True
                 except Exception as e:
                     logger.error(f"Error re-walking {drive_letter}: {e}")
 
-            if total_changes > 0:
+            # Always rebuild flat list after re-walk to release old FileEntry
+            # references even when entry count is unchanged (the dict was replaced
+            # by _walk_drive, so old objects linger in _all_entries otherwise)
+            if walked_any:
                 self.rescan_complete.emit(total_changes)
 
         logger.info("FAT rescan thread stopped")
