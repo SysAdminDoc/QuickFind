@@ -623,8 +623,24 @@ class ResultsTableView(QTableView):
 
     def apply_column_visibility(self, visibility: dict):
         """Apply saved column visibility from settings."""
+        # Map string column names to indices
+        col_name_to_idx = {key: i for i, (_, key) in enumerate(COLUMNS)}
+        # Also map display names and common aliases
+        col_display_to_idx = {label.lower(): i for i, (label, _) in enumerate(COLUMNS)}
+        aliases = {'modified': 'date_modified', 'created': 'date_created'}
         for col, visible in visibility.items():
-            self.setColumnHidden(int(col), not visible)
+            if isinstance(col, int):
+                idx = col
+            elif col in col_name_to_idx:
+                idx = col_name_to_idx[col]
+            elif col in aliases and aliases[col] in col_name_to_idx:
+                idx = col_name_to_idx[aliases[col]]
+            elif col.lower() in col_display_to_idx:
+                idx = col_display_to_idx[col.lower()]
+            else:
+                continue
+            if 0 <= idx < len(COLUMNS):
+                self.setColumnHidden(idx, not visible)
 
     def _on_double_click(self, index: QModelIndex):
         model = self.model()
