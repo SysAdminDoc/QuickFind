@@ -521,14 +521,17 @@ def load_cache(index: FileIndex) -> Optional[dict[str, tuple[int, int]]]:
                 drive=drive, attributes=FILE_ATTRIBUTE_DIRECTORY,
             )
 
-            rows = conn.execute(
+            # Use cursor iteration instead of fetchall() to avoid loading
+            # all rows for a drive into memory at once
+            cursor = conn.execute(
                 "SELECT frn, parent_frn, name, path, attributes, size, "
                 "date_modified_ms, date_created_ms "
                 "FROM entries WHERE drive=?",
                 (drive,)
-            ).fetchall()
+            )
+            drive_count = 0
 
-            for frn, parent_frn, name, path, attrs, size, mtime_ms, ctime_ms in rows:
+            for frn, parent_frn, name, path, attrs, size, mtime_ms, ctime_ms in cursor:
                 entry = FileEntry(
                     frn=frn, parent_frn=parent_frn, name=name,
                     drive=drive, attributes=attrs,
@@ -549,9 +552,10 @@ def load_cache(index: FileIndex) -> Optional[dict[str, tuple[int, int]]]:
                     all_entries.append(entry)
                 if frn > max_synthetic_frn:
                     max_synthetic_frn = frn
+                drive_count += 1
 
             index._entries[drive] = drive_entries
-            total_loaded += len(rows)
+            total_loaded += drive_count
 
         index._all_entries = all_entries
 
@@ -825,14 +829,15 @@ def load_entries_from_cache() -> tuple[list, dict]:
                 drive=drive, attributes=FILE_ATTRIBUTE_DIRECTORY,
             )
 
-            rows = conn.execute(
+            # Use cursor iteration instead of fetchall()
+            cursor = conn.execute(
                 "SELECT frn, parent_frn, name, path, attributes, size, "
                 "date_modified_ms, date_created_ms "
                 "FROM entries WHERE drive=?",
                 (drive,)
-            ).fetchall()
+            )
 
-            for frn, parent_frn, name, path, attrs, size, mtime_ms, ctime_ms in rows:
+            for frn, parent_frn, name, path, attrs, size, mtime_ms, ctime_ms in cursor:
                 entry = FileEntry(
                     frn=frn, parent_frn=parent_frn, name=name,
                     drive=drive, attributes=attrs,
