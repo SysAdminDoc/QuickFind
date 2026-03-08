@@ -372,9 +372,10 @@ class MainWindow(QMainWindow):
         self._filter_combo.blockSignals(True)
         self._filter_combo.setCurrentIndex(tab.filter_index)
         self._filter_combo.blockSignals(False)
-        # Update result count
-        count = tab.results_view.result_count
-        self._result_count_label.setText(f"{count:,} object{'s' if count != 1 else ''}")
+        # Update result count (guard: label may not exist yet during init)
+        if hasattr(self, '_result_count_label'):
+            count = tab.results_view.result_count
+            self._result_count_label.setText(f"{count:,} object{'s' if count != 1 else ''}")
 
     def _current_tab(self) -> Optional[SearchTab]:
         idx = self._tab_widget.currentIndex()
