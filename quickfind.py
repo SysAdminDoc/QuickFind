@@ -57,7 +57,7 @@ _root_logger.addHandler(_console_handler)
 
 logger = logging.getLogger('QuickFind')
 
-VERSION = "0.7.0"
+VERSION = "0.7.1"
 APP_NAME = "QuickFind"
 
 

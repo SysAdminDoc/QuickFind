@@ -23,7 +23,7 @@ ICON = ASSETS / 'quickfind.ico'
 
 APP_NAME = "QuickFind"
 ENTRY = "quickfind.py"
-VERSION = "0.7.0"
+VERSION = "0.7.1"
 
 
 def ensure_pyinstaller():
