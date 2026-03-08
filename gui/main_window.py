@@ -25,7 +25,6 @@ from PyQt6.QtGui import (
 from core.index import FileIndex, FileEntry, IndexWorker
 from core.search import SearchEngine, SearchOptions, SearchFilter, BUILTIN_FILTERS
 from core.file_list import load_efu
-from core.everything_import import import_all as import_everything
 
 from gui.theme import MOCHA, ACCENT
 from gui.results_view import ResultsView
@@ -39,7 +38,7 @@ from core.hidden_paths import HiddenPathsManager
 
 logger = logging.getLogger('QuickFind.MainWindow')
 
-VERSION = "0.7.0"
+VERSION = "0.7.1"
 
 
 def _set_dark_title_bar(hwnd):
@@ -492,6 +491,36 @@ class MainWindow(QMainWindow):
         copy_name.setShortcut(QKeySequence("Ctrl+Shift+C"))
         copy_name.triggered.connect(self._copy_selected_names)
 
+        # ── View menu ───────────────────────────────
+        view_menu = menubar.addMenu("&View")
+
+        self._detail_view_action = view_menu.addAction("&Details")
+        self._detail_view_action.setCheckable(True)
+        self._detail_view_action.setChecked(True)
+        self._detail_view_action.triggered.connect(lambda: self._set_view_mode('details'))
+
+        self._thumb_view_action = view_menu.addAction("&Thumbnails")
+        self._thumb_view_action.setCheckable(True)
+        self._thumb_view_action.triggered.connect(lambda: self._set_view_mode('thumbnails'))
+
+        view_menu.addSeparator()
+
+        self._preview_action = view_menu.addAction("Preview &Pane")
+        self._preview_action.setCheckable(True)
+        self._preview_action.setChecked(self._settings.show_preview_pane)
+        self._preview_action.setShortcut(QKeySequence("Alt+V"))
+        self._preview_action.toggled.connect(self._toggle_preview)
+
+        self._bookmarks_action = view_menu.addAction("&Bookmarks Panel")
+        self._bookmarks_action.setCheckable(True)
+        self._bookmarks_action.setShortcut(QKeySequence("Ctrl+B"))
+        self._bookmarks_action.toggled.connect(self._toggle_bookmarks)
+
+        self._status_bar_action = view_menu.addAction("&Status Bar")
+        self._status_bar_action.setCheckable(True)
+        self._status_bar_action.setChecked(True)
+        self._status_bar_action.toggled.connect(self._toggle_status_bar)
+
         # ── Search menu ─────────────────────────────
         search_menu = menubar.addMenu("&Search")
 
@@ -534,35 +563,16 @@ class MainWindow(QMainWindow):
             act = filter_submenu.addAction(name)
             act.triggered.connect(lambda checked, idx=i: self._filter_combo.setCurrentIndex(idx))
 
-        # ── View menu ───────────────────────────────
-        view_menu = menubar.addMenu("&View")
+        search_menu.addSeparator()
 
-        self._detail_view_action = view_menu.addAction("&Details")
-        self._detail_view_action.setCheckable(True)
-        self._detail_view_action.setChecked(True)
-        self._detail_view_action.triggered.connect(lambda: self._set_view_mode('details'))
+        manage_filters = search_menu.addAction("Manage &Filters...")
+        manage_filters.triggered.connect(self._show_manage_filters)
 
-        self._thumb_view_action = view_menu.addAction("&Thumbnails")
-        self._thumb_view_action.setCheckable(True)
-        self._thumb_view_action.triggered.connect(lambda: self._set_view_mode('thumbnails'))
+        import_filters = search_menu.addAction("&Import Filters from Everything CSV...")
+        import_filters.triggered.connect(self._import_filters_csv)
 
-        view_menu.addSeparator()
-
-        self._preview_action = view_menu.addAction("Preview &Pane")
-        self._preview_action.setCheckable(True)
-        self._preview_action.setChecked(self._settings.show_preview_pane)
-        self._preview_action.setShortcut(QKeySequence("Alt+V"))
-        self._preview_action.toggled.connect(self._toggle_preview)
-
-        self._bookmarks_action = view_menu.addAction("&Bookmarks Panel")
-        self._bookmarks_action.setCheckable(True)
-        self._bookmarks_action.setShortcut(QKeySequence("Ctrl+B"))
-        self._bookmarks_action.toggled.connect(self._toggle_bookmarks)
-
-        self._status_bar_action = view_menu.addAction("&Status Bar")
-        self._status_bar_action.setCheckable(True)
-        self._status_bar_action.setChecked(True)
-        self._status_bar_action.toggled.connect(self._toggle_status_bar)
+        export_filters = search_menu.addAction("&Export Filters as CSV...")
+        export_filters.triggered.connect(self._export_filters_csv)
 
         # ── Bookmarks menu ──────────────────────────
         self._bookmarks_menu = menubar.addMenu("&Bookmarks")
@@ -576,6 +586,14 @@ class MainWindow(QMainWindow):
         manage_bookmarks.triggered.connect(lambda: self._toggle_bookmarks(True))
 
         self._bookmarks_menu.addSeparator()
+
+        import_bookmarks = self._bookmarks_menu.addAction("&Import Bookmarks from Everything CSV...")
+        import_bookmarks.triggered.connect(self._import_bookmarks_csv)
+
+        export_bookmarks = self._bookmarks_menu.addAction("&Export Bookmarks as CSV...")
+        export_bookmarks.triggered.connect(self._export_bookmarks_csv)
+
+        self._bookmarks_menu.addSeparator()
         self._bookmarks_panel.build_menu(self._bookmarks_menu)
 
         # ── Tools menu ──────────────────────────────
@@ -586,12 +604,6 @@ class MainWindow(QMainWindow):
         reindex.triggered.connect(self._start_indexing)
 
         tools_menu.addSeparator()
-
-        import_ev_action = tools_menu.addAction("&Import from Everything...")
-        import_ev_action.triggered.connect(self._import_from_everything)
-
-        manage_filters = tools_menu.addAction("Manage &Filters...")
-        manage_filters.triggered.connect(self._show_manage_filters)
 
         manage_hidden = tools_menu.addAction("Manage &Hidden Paths...")
         manage_hidden.triggered.connect(self._show_manage_hidden_paths)
@@ -1102,51 +1114,159 @@ class MainWindow(QMainWindow):
         if path:
             save_efu(entries, path, self._file_index)
 
-    # ── Everything Import ──────────────────────────────
+    # ── Filter Import/Export ─────────────────────────────
 
-    def _import_from_everything(self):
+    def _import_filters_csv(self):
         from PyQt6.QtWidgets import QFileDialog
+        from core.everything_import import import_everything_filters, save_imported_filters
 
-        folder = QFileDialog.getExistingDirectory(
-            self, "Select folder containing Everything CSV files",
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Import Filters from Everything CSV",
             os.path.expanduser("~"),
+            "CSV Files (*.csv);;All Files (*)"
         )
-        if not folder:
+        if not path:
             return
 
-        filters_csv = os.path.join(folder, "Filters.csv")
-        bookmarks_csv = os.path.join(folder, "Bookmarks.csv")
-
-        found = []
-        if os.path.exists(filters_csv):
-            found.append("Filters.csv")
-        else:
-            filters_csv = None
-        if os.path.exists(bookmarks_csv):
-            found.append("Bookmarks.csv")
-        else:
-            bookmarks_csv = None
-
-        if not found:
-            self._status_label.setText("No Everything CSV files found in that folder")
-            return
-
-        fc, bc = import_everything(filters_csv, bookmarks_csv)
-
-        msg = []
-        if fc:
-            msg.append(f"{fc} filters")
-        if bc:
-            msg.append(f"{bc} bookmarks")
-
-        self._status_label.setText(f"Imported {' and '.join(msg)} from Everything")
-
-        # Reload filter combo and bookmarks
-        if fc:
+        filters = import_everything_filters(path)
+        if filters:
+            count = save_imported_filters(filters)
+            self._status_label.setText(f"Imported {len(filters)} filters ({count} total)")
             self._build_filter_combo()
-        if bc:
+        else:
+            self._status_label.setText("No filters found in CSV file")
+
+    def _export_filters_csv(self):
+        from PyQt6.QtWidgets import QFileDialog
+        from gui.filters import FILTERS_FILE
+        import csv
+        import json
+
+        # Load current custom filters
+        custom_filters = []
+        if FILTERS_FILE.exists():
+            try:
+                with open(FILTERS_FILE, 'r') as f:
+                    custom_filters = json.load(f)
+            except Exception:
+                pass
+
+        if not custom_filters:
+            self._status_label.setText("No custom filters to export")
+            return
+
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Export Filters as CSV", "Filters.csv",
+            "CSV Files (*.csv);;All Files (*)"
+        )
+        if not path:
+            return
+
+        try:
+            with open(path, 'w', newline='', encoding='utf-8') as f:
+                writer = csv.writer(f)
+                writer.writerow([
+                    'Name', 'Case', 'Whole Word', 'Path', 'Diacritics',
+                    'Prefix', 'Suffix', 'Ignore Punctuation', 'Ignore Whitespace',
+                    'Regex', 'Search', 'Columns', 'Sort', 'Descending', 'View',
+                    'Macro', 'Key'
+                ])
+                for filt in custom_filters:
+                    # Build search string from extensions
+                    search = filt.get('macro', '')
+                    if not search and filt.get('extensions'):
+                        search = 'ext:' + ';'.join(filt['extensions'])
+                    if filt.get('folders_only'):
+                        search = 'folder:'
+
+                    writer.writerow([
+                        filt.get('name', ''), '0', '0', '0', '0',
+                        '0', '0', '0', '0', '0',
+                        search, '', '', '0', '', '', ''
+                    ])
+            self._status_label.setText(f"Exported {len(custom_filters)} filters to {os.path.basename(path)}")
+        except Exception as e:
+            self._status_label.setText(f"Export failed: {e}")
+
+    # ── Bookmark Import/Export ────────────────────────────
+
+    def _import_bookmarks_csv(self):
+        from PyQt6.QtWidgets import QFileDialog
+        from core.everything_import import import_everything_bookmarks, save_imported_bookmarks
+
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Import Bookmarks from Everything CSV",
+            os.path.expanduser("~"),
+            "CSV Files (*.csv);;All Files (*)"
+        )
+        if not path:
+            return
+
+        bookmarks = import_everything_bookmarks(path)
+        if bookmarks:
+            count = save_imported_bookmarks(bookmarks)
+            self._status_label.setText(f"Imported {len(bookmarks)} bookmarks ({count} total)")
             self._bookmark_manager._load()
             self._bookmarks_panel._refresh()
+        else:
+            self._status_label.setText("No bookmarks found in CSV file")
+
+    def _export_bookmarks_csv(self):
+        from PyQt6.QtWidgets import QFileDialog
+        import csv
+
+        bookmarks = self._bookmark_manager.bookmarks
+        if not bookmarks:
+            self._status_label.setText("No bookmarks to export")
+            return
+
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Export Bookmarks as CSV", "Bookmarks.csv",
+            "CSV Files (*.csv);;All Files (*)"
+        )
+        if not path:
+            return
+
+        try:
+            sort_map = {
+                0: 'Name', 1: 'Path', 2: 'Size',
+                3: 'Date Modified', 4: 'Date Created',
+                5: 'Extension', 6: 'Attributes',
+            }
+            with open(path, 'w', newline='', encoding='utf-8') as f:
+                writer = csv.writer(f)
+                writer.writerow([
+                    'Name', 'Case', 'Whole Word', 'Path', 'Diacritics',
+                    'Prefix', 'Suffix', 'Ignore Punctuation', 'Ignore Whitespace',
+                    'Regex', 'Search', 'Columns', 'Sort', 'Descending', 'View',
+                    'Macro', 'Key'
+                ])
+
+                current_folder = ""
+                for bm in bookmarks:
+                    # Write folder header row if folder changed
+                    if bm.folder and bm.folder != current_folder:
+                        current_folder = bm.folder
+                        writer.writerow([
+                            current_folder, '0', '0', '0', '0',
+                            '0', '0', '0', '0', '0',
+                            '', '', '', '0', '', '', ''
+                        ])
+
+                    writer.writerow([
+                        bm.name,
+                        '1' if bm.match_case else '0',
+                        '0', '0', '0', '0', '0', '0', '0',
+                        '1' if bm.use_regex else '0',
+                        bm.query,
+                        '',
+                        sort_map.get(bm.sort_column, ''),
+                        '0' if bm.sort_ascending else '1',
+                        '', '', ''
+                    ])
+            self._status_label.setText(f"Exported {len(bookmarks)} bookmarks to {os.path.basename(path)}")
+        except Exception as e:
+            self._status_label.setText(f"Export failed: {e}")
 
     # ── Filter management ─────────────────────────────
 
