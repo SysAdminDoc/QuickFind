@@ -1,10 +1,12 @@
 """
 QuickFind Main Window - Everything-compatible file search UI.
-v0.6.0: Search history/autocomplete, keyboard shortcuts, syntax help tooltip,
-         startup performance metrics, column visibility persistence.
+v0.7.0: Dark title bar, regex validation, result count in tabs, tray tooltip
+         progress, exclude hidden/system wiring, window state restore.
 """
 
+import ctypes
 import os
+import re
 import logging
 from typing import Optional
 
@@ -37,7 +39,22 @@ from core.hidden_paths import HiddenPathsManager
 
 logger = logging.getLogger('QuickFind.MainWindow')
 
-VERSION = "0.6.0"
+VERSION = "0.7.0"
+
+
+def _set_dark_title_bar(hwnd):
+    """Enable dark title bar on Windows 10/11 via DwmSetWindowAttribute."""
+    try:
+        DWMWA_USE_IMMERSIVE_DARK_MODE = 20
+        value = ctypes.c_int(1)
+        ctypes.windll.dwmapi.DwmSetWindowAttribute(
+            hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE,
+            ctypes.byref(value), ctypes.sizeof(value)
+        )
+    except Exception:
+        pass
+
+
 APP_TITLE = f"QuickFind v{VERSION}"
 
 # Search syntax help text
@@ -129,6 +146,14 @@ class MainWindow(QMainWindow):
         self._setup_tray()
         self._connect_signals()
         self._apply_settings()
+
+        # Dark title bar
+        _set_dark_title_bar(int(self.winId()))
+
+        # Wire exclude/USN settings to FileIndex
+        self._file_index._exclude_hidden = self._settings.exclude_hidden
+        self._file_index._exclude_system = self._settings.exclude_system
+        self._file_index._usn_poll_interval_ms = self._settings.usn_poll_interval_ms
 
         # Start maximized
         if self._settings.start_maximized:
@@ -671,10 +696,30 @@ class MainWindow(QMainWindow):
                 return
 
         query = self._search_input.text().strip()
+        use_regex = self._regex_action.isChecked()
+
+        # Validate regex syntax before searching
+        if use_regex and query:
+            regex_query = query
+            # Strip regex: prefix if present
+            if regex_query.lower().startswith('regex:'):
+                regex_query = regex_query[6:]
+            if regex_query:
+                try:
+                    re.compile(regex_query)
+                    self._search_input.setStyleSheet("")
+                except re.error as e:
+                    self._search_input.setStyleSheet(
+                        f"border: 1px solid {MOCHA['red']};"
+                    )
+                    self._status_label.setText(f"Regex error: {e}")
+                    return
+        else:
+            self._search_input.setStyleSheet("")
 
         options = SearchOptions(
             match_case=self._match_case_action.isChecked(),
-            use_regex=self._regex_action.isChecked(),
+            use_regex=use_regex,
             match_path=self._match_path_action.isChecked(),
             match_whole_word=self._match_whole_action.isChecked(),
             max_results=0,  # Always unlimited — show every indexed object
@@ -721,8 +766,13 @@ class MainWindow(QMainWindow):
         count = len(results)
         self._result_count_label.setText(f"{count:,} object{'s' if count != 1 else ''}")
 
-        # Update window title like Everything
+        # Update tab title with result count
+        idx = self._tab_widget.currentIndex()
         query = self._search_input.text().strip()
+        tab_label = query[:20] if query else "Search"
+        self._tab_widget.setTabText(idx, f"{tab_label} ({count:,})")
+
+        # Update window title like Everything
         if query:
             self.setWindowTitle(f"{query} - {count:,} objects - {APP_TITLE}")
             # Save to search history
@@ -775,9 +825,11 @@ class MainWindow(QMainWindow):
     def _on_indexing_started(self):
         self._progress_bar.show()
         self._status_label.setText("Indexing...")
+        self._tray.update_tooltip("QuickFind - Indexing...")
 
     def _on_indexing_progress(self, drive: str, count: int):
         self._status_label.setText(f"Indexing {drive}: ({count:,} records)...")
+        self._tray.update_tooltip(f"QuickFind - Indexing {drive}: {count:,} records")
 
     def _on_indexing_complete(self, stats):
         self._progress_bar.hide()
@@ -786,6 +838,9 @@ class MainWindow(QMainWindow):
             f"({stats.index_time_ms:,}ms)"
         )
         self._status_label.setText("")
+
+        total = stats.total_files + stats.total_folders
+        self._tray.update_tooltip(f"QuickFind - {total:,} entries indexed")
 
         # Show startup performance metric
         if stats.entries_per_sec > 0:
@@ -1161,6 +1216,13 @@ class MainWindow(QMainWindow):
         self._settings.save()
         self._apply_settings()
 
+        # Sync exclude/USN settings to FileIndex
+        self._file_index._exclude_hidden = self._settings.exclude_hidden
+        self._file_index._exclude_system = self._settings.exclude_system
+        self._file_index._usn_poll_interval_ms = self._settings.usn_poll_interval_ms
+        self._file_index._rebuild_flat_list()
+        self._trigger_search()
+
     # ── Window management ──────────────────────────────
 
     def _show_from_tray(self):
@@ -1182,8 +1244,10 @@ class MainWindow(QMainWindow):
         self._tray.stop_hotkey()
         self._tray.hide()
         if self._settings.remember_window_size:
-            self._settings.window_width = self.width()
-            self._settings.window_height = self.height()
+            self._settings.start_maximized = self.isMaximized()
+            if not self.isMaximized():
+                self._settings.window_width = self.width()
+                self._settings.window_height = self.height()
             self._settings.save()
         QApplication.quit()
 

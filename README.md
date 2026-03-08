@@ -1,4 +1,4 @@
-# QuickFind v0.6.0
+# QuickFind v0.7.0
 
 Lightning-fast file search for Windows, powered by NTFS MFT + USN Journal.
 
@@ -17,6 +17,7 @@ An open-source alternative to Voidtools Everything, built with Python and PyQt6 
 - **Real-time updates** via USN Change Journal monitoring (NTFS) and periodic rescan (FAT/exFAT/ReFS)
 - **Batch incremental DB writes** - USN changes applied in single transactions for performance
 - **Non-admin fallback** - gracefully degrades to `os.scandir` when UAC is declined
+- **Thread-safe USN change application** with lock-protected flat list rebuild
 - **Cancel support** during indexing with cooperative cancellation
 - **SQLite FTS5** full-text search cache with WAL mode and memory-mapped I/O
 - **DB corruption recovery** with automatic integrity checks and rebuild
@@ -52,6 +53,10 @@ An open-source alternative to Voidtools Everything, built with Python and PyQt6 
 - **Global hotkey** (Ctrl+Shift+F) to show/activate from anywhere
 - **Startup performance metrics** - entries/sec displayed in status bar
 - **Proper app icon** (.ico) for window, taskbar, and tray
+- **Dark title bar** via DwmSetWindowAttribute on Windows 10/11
+- **Regex validation** with inline error highlighting
+- **Result count in tab titles** for multi-tab awareness
+- **Index progress in tray tooltip** shows live indexing status
 
 ### Advanced
 - **HTTP server** for remote web browser access with optional **token-based authentication**

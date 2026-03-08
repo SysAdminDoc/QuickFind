@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""QuickFind v0.6.0 - Lightning-fast file search for Windows"""
+"""QuickFind v0.7.0 - Lightning-fast file search for Windows"""
 
 import sys
 import os
@@ -57,7 +57,7 @@ _root_logger.addHandler(_console_handler)
 
 logger = logging.getLogger('QuickFind')
 
-VERSION = "0.6.0"
+VERSION = "0.7.0"
 APP_NAME = "QuickFind"
 
 
