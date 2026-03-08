@@ -1,4 +1,4 @@
-# QuickFind v0.7.0
+# QuickFind v0.7.1
 
 Lightning-fast file search for Windows, powered by NTFS MFT + USN Journal.
 
