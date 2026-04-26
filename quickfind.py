@@ -4,6 +4,25 @@
 import sys
 import os
 
+
+# codex-branding:start
+def _branding_icon_path() -> Path:
+    candidates = []
+    if getattr(sys, "frozen", False):
+        exe_dir = Path(sys.executable).resolve().parent
+        candidates.append(exe_dir / "icon.png")
+        meipass = getattr(sys, "_MEIPASS", None)
+        if meipass:
+            candidates.append(Path(meipass) / "icon.png")
+    current = Path(__file__).resolve()
+    candidates.extend([current.parent / "icon.png", current.parent.parent / "icon.png", current.parent.parent.parent / "icon.png"])
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return Path("icon.png")
+# codex-branding:end
+
+
 def _bootstrap():
     """Auto-install all dependencies before any imports."""
     required = ['PyQt6']
@@ -110,12 +129,17 @@ def main():
     # Hide console window
     try:
         hwnd = ctypes.windll.kernel32.GetConsoleWindow()
+        hwnd.setWindowIcon(branding_icon)
         if hwnd:
             ctypes.windll.user32.ShowWindow(hwnd, 0)
     except Exception:
         pass
 
     app = QApplication(sys.argv)
+
+    branding_icon = QIcon(str(_branding_icon_path()))
+
+    app.setWindowIcon(branding_icon)
     app.setApplicationName(APP_NAME)
     app.setApplicationVersion(VERSION)
 
