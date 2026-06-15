@@ -642,6 +642,7 @@ class FileIndex(QObject):
             info = all_drive_info.get(drive_letter)
             logger.info(f"Indexing drive {drive_letter}: ({info.filesystem if info else 'unknown'}) via os.scandir...")
             self._walk_drive(drive_letter)
+            self._rebuild_flat_list()
             drive_entries = self._entries.get(drive_letter, {})
             for frn, entry in drive_entries.items():
                 if frn == NTFS_ROOT_FRN:
@@ -680,6 +681,7 @@ class FileIndex(QObject):
 
                         total_files += files
                         total_folders += folders
+                        self._rebuild_flat_list()
                         logger.info(f"Drive {drive_letter}: indexed: {files:,} files, {folders:,} folders")
 
                     except Exception as e:
@@ -698,6 +700,7 @@ class FileIndex(QObject):
                 if self._cancel_flag:
                     break
                 self._walk_drive(drive_letter)
+                self._rebuild_flat_list()
                 drive_entries = self._entries.get(drive_letter, {})
                 for frn, entry in drive_entries.items():
                     if frn == NTFS_ROOT_FRN:
@@ -707,7 +710,7 @@ class FileIndex(QObject):
                     else:
                         total_files += 1
 
-        # Rebuild flat list
+        # Final rebuild to ensure consistency
         self._rebuild_flat_list()
 
         elapsed = (time.perf_counter() - start_time) * 1000

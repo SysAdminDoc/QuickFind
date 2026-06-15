@@ -19,6 +19,7 @@ All notable changes to QuickFind will be documented in this file.
 - Added: Fuzzy matching via `fuzzy:` modifier — subsequence matching so "qickfind" matches "QuickFind"
 - Added: Usage-based result ranking — opening files via QuickFind tracks open counts; sort by "Relevance" to surface frequently used files
 - Added: Per-drive rescan intervals for non-NTFS drives — configure via `_drive_rescan_intervals` dict (e.g., 30s for SSD, 300s for NAS)
+- Perf: Search available after first drive finishes indexing — flat list rebuilt incrementally per drive instead of waiting for all drives
 
 ## [v0.7.1]
 
