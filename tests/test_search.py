@@ -269,6 +269,25 @@ class TestParseQuery:
         assert parsed.options.files_only is True
         assert parsed.options.sort_by == SortField.SIZE
 
+    def test_size_exact(self):
+        parsed = parse_query("size:1024")
+        assert parsed.size_min == 1024
+        assert parsed.size_max == 1024
+
+    def test_date_modified_before(self):
+        parsed = parse_query("dm:<2025-01-01")
+        assert parsed.date_mod_before is not None
+        assert parsed.date_mod_before.year == 2025
+
+    def test_date_created_before(self):
+        parsed = parse_query("dc:<2025-06-01")
+        assert parsed.date_create_before is not None
+
+    def test_content_modifier_value(self):
+        parsed = parse_query("content:class hello")
+        assert parsed.content_search == "class"
+        assert parsed.terms == ["hello"]
+
 
 class TestSmartCase:
     def test_lowercase_is_insensitive(self):
