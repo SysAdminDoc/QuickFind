@@ -152,6 +152,13 @@ def _init_schema(conn: sqlite3.Connection):
         );
         CREATE INDEX IF NOT EXISTS idx_history_query ON search_history(query);
         CREATE INDEX IF NOT EXISTS idx_history_ts ON search_history(timestamp DESC);
+
+        CREATE TABLE IF NOT EXISTS usage_stats (
+            path TEXT PRIMARY KEY,
+            open_count INTEGER DEFAULT 0,
+            last_opened_ms INTEGER DEFAULT 0
+        );
+        CREATE INDEX IF NOT EXISTS idx_usage_count ON usage_stats(open_count DESC);
     """)
 
     # FTS5 table for fast substring search
@@ -329,6 +336,41 @@ def clear_search_history():
         conn.commit()
     except Exception:
         pass
+
+
+# ── Usage Tracking ─────────────────────────────────────
+
+def record_file_open(path: str):
+    """Increment the open count for a file path."""
+    try:
+        conn = _get_connection()
+        ts = int(time.time() * 1000)
+        conn.execute(
+            "INSERT INTO usage_stats (path, open_count, last_opened_ms) "
+            "VALUES (?, 1, ?) "
+            "ON CONFLICT(path) DO UPDATE SET "
+            "open_count = open_count + 1, last_opened_ms = ?",
+            (path, ts, ts)
+        )
+        conn.commit()
+    except Exception as e:
+        logger.debug(f"record_file_open failed: {e}")
+
+
+def get_usage_scores(paths: list[str]) -> dict[str, int]:
+    """Get open counts for a list of paths."""
+    if not paths:
+        return {}
+    try:
+        conn = _get_connection()
+        placeholders = ','.join('?' * len(paths))
+        rows = conn.execute(
+            f"SELECT path, open_count FROM usage_stats WHERE path IN ({placeholders})",
+            paths
+        ).fetchall()
+        return {row[0]: row[1] for row in rows}
+    except Exception:
+        return {}
 
 
 # ── Batch DB Operations ──────────────────────────────────

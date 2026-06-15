@@ -17,6 +17,7 @@ All notable changes to QuickFind will be documented in this file.
 - Fixed: File deletion now runs in background thread (no longer blocks UI during large deletes)
 - Added: `.quickfindignore` file support — place in any directory to exclude matching files/folders from indexing (glob patterns, like fd/ripgrep)
 - Added: Fuzzy matching via `fuzzy:` modifier — subsequence matching so "qickfind" matches "QuickFind"
+- Added: Usage-based result ranking — opening files via QuickFind tracks open counts; sort by "Relevance" to surface frequently used files
 
 ## [v0.7.1]
 

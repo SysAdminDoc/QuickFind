@@ -948,6 +948,8 @@ class MainWindow(QMainWindow):
         path = entry.get_path(self._file_index)
         try:
             os.startfile(path)
+            from core.cache import record_file_open
+            record_file_open(path)
         except OSError:
             pass
 

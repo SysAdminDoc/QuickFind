@@ -36,6 +36,7 @@ class SortField(Enum):
     DATE_CREATED = auto()
     EXTENSION = auto()
     ATTRIBUTES = auto()
+    RELEVANCE = auto()
 
 
 class SortOrder(Enum):
@@ -813,6 +814,13 @@ class SearchEngine:
                     entry.ensure_stat(self._index)
                 elapsed = (_time.perf_counter() - t0) * 1000
                 logger.debug(f"Loaded stats for {needs_stat} entries (of {len(results)}) in {elapsed:.0f}ms")
+
+        if sort_field == SortField.RELEVANCE:
+            from core.cache import get_usage_scores
+            paths = [e.get_path(self._index) for e in results]
+            scores = get_usage_scores(paths)
+            results.sort(key=lambda e: scores.get(e.get_path(self._index), 0), reverse=True)
+            return results
 
         _dt_min = datetime.min
 
