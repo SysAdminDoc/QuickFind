@@ -11,7 +11,6 @@ import os
 import secrets
 import time
 import threading
-from collections import defaultdict
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 from typing import Optional
@@ -151,17 +150,18 @@ class _RateLimiter:
 
     def __init__(self):
         self._lock = threading.Lock()
-        self._hits: dict[str, list[float]] = defaultdict(list)
+        self._hits: dict[str, list[float]] = {}
 
     def allow(self, ip: str) -> bool:
         now = time.monotonic()
         with self._lock:
-            timestamps = self._hits[ip]
             cutoff = now - self.WINDOW
-            self._hits[ip] = timestamps = [t for t in timestamps if t > cutoff]
+            timestamps = [t for t in self._hits.get(ip, []) if t > cutoff]
             if len(timestamps) >= self.MAX_REQUESTS:
+                self._hits[ip] = timestamps
                 return False
             timestamps.append(now)
+            self._hits[ip] = timestamps
             return True
 
 
@@ -224,7 +224,10 @@ class SearchHandler(BaseHTTPRequestHandler):
     def _handle_api_search(self, params):
         """JSON API for AJAX search."""
         query = params.get('q', [''])[0]
-        max_results = int(params.get('max', ['1000'])[0])
+        try:
+            max_results = int(params.get('max', ['1000'])[0])
+        except (ValueError, IndexError):
+            max_results = 1000
 
         results = self.search_engine.search(
             query, max_results=min(max_results, 10000)

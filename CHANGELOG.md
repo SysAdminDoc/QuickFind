@@ -4,6 +4,22 @@ All notable changes to QuickFind will be documented in this file.
 
 ## [v0.7.2] - 2026-06-15
 
+### Audit fixes (engineering, security, reliability)
+- Fixed: Invalid regex pattern in `regex:` modifier no longer crashes (returns no-match instead of None dereference)
+- Fixed: `len:` modifier with non-numeric values no longer raises ValueError
+- Fixed: Version strings synchronized across quickfind.py, main_window.py, build.py (were diverged)
+- Fixed: FTS rebuild counter (`_fts_pending_changes`) now thread-safe with dedicated lock
+- Fixed: HTTP server `max` parameter parsing handles non-integer input gracefully
+- Fixed: Rate limiter no longer leaks memory for expired IPs (cleaned up defaultdict)
+- Fixed: Hidden paths JSON save now atomic (write-to-tmp + rename) to prevent corruption on crash
+- Fixed: EFU file entries now set `_stat_loaded` flag so stats survive cache round-trip
+- Fixed: EFU FILETIME epoch constant deduplicated into module-level `_FILETIME_EPOCH_DIFF`
+- Fixed: CLI `es.py` now closes DB connections on error via try/finally
+- Fixed: Launcher popup Up-arrow returns focus to search input from results list
+- Security: Removed `--break-system-packages` from pip install commands (bootstrap and build)
+- Added: Launcher popup accessibility labels on search input
+
+### Previous changes
 - Fixed: `recycle_file` import crash — Delete key handler referenced wrong function name
 - Fixed: Startup crash on non-admin — `Path` used before import, bogus `setWindowIcon` on Win32 HWND
 - Fixed: `requirements.txt` now pip-installable (removed internal module names)

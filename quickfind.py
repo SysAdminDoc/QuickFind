@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""QuickFind v0.7.0 - Lightning-fast file search for Windows"""
+"""QuickFind - Lightning-fast file search for Windows"""
 
 import sys
 import os
@@ -33,8 +33,7 @@ def _bootstrap():
             __import__(pkg.replace('-', '_').split('[')[0])
         except ImportError:
             subprocess.check_call([
-                sys.executable, '-m', 'pip', 'install', pkg,
-                '--break-system-packages', '-q'
+                sys.executable, '-m', 'pip', 'install', pkg, '-q'
             ])
 
 _bootstrap()

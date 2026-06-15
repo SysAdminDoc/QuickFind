@@ -370,17 +370,20 @@ def parse_query(raw_query: str, base_options: Optional[SearchOptions] = None) ->
                 parsed.parent_filter = val
                 i += 1; continue
             elif mod_lower == 'len':
-                if '..' in val:
-                    lo, hi = val.split('..', 1)
-                    parsed.name_len_min = int(lo) if lo else 0
-                    parsed.name_len_max = int(hi) if hi else 0
-                elif val.startswith('>'):
-                    parsed.name_len_min = int(val[1:]) + 1
-                elif val.startswith('<'):
-                    parsed.name_len_max = int(val[1:]) - 1
-                else:
-                    parsed.name_len_min = int(val)
-                    parsed.name_len_max = int(val)
+                try:
+                    if '..' in val:
+                        lo, hi = val.split('..', 1)
+                        parsed.name_len_min = int(lo) if lo else 0
+                        parsed.name_len_max = int(hi) if hi else 0
+                    elif val.startswith('>'):
+                        parsed.name_len_min = int(val[1:]) + 1
+                    elif val.startswith('<'):
+                        parsed.name_len_max = int(val[1:]) - 1
+                    else:
+                        parsed.name_len_min = int(val)
+                        parsed.name_len_max = int(val)
+                except (ValueError, IndexError):
+                    pass
                 i += 1; continue
             elif mod_lower in ('attrib', 'attributes'):
                 for ch in val.lower():
@@ -685,7 +688,7 @@ class SearchEngine:
                 pattern = re.compile(term, flags)
                 return lambda text, p=pattern: p.search(text) is not None
             except re.error:
-                pass
+                return lambda text: False
 
         if options.use_wildcards or ('*' in term or '?' in term):
             if options.match_case:

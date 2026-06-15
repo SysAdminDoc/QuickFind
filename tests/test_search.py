@@ -202,6 +202,16 @@ class TestParseQuery:
         assert parsed.name_len_min == 5
         assert parsed.name_len_max == 15
 
+    def test_len_invalid_value(self):
+        parsed = parse_query("len:abc")
+        assert parsed.name_len_min == 0
+        assert parsed.name_len_max == 0
+
+    def test_len_empty(self):
+        parsed = parse_query("len:")
+        assert parsed.name_len_min == 0
+        assert parsed.name_len_max == 0
+
     def test_attrib_modifier(self):
         parsed = parse_query("attrib:hs")
         expected = ATTRIB_MAP['h'] | ATTRIB_MAP['s']
@@ -224,6 +234,11 @@ class TestParseQuery:
         parsed = parse_query("hello | world")
         assert parsed.or_groups == [["hello", "world"]]
         assert parsed.terms == []
+
+    def test_regex_invalid_pattern(self):
+        parsed = parse_query("regex:[invalid")
+        assert parsed.options.use_regex is True
+        assert parsed.terms == ["[invalid"]
 
     def test_wildcard_autodetect(self):
         parsed = parse_query("*.py")

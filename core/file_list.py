@@ -17,6 +17,8 @@ from core.ntfs import FILE_ATTRIBUTE_DIRECTORY
 
 logger = logging.getLogger('QuickFind.FileList')
 
+_FILETIME_EPOCH_DIFF = 116444736000000000  # 100ns intervals between 1601 and 1970
+
 
 def _parse_efu_date(date_str: str) -> Optional[datetime]:
     """Parse EFU date format (Windows FILETIME as decimal string)."""
@@ -26,9 +28,7 @@ def _parse_efu_date(date_str: str) -> Optional[datetime]:
         ft = int(date_str)
         if ft <= 0:
             return None
-        # Convert FILETIME (100ns since 1601-01-01) to Unix timestamp
-        epoch_diff = 116444736000000000  # 100ns intervals between 1601 and 1970
-        unix_us = (ft - epoch_diff) // 10
+        unix_us = (ft - _FILETIME_EPOCH_DIFF) // 10
         return datetime.fromtimestamp(unix_us / 1_000_000)
     except (ValueError, OverflowError, OSError):
         return None
@@ -101,7 +101,9 @@ def load_efu(filepath: str) -> list[FileEntry]:
                     date_modified=date_mod,
                     date_created=date_create,
                 )
-                entry._path = full_path  # Pre-set the full path
+                entry._path = full_path
+                if size or date_mod or date_create:
+                    entry._stat_loaded = True
                 entries.append(entry)
 
                 # Register this path for parent lookups
@@ -133,11 +135,9 @@ def save_efu(entries: list[FileEntry], filepath: str, index=None):
                 dm = ''
                 dc = ''
                 if entry.date_modified:
-                    epoch_diff = 116444736000000000
-                    dm = str(int(entry.date_modified.timestamp() * 10_000_000) + epoch_diff)
+                    dm = str(int(entry.date_modified.timestamp() * 10_000_000) + _FILETIME_EPOCH_DIFF)
                 if entry.date_created:
-                    epoch_diff = 116444736000000000
-                    dc = str(int(entry.date_created.timestamp() * 10_000_000) + epoch_diff)
+                    dc = str(int(entry.date_created.timestamp() * 10_000_000) + _FILETIME_EPOCH_DIFF)
 
                 writer.writerow([
                     path,

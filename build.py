@@ -23,7 +23,7 @@ ICON = ASSETS / 'quickfind.ico'
 
 APP_NAME = "QuickFind"
 ENTRY = "quickfind.py"
-VERSION = "0.7.1"
+VERSION = "0.7.2"
 
 
 def ensure_pyinstaller():
@@ -33,8 +33,7 @@ def ensure_pyinstaller():
     except ImportError:
         print("[*] Installing PyInstaller...")
         subprocess.check_call([
-            sys.executable, '-m', 'pip', 'install', 'pyinstaller',
-            '--break-system-packages', '-q'
+            sys.executable, '-m', 'pip', 'install', 'pyinstaller', '-q'
         ])
 
 

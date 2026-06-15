@@ -34,8 +34,10 @@ class HiddenPathsManager:
     def _save(self):
         CONFIG_DIR.mkdir(exist_ok=True)
         try:
-            with open(HIDDEN_PATHS_FILE, 'w') as f:
+            tmp = HIDDEN_PATHS_FILE.with_suffix('.tmp')
+            with open(tmp, 'w') as f:
                 json.dump(self._data, f, indent=2)
+            tmp.replace(HIDDEN_PATHS_FILE)
         except Exception as e:
             logger.error(f"Failed to save hidden paths: {e}")
 

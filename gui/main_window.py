@@ -38,7 +38,7 @@ from core.hidden_paths import HiddenPathsManager
 
 logger = logging.getLogger('QuickFind.MainWindow')
 
-VERSION = "0.7.1"
+VERSION = "0.7.2"
 
 
 def _set_dark_title_bar(hwnd):

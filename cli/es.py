@@ -153,16 +153,17 @@ def main():
     if args.offset:
         results = results[args.offset:]
 
-    # Output
-    if args.json:
-        _output_json(results, file_index)
-    elif args.csv:
-        _output_csv(results, file_index)
-    else:
-        _output_text(results, file_index)
-
-    file_index.shutdown()
-    close_all_connections()
+    try:
+        # Output
+        if args.json:
+            _output_json(results, file_index)
+        elif args.csv:
+            _output_csv(results, file_index)
+        else:
+            _output_text(results, file_index)
+    finally:
+        file_index.shutdown()
+        close_all_connections()
 
 
 def _output_text(results, index):

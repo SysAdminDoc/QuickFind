@@ -204,6 +204,7 @@ DRIVE_FLAG_WALKED = 0x01
 
 
 _fts_pending_changes = 0
+_fts_lock = threading.Lock()
 _FTS_REBUILD_THRESHOLD = 1000
 
 
@@ -214,7 +215,8 @@ def _rebuild_fts(conn: sqlite3.Connection):
         return
     try:
         conn.execute("INSERT INTO entries_fts(entries_fts) VALUES('rebuild')")
-        _fts_pending_changes = 0
+        with _fts_lock:
+            _fts_pending_changes = 0
     except Exception as e:
         logger.warning(f"FTS rebuild failed: {e}")
 
@@ -432,8 +434,10 @@ def db_batch_apply(inserts: list[tuple], deletes: list[tuple],
         total = len(inserts) + len(deletes) + len(updates)
         if fts_dirty and _FTS5_AVAILABLE:
             global _fts_pending_changes
-            _fts_pending_changes += total
-            if _fts_pending_changes >= _FTS_REBUILD_THRESHOLD:
+            with _fts_lock:
+                _fts_pending_changes += total
+                needs_rebuild = _fts_pending_changes >= _FTS_REBUILD_THRESHOLD
+            if needs_rebuild:
                 _rebuild_fts(conn)
 
         logger.debug(f"Batch applied: +{len(inserts)} -{len(deletes)} ~{len(updates)} ({total} ops)")

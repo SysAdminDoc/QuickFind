@@ -66,6 +66,8 @@ class LauncherPopup(QWidget):
 
         self._search_input = QLineEdit()
         self._search_input.setPlaceholderText("Search files and folders...")
+        self._search_input.setAccessibleName("Quick search")
+        self._search_input.setAccessibleDescription("Type to search files, press Escape to dismiss")
         self._search_input.setFont(QFont("Segoe UI", 16))
         self._search_input.setStyleSheet(f"""
             QLineEdit {{
@@ -147,14 +149,18 @@ class LauncherPopup(QWidget):
         self.dismiss()
 
     def keyPressEvent(self, event: QKeyEvent):
-        if event.key() == Qt.Key.Key_Escape:
+        key = event.key()
+        if key == Qt.Key.Key_Escape:
             self.dismiss()
-        elif event.key() == Qt.Key.Key_Down:
+        elif key == Qt.Key.Key_Down:
             if self._results_list.isVisible():
                 self._results_list.setFocus()
                 if self._results_list.currentRow() < 0:
                     self._results_list.setCurrentRow(0)
-        elif event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+        elif key == Qt.Key.Key_Up:
+            if self._results_list.isVisible() and self._results_list.currentRow() <= 0:
+                self._search_input.setFocus()
+        elif key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
             if self._results_list.isVisible() and self._results_list.currentRow() >= 0:
                 item = self._results_list.currentItem()
                 if item:
