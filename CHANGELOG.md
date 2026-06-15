@@ -11,6 +11,7 @@ All notable changes to QuickFind will be documented in this file.
 - Fixed: Log rotation — `RotatingFileHandler` with 5MB max and 3 backups replaces unbounded `FileHandler`
 - Added: HTTP server per-IP rate limiting (60 req/min, 429 on excess)
 - Fixed: ctypes Win32 safety — `WinDLL(use_last_error=True)`, complete `argtypes` for all functions, `ctypes.get_last_error()` everywhere
+- Perf: FTS5 rebuilds now deferred until 1000 cumulative changes (was rebuilding on every USN batch)
 
 ## [v0.7.1]
 
