@@ -10,6 +10,7 @@ v0.6.0: Batch DB writes, deferred path resolution, non-admin fallback (os.scandi
 
 import os
 import time
+import fnmatch
 import logging
 import threading
 from collections import deque
@@ -489,6 +490,27 @@ class FileIndex(QObject):
 
         return (drive_letter, drive_entries, vol, files, folders)
 
+    @staticmethod
+    def _load_ignore_patterns(directory: str) -> list[str]:
+        """Load patterns from .quickfindignore in the given directory."""
+        ignore_file = os.path.join(directory, '.quickfindignore')
+        try:
+            with open(ignore_file, 'r', encoding='utf-8') as f:
+                return [
+                    line.strip() for line in f
+                    if line.strip() and not line.startswith('#')
+                ]
+        except (OSError, PermissionError):
+            return []
+
+    @staticmethod
+    def _matches_ignore(name: str, patterns: list[str]) -> bool:
+        """Check if a filename matches any ignore pattern (fnmatch glob)."""
+        for pat in patterns:
+            if fnmatch.fnmatch(name, pat) or fnmatch.fnmatch(name.lower(), pat.lower()):
+                return True
+        return False
+
     def _walk_drive(self, drive_letter: str):
         """
         Index a non-NTFS drive (FAT32, exFAT, ReFS) or fallback drive via recursive os.scandir.
@@ -524,12 +546,15 @@ class FileIndex(QObject):
             parent_frn = dir_frn_map.pop(current_dir, root_frn)
 
             try:
+                ignore_patterns = self._load_ignore_patterns(current_dir)
                 with os.scandir(current_dir) as it:
                     for de in it:
                         if self._cancel_flag:
                             break
                         try:
                             name = de.name
+                            if ignore_patterns and self._matches_ignore(name, ignore_patterns):
+                                continue
                             is_dir = de.is_dir(follow_symlinks=False)
                             st = de.stat(follow_symlinks=False)
 

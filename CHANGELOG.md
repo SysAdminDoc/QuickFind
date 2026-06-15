@@ -15,6 +15,7 @@ All notable changes to QuickFind will be documented in this file.
 - Added: Smart case sensitivity — query "Foo" auto-switches to case-sensitive, "foo" stays insensitive; explicit `case:`/`nocase:` overrides
 - Added: Test suite — 108 tests covering search parsing, size/date helpers, MFT record parsing, USN records, cache helpers, smart case
 - Fixed: File deletion now runs in background thread (no longer blocks UI during large deletes)
+- Added: `.quickfindignore` file support — place in any directory to exclude matching files/folders from indexing (glob patterns, like fd/ripgrep)
 
 ## [v0.7.1]
 
