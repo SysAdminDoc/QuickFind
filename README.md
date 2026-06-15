@@ -1,4 +1,4 @@
-# QuickFind v0.7.1
+# QuickFind v0.7.2
 
 Lightning-fast file search for Windows, powered by NTFS MFT + USN Journal.
 
@@ -32,14 +32,18 @@ An open-source alternative to Voidtools Everything, built with Python and PyQt6 
 - **Regex** support (`regex:pattern`)
 - **Wildcards** (`*.py`, `test?.log`)
 - **Boolean logic** - AND (spaces), OR (`|`), NOT (`!term`)
-- **Search modifiers**: `case:`, `path:`, `file:`, `folder:`, `wholeword:`, `ext:`, `size:`, `dm:`, `dc:`, `len:`, `attrib:`, `content:`, `parent:`, `dupe:`
+- **Search modifiers**: `case:`, `path:`, `file:`, `folder:`, `wholeword:`, `ext:`, `size:`, `dm:`, `dc:`, `len:`, `attrib:`, `content:`, `parent:`, `dupe:`, `fuzzy:`
+- **Fuzzy matching** via `fuzzy:` modifier — subsequence matching for typo-tolerant search
+- **Smart case sensitivity** — uppercase in query auto-switches to case-sensitive (fd-style)
 - Size filters: `size:>1mb`, `size:100kb..5mb`
 - Date filters: `dm:today`, `dm:>2024-01-01`, `dc:thisweek`
 - Attribute filters: `attrib:hs` (hidden + system)
 - Content search: `content:searchterm` (reads file content, slower)
+- **Usage-based ranking** — frequently opened files rank higher with Relevance sort
 - **Search syntax help** panel accessible from menu
 
 ### GUI
+- **Launcher popup** (Ctrl+Shift+F) — floating search bar, Wox/Flow Launcher style
 - **Catppuccin Mocha** dark theme - premium paid-software aesthetic
 - **Details view** with sortable columns (Name, Path, Size, Date Modified, Date Created, Type, Attributes)
 - **Column visibility** - right-click header to show/hide columns, persisted in settings
@@ -142,6 +146,7 @@ python build.py --clean
 | `attrib:rh` | Read-only + hidden |
 | `content:TODO` | Search file content |
 | `parent:node_modules` | Parent directory filter |
+| `fuzzy:qickfind` | Fuzzy subsequence matching |
 | `dupe:` | Find duplicate filenames |
 
 ## Architecture
