@@ -962,10 +962,10 @@ class MainWindow(QMainWindow):
 
     def _on_delete_requested(self, entries):
         """Delete selected entries to recycle bin."""
-        from gui.context_menu import recycle_file
+        from gui.context_menu import _delete_to_recycle
         for entry in entries:
             path = entry.get_path(self._file_index)
-            recycle_file(path)
+            _delete_to_recycle(path)
 
     def _on_rename_requested(self, entry: FileEntry):
         """Rename a file (F2). Opens explorer rename dialog."""

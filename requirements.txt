@@ -1,4 +1,1 @@
-core
-ctypes.wintypes
-gui
 PyQt6

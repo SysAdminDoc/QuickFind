@@ -3,6 +3,7 @@
 
 import sys
 import os
+from pathlib import Path
 
 
 # codex-branding:start
@@ -41,7 +42,6 @@ _bootstrap()
 import ctypes
 import logging
 import traceback
-from pathlib import Path
 from datetime import datetime
 
 from PyQt6.QtWidgets import QApplication, QMessageBox
@@ -129,7 +129,6 @@ def main():
     # Hide console window
     try:
         hwnd = ctypes.windll.kernel32.GetConsoleWindow()
-        hwnd.setWindowIcon(branding_icon)
         if hwnd:
             ctypes.windll.user32.ShowWindow(hwnd, 0)
     except Exception:
