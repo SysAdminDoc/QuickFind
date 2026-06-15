@@ -632,6 +632,9 @@ class MainWindow(QMainWindow):
         self._tray.show()
         self._tray.start_hotkey()
 
+        from gui.launcher_popup import LauncherPopup
+        self._launcher_popup = LauncherPopup(self._search_engine, self._file_index)
+
     def _connect_signals(self):
         """Connect all signals."""
         # Search
@@ -1352,11 +1355,17 @@ class MainWindow(QMainWindow):
     # ── Window management ──────────────────────────────
 
     def _show_from_tray(self):
-        self.showNormal()
-        self.activateWindow()
-        self.raise_()
-        self._search_input.setFocus()
-        self._search_input.selectAll()
+        if hasattr(self, '_launcher_popup'):
+            if self._launcher_popup.isVisible():
+                self._launcher_popup.dismiss()
+            else:
+                self._launcher_popup.show_popup()
+        else:
+            self.showNormal()
+            self.activateWindow()
+            self.raise_()
+            self._search_input.setFocus()
+            self._search_input.selectAll()
 
     def _quit(self):
         # Stop status bar timer
