@@ -155,6 +155,7 @@ class FileIndex(QObject):
         self._exclude_hidden: bool = False
         self._exclude_system: bool = False
         self._usn_poll_interval_ms: int = 1000
+        self._drive_rescan_intervals: dict[str, int] = {}
 
         # Deferred path resolution queue
         self._path_resolve_queue: deque[FileEntry] = deque()
@@ -760,7 +761,9 @@ class FileIndex(QObject):
         # Start periodic rescan for non-NTFS drives
         if self._walked_drives:
             if not self._rescan_thread or not self._rescan_thread.isRunning():
-                self._rescan_thread = FATRescanThread(self)
+                self._rescan_thread = FATRescanThread(
+                    self, drive_intervals=self._drive_rescan_intervals
+                )
                 self._rescan_thread.rescan_complete.connect(self._on_fat_rescan)
                 self._rescan_thread.start()
                 logger.info(f"FAT rescan thread started for drives: {', '.join(sorted(self._walked_drives))}")
@@ -968,14 +971,25 @@ class USNMonitorThread(QThread):
 
 
 class FATRescanThread(QThread):
-    """Background thread that periodically re-walks non-NTFS drives to detect changes."""
+    """Background thread that periodically re-walks non-NTFS drives to detect changes.
+
+    Supports per-drive rescan intervals via drive_intervals dict.
+    """
     rescan_complete = pyqtSignal(int)  # total changed entries
 
-    def __init__(self, index: FileIndex, interval_seconds: int = 60):
+    DEFAULT_INTERVAL = 60
+
+    def __init__(self, index: FileIndex,
+                 interval_seconds: int = 60,
+                 drive_intervals: Optional[dict[str, int]] = None):
         super().__init__()
         self._index = index
-        self._interval = interval_seconds
+        self._default_interval = interval_seconds
+        self._drive_intervals = drive_intervals or {}
         self._running = False
+
+    def _get_interval(self, drive_letter: str) -> int:
+        return self._drive_intervals.get(drive_letter, self._default_interval)
 
     def stop(self):
         self._running = False
@@ -984,33 +998,36 @@ class FATRescanThread(QThread):
         self._running = True
         logger.info("FAT rescan thread started")
 
-        while self._running:
-            # Sleep first — initial data was just loaded/walked
-            elapsed = 0.0
-            while elapsed < self._interval and self._running:
-                time.sleep(0.5)
-                elapsed += 0.5
+        last_scan: dict[str, float] = {}
+        for d in self._index._walked_drives:
+            last_scan[d] = time.monotonic()
 
+        while self._running:
+            time.sleep(0.5)
             if not self._running:
                 break
 
+            now = time.monotonic()
             walked_any = False
             total_changes = 0
+
             for drive_letter in list(self._index._walked_drives):
                 if not self._running:
                     break
+                interval = self._get_interval(drive_letter)
+                if now - last_scan.get(drive_letter, 0) < interval:
+                    continue
                 try:
                     old_count = len(self._index._entries.get(drive_letter, {}))
                     self._index._walk_drive(drive_letter)
                     new_count = len(self._index._entries.get(drive_letter, {}))
                     total_changes += abs(new_count - old_count)
                     walked_any = True
+                    last_scan[drive_letter] = time.monotonic()
                 except Exception as e:
                     logger.error(f"Error re-walking {drive_letter}: {e}")
+                    last_scan[drive_letter] = time.monotonic()
 
-            # Always rebuild flat list after re-walk to release old FileEntry
-            # references even when entry count is unchanged (the dict was replaced
-            # by _walk_drive, so old objects linger in _all_entries otherwise)
             if walked_any:
                 self.rescan_complete.emit(total_changes)
 
