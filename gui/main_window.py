@@ -199,6 +199,8 @@ class MainWindow(QMainWindow):
         self._filter_combo.setObjectName("filterCombo")
         self._filter_combo.setFixedHeight(22)
         self._filter_combo.setFixedWidth(120)
+        self._filter_combo.setAccessibleName("Filter type")
+        self._filter_combo.setAccessibleDescription("Select file type filter")
         self._build_filter_combo()
         search_layout.addWidget(self._filter_combo)
 
@@ -207,6 +209,8 @@ class MainWindow(QMainWindow):
         self._search_input.setFixedHeight(22)
         self._search_input.setClearButtonEnabled(True)
         self._search_input.setPlaceholderText("Search files and folders...")
+        self._search_input.setAccessibleName("Search input")
+        self._search_input.setAccessibleDescription("Type to search files and folders")
         self._search_input.setToolTip(SYNTAX_HELP)
 
         # Autocomplete from search history
@@ -227,6 +231,7 @@ class MainWindow(QMainWindow):
         self._tab_widget.setTabsClosable(True)
         self._tab_widget.setMovable(True)
         self._tab_widget.setDocumentMode(True)
+        self._tab_widget.setAccessibleName("Search results tabs")
         self._tab_widget.tabCloseRequested.connect(self._close_tab)
         self._tab_widget.currentChanged.connect(self._on_tab_changed)
         self._tab_widget.setStyleSheet(f"""
@@ -291,6 +296,7 @@ class MainWindow(QMainWindow):
 
         self._result_count_label = QLabel("0 objects")
         self._result_count_label.setStyleSheet(f"color: {MOCHA['subtext0']}; font-size: 11px; padding: 0 4px;")
+        self._result_count_label.setAccessibleName("Result count")
         self._status_bar.addWidget(self._result_count_label)
 
         self._status_label = QLabel("")

@@ -770,6 +770,8 @@ class ResultsView(QStackedWidget):
 
         # Table view (index 0)
         self.table_view = ResultsTableView()
+        self.table_view.setAccessibleName("Search results")
+        self.table_view.setAccessibleDescription("File search results table")
         self.table_view.set_model(self._model)
         self.table_view.item_activated.connect(self.item_activated)
         self.table_view.selection_changed.connect(self.selection_changed)

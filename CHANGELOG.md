@@ -21,6 +21,7 @@ All notable changes to QuickFind will be documented in this file.
 - Added: Per-drive rescan intervals for non-NTFS drives — configure via `_drive_rescan_intervals` dict (e.g., 30s for SSD, 300s for NAS)
 - Perf: Search available after first drive finishes indexing — flat list rebuilt incrementally per drive instead of waiting for all drives
 - Added: Launcher popup mode — Ctrl+Shift+F shows a floating search bar (Wox/Flow Launcher style); results appear inline, Enter opens and dismisses
+- Added: Accessibility — `accessibleName`/`accessibleDescription` on search input, filter combo, results table, result count, tab widget
 
 ## [v0.7.1]
 
