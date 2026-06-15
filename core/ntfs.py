@@ -73,7 +73,7 @@ USN_REASON_STREAM_CHANGE = 0x00200000
 USN_REASON_CLOSE = 0x80000000
 
 # ── Win32 API setup ─────────────────────────────────────────────────
-kernel32 = ctypes.windll.kernel32
+kernel32 = ctypes.WinDLL('kernel32', use_last_error=True)
 CreateFileW = kernel32.CreateFileW
 CreateFileW.restype = wintypes.HANDLE
 CreateFileW.argtypes = [
@@ -94,7 +94,7 @@ CloseHandle.restype = wintypes.BOOL
 CloseHandle.argtypes = [wintypes.HANDLE]
 
 # Privilege management for $MFT access
-advapi32 = ctypes.windll.advapi32
+advapi32 = ctypes.WinDLL('advapi32', use_last_error=True)
 
 OpenProcessToken = advapi32.OpenProcessToken
 OpenProcessToken.restype = wintypes.BOOL
@@ -113,6 +113,7 @@ AdjustTokenPrivileges.argtypes = [
 
 GetCurrentProcess = kernel32.GetCurrentProcess
 GetCurrentProcess.restype = wintypes.HANDLE
+GetCurrentProcess.argtypes = []
 
 TOKEN_ADJUST_PRIVILEGES = 0x0020
 TOKEN_QUERY = 0x0008
@@ -171,6 +172,11 @@ GetDriveTypeW.argtypes = [wintypes.LPCWSTR]
 
 GetVolumeInformationW = kernel32.GetVolumeInformationW
 GetVolumeInformationW.restype = wintypes.BOOL
+GetVolumeInformationW.argtypes = [
+    wintypes.LPCWSTR, wintypes.LPWSTR, wintypes.DWORD,
+    ctypes.POINTER(wintypes.DWORD), ctypes.POINTER(wintypes.DWORD),
+    ctypes.POINTER(wintypes.DWORD), wintypes.LPWSTR, wintypes.DWORD
+]
 
 GetLogicalDriveStringsW = kernel32.GetLogicalDriveStringsW
 GetLogicalDriveStringsW.restype = wintypes.DWORD
@@ -178,6 +184,10 @@ GetLogicalDriveStringsW.argtypes = [wintypes.DWORD, wintypes.LPWSTR]
 
 GetDiskFreeSpaceExW = kernel32.GetDiskFreeSpaceExW
 GetDiskFreeSpaceExW.restype = wintypes.BOOL
+GetDiskFreeSpaceExW.argtypes = [
+    wintypes.LPCWSTR, ctypes.POINTER(wintypes.ULARGE_INTEGER),
+    ctypes.POINTER(wintypes.ULARGE_INTEGER), ctypes.POINTER(wintypes.ULARGE_INTEGER)
+]
 
 DRIVE_FIXED = 3
 DRIVE_REMOVABLE = 2
@@ -617,7 +627,7 @@ class NTFSVolume:
             )
 
             if not success:
-                err = ctypes.GetLastError()
+                err = ctypes.get_last_error()
                 if err == 38:  # ERROR_HANDLE_EOF - we've reached the end
                     break
                 logger.debug(f"FSCTL_ENUM_USN_DATA ended with error {err}")
@@ -725,7 +735,7 @@ class NTFSVolume:
         )
 
         if mft_handle == INVALID_HANDLE_VALUE or mft_handle is None:
-            err = ctypes.GetLastError()
+            err = ctypes.get_last_error()
             logger.warning(f"Cannot open $MFT on {self.drive_letter}: (error {err}), falling back to USN enum")
             yield from self.enumerate_mft(callback, cancel_check)
             return
@@ -812,7 +822,7 @@ class NTFSVolume:
         )
 
         if not success:
-            err = ctypes.GetLastError()
+            err = ctypes.get_last_error()
             logger.warning(f"Failed to query USN journal on {self.drive_letter}: error {err}")
             # Try to create the journal
             if err == 1179:  # ERROR_JOURNAL_NOT_ACTIVE

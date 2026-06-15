@@ -10,6 +10,7 @@ All notable changes to QuickFind will be documented in this file.
 - Security: HTTP server uses `html.escape()` for all user-derived content, adds CSP + X-Content-Type-Options headers
 - Fixed: Log rotation — `RotatingFileHandler` with 5MB max and 3 backups replaces unbounded `FileHandler`
 - Added: HTTP server per-IP rate limiting (60 req/min, 429 on excess)
+- Fixed: ctypes Win32 safety — `WinDLL(use_last_error=True)`, complete `argtypes` for all functions, `ctypes.get_last_error()` everywhere
 
 ## [v0.7.1]
 
