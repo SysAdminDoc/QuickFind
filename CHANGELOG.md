@@ -24,6 +24,9 @@ All notable changes to QuickFind will be documented in this file.
 - Fixed: SHFileOperationW return code now logged on failure
 - Fixed: Image preview rejects files >50MB before loading (prevents memory exhaustion)
 - Fixed: Launcher popup Up-arrow key navigates back to search from results
+- Fixed: Date filters (`dm:today`, `dc:>2024-01-01`) now exclude entries with no date (previously passed through)
+- Fixed: Size filters (`size:>1mb`) now work in in-memory search path (previously only worked via DB)
+- Fixed: Deferred path resolution queue flushed on shutdown (entries queued right before exit now resolve)
 
 ### Previous changes
 - Fixed: `recycle_file` import crash — Delete key handler referenced wrong function name

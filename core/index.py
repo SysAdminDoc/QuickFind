@@ -788,6 +788,10 @@ class FileIndex(QObject):
             logger.info("FAT rescan thread stopped")
         if self._path_resolve_timer:
             self._path_resolve_timer.stop()
+        while self._path_resolve_queue:
+            entry = self._path_resolve_queue.popleft()
+            if entry._path is None:
+                entry._path = self.resolve_path(entry.drive, entry.frn)
 
     def _on_fat_rescan(self, changes: int):
         """Handle FAT rescan completion.

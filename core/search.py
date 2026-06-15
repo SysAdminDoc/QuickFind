@@ -747,6 +747,13 @@ class SearchEngine:
             if entry.extension not in parsed.ext_filter:
                 return False
 
+        if parsed.size_min or parsed.size_max:
+            entry.ensure_stat(self._index)
+            if parsed.size_min and entry.size < parsed.size_min:
+                return False
+            if parsed.size_max and entry.size > parsed.size_max:
+                return False
+
         if parsed.attrib_include:
             if not (entry.attributes & parsed.attrib_include):
                 return False
@@ -757,17 +764,17 @@ class SearchEngine:
         if parsed.name_len_max and name_len > parsed.name_len_max:
             return False
 
-        if parsed.date_mod_after and entry.date_modified:
-            if entry.date_modified < parsed.date_mod_after:
+        if parsed.date_mod_after:
+            if not entry.date_modified or entry.date_modified < parsed.date_mod_after:
                 return False
-        if parsed.date_mod_before and entry.date_modified:
-            if entry.date_modified > parsed.date_mod_before:
+        if parsed.date_mod_before:
+            if not entry.date_modified or entry.date_modified > parsed.date_mod_before:
                 return False
-        if parsed.date_create_after and entry.date_created:
-            if entry.date_created < parsed.date_create_after:
+        if parsed.date_create_after:
+            if not entry.date_created or entry.date_created < parsed.date_create_after:
                 return False
-        if parsed.date_create_before and entry.date_created:
-            if entry.date_created > parsed.date_create_before:
+        if parsed.date_create_before:
+            if not entry.date_created or entry.date_created > parsed.date_create_before:
                 return False
 
         if parsed.options.match_path or parsed.path_includes:
