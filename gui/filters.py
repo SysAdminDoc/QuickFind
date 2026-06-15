@@ -199,8 +199,10 @@ class FilterBar(QWidget):
                     'macro': f.macro,
                     'exclude_paths': f.exclude_paths,
                 })
-            with open(FILTERS_FILE, 'w') as f:
+            tmp = FILTERS_FILE.with_suffix('.tmp')
+            with open(tmp, 'w') as f:
                 json.dump(data, f, indent=2)
+            tmp.replace(FILTERS_FILE)
         except Exception as e:
             logger.error(f"Failed to save custom filters: {e}")
 

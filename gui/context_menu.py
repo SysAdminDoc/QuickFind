@@ -20,6 +20,19 @@ logger = logging.getLogger('QuickFind.ContextMenu')
 shell32 = ctypes.windll.shell32
 
 
+class _SHFILEOPSTRUCTW(ctypes.Structure):
+    _fields_ = [
+        ('hwnd', ctypes.wintypes.HWND),
+        ('wFunc', ctypes.c_uint),
+        ('pFrom', ctypes.c_wchar_p),
+        ('pTo', ctypes.c_wchar_p),
+        ('fFlags', ctypes.c_ushort),
+        ('fAnyOperationsAborted', ctypes.wintypes.BOOL),
+        ('hNameMappings', ctypes.c_void_p),
+        ('lpszProgressTitle', ctypes.c_wchar_p),
+    ]
+
+
 def _open_file(path: str):
     """Open a file with its default application."""
     try:
@@ -80,35 +93,22 @@ def _show_properties(path: str):
         logger.error(f"Failed to show properties for {path}: {e}")
 
 
+_FO_DELETE = 3
+_FOF_ALLOWUNDO = 0x0040
+_FOF_SILENT = 0x0004
+_FOF_NOCONFIRMATION = 0x0010
+
+
 def _delete_to_recycle(path: str):
     """Delete file to Recycle Bin using SHFileOperation."""
     try:
-        import ctypes.wintypes
-        # Use shell API for safe recycling
-        # SHFileOperationW with FOF_ALLOWUNDO
-        class SHFILEOPSTRUCTW(ctypes.Structure):
-            _fields_ = [
-                ('hwnd', ctypes.wintypes.HWND),
-                ('wFunc', ctypes.c_uint),
-                ('pFrom', ctypes.c_wchar_p),
-                ('pTo', ctypes.c_wchar_p),
-                ('fFlags', ctypes.c_ushort),
-                ('fAnyOperationsAborted', ctypes.wintypes.BOOL),
-                ('hNameMappings', ctypes.c_void_p),
-                ('lpszProgressTitle', ctypes.c_wchar_p),
-            ]
-
-        FO_DELETE = 3
-        FOF_ALLOWUNDO = 0x0040
-        FOF_SILENT = 0x0004
-        FOF_NOCONFIRMATION = 0x0010
-
-        op = SHFILEOPSTRUCTW()
-        op.wFunc = FO_DELETE
+        op = _SHFILEOPSTRUCTW()
+        op.wFunc = _FO_DELETE
         op.pFrom = path + '\0'
-        op.fFlags = FOF_ALLOWUNDO | FOF_SILENT | FOF_NOCONFIRMATION
-
-        shell32.SHFileOperationW(ctypes.byref(op))
+        op.fFlags = _FOF_ALLOWUNDO | _FOF_SILENT | _FOF_NOCONFIRMATION
+        result = shell32.SHFileOperationW(ctypes.byref(op))
+        if result != 0:
+            logger.warning(f"SHFileOperationW returned {result} for {path}")
     except Exception as e:
         logger.error(f"Failed to delete {path}: {e}")
 

@@ -18,6 +18,12 @@ All notable changes to QuickFind will be documented in this file.
 - Fixed: Launcher popup Up-arrow returns focus to search input from results list
 - Security: Removed `--break-system-packages` from pip install commands (bootstrap and build)
 - Added: Launcher popup accessibility labels on search input
+- Fixed: `content:` search modifier now actually filters by file content (was parsed but ignored)
+- Fixed: All JSON config saves (settings, bookmarks, filters) now atomic (tmp+rename)
+- Fixed: SHFileOperationW struct moved to module level (no longer recreated per delete call)
+- Fixed: SHFileOperationW return code now logged on failure
+- Fixed: Image preview rejects files >50MB before loading (prevents memory exhaustion)
+- Fixed: Launcher popup Up-arrow key navigates back to search from results
 
 ### Previous changes
 - Fixed: `recycle_file` import crash — Delete key handler referenced wrong function name

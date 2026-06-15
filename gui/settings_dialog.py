@@ -74,8 +74,10 @@ class Settings:
     def save(self):
         CONFIG_DIR.mkdir(exist_ok=True)
         try:
-            with open(SETTINGS_FILE, 'w') as f:
+            tmp = SETTINGS_FILE.with_suffix('.tmp')
+            with open(tmp, 'w') as f:
                 json.dump(asdict(self), f, indent=2)
+            tmp.replace(SETTINGS_FILE)
         except Exception as e:
             logger.error(f"Failed to save settings: {e}")
 

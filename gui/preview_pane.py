@@ -74,6 +74,12 @@ class ImagePreviewLoader(QThread):
 
     def run(self):
         try:
+            try:
+                if os.path.getsize(self._path) > MAX_IMAGE_PREVIEW_SIZE:
+                    self.error.emit(self._path, "Image too large for preview")
+                    return
+            except OSError:
+                pass
             image = QImage(self._path)
             if image.isNull():
                 self.error.emit(self._path, "Failed to load image")

@@ -798,6 +798,10 @@ class SearchEngine:
             if not matcher(target):
                 return False
 
+        if parsed.content_search and not entry.is_dir:
+            if not self.content_search(entry, parsed.content_search, parsed.options.match_case):
+                return False
+
         return True
 
     def _sort_results(self, results: list[FileEntry],

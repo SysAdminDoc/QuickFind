@@ -79,8 +79,10 @@ class BookmarkManager:
         CONFIG_DIR.mkdir(exist_ok=True)
         try:
             data = [b.to_dict() for b in self._bookmarks]
-            with open(BOOKMARKS_FILE, 'w') as f:
+            tmp = BOOKMARKS_FILE.with_suffix('.tmp')
+            with open(tmp, 'w') as f:
                 json.dump(data, f, indent=2)
+            tmp.replace(BOOKMARKS_FILE)
         except Exception as e:
             logger.error(f"Failed to save bookmarks: {e}")
 
