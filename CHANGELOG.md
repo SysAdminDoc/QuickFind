@@ -9,6 +9,7 @@ All notable changes to QuickFind will be documented in this file.
 - Fixed: `requirements.txt` now pip-installable (removed internal module names)
 - Security: HTTP server uses `html.escape()` for all user-derived content, adds CSP + X-Content-Type-Options headers
 - Fixed: Log rotation — `RotatingFileHandler` with 5MB max and 3 backups replaces unbounded `FileHandler`
+- Added: HTTP server per-IP rate limiting (60 req/min, 429 on excess)
 
 ## [v0.7.1]
 

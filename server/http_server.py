@@ -9,7 +9,9 @@ import json
 import logging
 import os
 import secrets
+import time
 import threading
+from collections import defaultdict
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 from typing import Optional
@@ -143,6 +145,29 @@ def _format_size(size):
     return f"{size/1073741824:.2f} GB"
 
 
+class _RateLimiter:
+    WINDOW = 60
+    MAX_REQUESTS = 60
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._hits: dict[str, list[float]] = defaultdict(list)
+
+    def allow(self, ip: str) -> bool:
+        now = time.monotonic()
+        with self._lock:
+            timestamps = self._hits[ip]
+            cutoff = now - self.WINDOW
+            self._hits[ip] = timestamps = [t for t in timestamps if t > cutoff]
+            if len(timestamps) >= self.MAX_REQUESTS:
+                return False
+            timestamps.append(now)
+            return True
+
+
+_rate_limiter = _RateLimiter()
+
+
 class SearchHandler(BaseHTTPRequestHandler):
     """HTTP request handler for search API."""
 
@@ -170,6 +195,15 @@ class SearchHandler(BaseHTTPRequestHandler):
         self.send_header('X-Content-Type-Options', 'nosniff')
 
     def do_GET(self):
+        client_ip = self.client_address[0]
+        if not _rate_limiter.allow(client_ip):
+            self.send_response(429)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Retry-After', '60')
+            self.end_headers()
+            self.wfile.write(json.dumps({'error': 'Too many requests'}).encode('utf-8'))
+            return
+
         parsed = urlparse(self.path)
         params = parse_qs(parsed.query)
 
