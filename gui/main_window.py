@@ -961,11 +961,14 @@ class MainWindow(QMainWindow):
             pass
 
     def _on_delete_requested(self, entries):
-        """Delete selected entries to recycle bin."""
+        """Delete selected entries to recycle bin in a background thread."""
+        import threading
         from gui.context_menu import _delete_to_recycle
-        for entry in entries:
-            path = entry.get_path(self._file_index)
-            _delete_to_recycle(path)
+        paths = [entry.get_path(self._file_index) for entry in entries]
+        def _do_delete():
+            for path in paths:
+                _delete_to_recycle(path)
+        threading.Thread(target=_do_delete, daemon=True).start()
 
     def _on_rename_requested(self, entry: FileEntry):
         """Rename a file (F2). Opens explorer rename dialog."""

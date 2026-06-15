@@ -6,6 +6,7 @@ import os
 import subprocess
 import ctypes
 import logging
+import threading
 from typing import Optional
 
 from PyQt6.QtWidgets import QMenu, QApplication, QInputDialog
@@ -224,9 +225,10 @@ def build_context_menu(entries: list[FileEntry], file_index: FileIndex,
 
     # ── Delete ──────────────────────────────────────
     delete_action = menu.addAction(f"Delete ({len(entries)})" if len(entries) > 1 else "Delete")
-    delete_action.triggered.connect(
-        lambda: [_delete_to_recycle(e.get_path(file_index)) for e in entries]
-    )
+    def _async_delete():
+        paths = [e.get_path(file_index) for e in entries]
+        threading.Thread(target=lambda: [_delete_to_recycle(p) for p in paths], daemon=True).start()
+    delete_action.triggered.connect(_async_delete)
 
     menu.addSeparator()
 
