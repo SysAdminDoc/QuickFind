@@ -218,6 +218,7 @@ class ParsedQuery:
     dupe_mode: bool = False
     or_groups: list[list[str]] = field(default_factory=list)
     exclude_terms: list[str] = field(default_factory=list)
+    _case_explicit: bool = False
 
 
 ATTRIB_MAP = {
@@ -274,9 +275,11 @@ def parse_query(raw_query: str, base_options: Optional[SearchOptions] = None) ->
 
             if mod_lower in ('case', 'matchcase'):
                 parsed.options.match_case = True
+                parsed._case_explicit = True
                 i += 1; continue
             elif mod_lower in ('nocase', 'nomatchcase'):
                 parsed.options.match_case = False
+                parsed._case_explicit = True
                 i += 1; continue
             elif mod_lower == 'regex':
                 parsed.options.use_regex = True
@@ -420,6 +423,11 @@ def parse_query(raw_query: str, base_options: Optional[SearchOptions] = None) ->
             if '*' in term or '?' in term:
                 parsed.options.use_wildcards = True
                 break
+
+    if not parsed._case_explicit and not parsed.options.match_case:
+        all_text = ' '.join(parsed.terms + [t for g in parsed.or_groups for t in g])
+        if any(c.isupper() for c in all_text):
+            parsed.options.match_case = True
 
     return parsed
 
