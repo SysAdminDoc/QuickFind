@@ -6,8 +6,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pytest
 from datetime import datetime, timedelta
+from core.utils import parse_size as _parse_size
 from core.search import (
-    _parse_size, _parse_date, parse_query, SearchOptions, SearchFilter,
+    _parse_date, parse_query, SearchOptions, SearchFilter,
     ParsedQuery, SortField, SortOrder, ATTRIB_MAP,
 )
 
