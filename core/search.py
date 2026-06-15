@@ -22,6 +22,12 @@ from core.utils import parse_size as _parse_size
 logger = logging.getLogger('QuickFind.Search')
 
 
+def _fuzzy_match(text: str, pattern: str) -> bool:
+    """Subsequence match: all chars of pattern appear in text in order."""
+    it = iter(text)
+    return all(c in it for c in pattern)
+
+
 class SortField(Enum):
     NAME = auto()
     PATH = auto()
@@ -46,6 +52,7 @@ class SearchOptions:
     match_path: bool = False
     use_regex: bool = False
     use_wildcards: bool = False
+    use_fuzzy: bool = False
     files_only: bool = False
     folders_only: bool = False
     max_results: int = 0  # 0 = unlimited
@@ -222,6 +229,7 @@ def parse_query(raw_query: str, base_options: Optional[SearchOptions] = None) ->
             match_path=base_options.match_path,
             use_regex=base_options.use_regex,
             use_wildcards=base_options.use_wildcards,
+            use_fuzzy=base_options.use_fuzzy,
             files_only=base_options.files_only,
             folders_only=base_options.folders_only,
             max_results=base_options.max_results,
@@ -279,6 +287,14 @@ def parse_query(raw_query: str, base_options: Optional[SearchOptions] = None) ->
                 i += 1; continue
             elif mod_lower == 'nowildcards':
                 parsed.options.use_wildcards = False
+                i += 1; continue
+            elif mod_lower == 'fuzzy':
+                parsed.options.use_fuzzy = True
+                if val:
+                    remaining_terms.append(val)
+                i += 1; continue
+            elif mod_lower == 'nofuzzy':
+                parsed.options.use_fuzzy = False
                 i += 1; continue
             elif mod_lower in ('wholeword', 'ww'):
                 parsed.options.match_whole_word = True
@@ -468,6 +484,8 @@ class SearchEngine:
         if parsed.options.match_whole_filename:
             return False
         if parsed.options.use_wildcards:
+            return False
+        if parsed.options.use_fuzzy:
             return False
         if parsed.content_search:
             return False
@@ -689,6 +707,13 @@ class SearchEngine:
             else:
                 t_lower = term.lower()
                 return lambda text, t=t_lower: text.lower() == t
+
+        if options.use_fuzzy:
+            if options.match_case:
+                return lambda text, t=term: _fuzzy_match(text, t)
+            else:
+                t_lower = term.lower()
+                return lambda text, t=t_lower: _fuzzy_match(text.lower(), t)
 
         if options.match_case:
             return lambda text, t=term: t in text

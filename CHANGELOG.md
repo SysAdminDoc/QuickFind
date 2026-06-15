@@ -16,6 +16,7 @@ All notable changes to QuickFind will be documented in this file.
 - Added: Test suite — 108 tests covering search parsing, size/date helpers, MFT record parsing, USN records, cache helpers, smart case
 - Fixed: File deletion now runs in background thread (no longer blocks UI during large deletes)
 - Added: `.quickfindignore` file support — place in any directory to exclude matching files/folders from indexing (glob patterns, like fd/ripgrep)
+- Added: Fuzzy matching via `fuzzy:` modifier — subsequence matching so "qickfind" matches "QuickFind"
 
 ## [v0.7.1]
 

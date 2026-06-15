@@ -8,7 +8,7 @@ import pytest
 from datetime import datetime, timedelta
 from core.utils import parse_size as _parse_size
 from core.search import (
-    _parse_date, parse_query, SearchOptions, SearchFilter,
+    _parse_date, _fuzzy_match, parse_query, SearchOptions, SearchFilter,
     ParsedQuery, SortField, SortOrder, ATTRIB_MAP,
 )
 
@@ -327,6 +327,38 @@ class TestSearchFilter:
     def test_everything_filter(self):
         f = SearchFilter.everything()
         assert "$Recycle.Bin" in f.exclude_paths
+
+
+class TestFuzzyMatch:
+    def test_exact_match(self):
+        assert _fuzzy_match("QuickFind", "QuickFind") is True
+
+    def test_subsequence(self):
+        assert _fuzzy_match("quickfind", "qckfnd") is True
+
+    def test_typo_pattern(self):
+        assert _fuzzy_match("quickfind", "qickfind") is True
+
+    def test_no_match(self):
+        assert _fuzzy_match("quickfind", "xyz") is False
+
+    def test_empty_pattern(self):
+        assert _fuzzy_match("anything", "") is True
+
+    def test_empty_text(self):
+        assert _fuzzy_match("", "abc") is False
+
+    def test_wrong_order(self):
+        assert _fuzzy_match("abc", "cba") is False
+
+    def test_fuzzy_modifier(self):
+        parsed = parse_query("fuzzy:qickfind")
+        assert parsed.options.use_fuzzy is True
+        assert parsed.terms == ["qickfind"]
+
+    def test_nofuzzy_modifier(self):
+        parsed = parse_query("nofuzzy: test")
+        assert parsed.options.use_fuzzy is False
 
 
 class TestSearchOptions:
