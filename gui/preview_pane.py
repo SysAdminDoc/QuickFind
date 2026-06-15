@@ -121,11 +121,12 @@ class PreviewPane(QWidget):
         self._header.setStyleSheet(f"""
             QLabel {{
                 background-color: {MOCHA['mantle']};
-                color: {MOCHA['subtext0']};
-                padding: 6px 12px;
+                color: {MOCHA['subtext1']};
+                padding: 7px 14px;
                 font-weight: 600;
-                font-size: 12px;
+                font-size: 11px;
                 border-bottom: 1px solid {MOCHA['surface0']};
+                letter-spacing: 0.3px;
             }}
         """)
         layout.addWidget(self._header)
@@ -137,7 +138,7 @@ class PreviewPane(QWidget):
         # Page 0: No selection / info
         self._info_label = QLabel("Select a file to preview")
         self._info_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._info_label.setStyleSheet(f"color: {MOCHA['overlay0']}; font-size: 13px;")
+        self._info_label.setStyleSheet(f"color: {MOCHA['overlay0']}; font-size: 12px; padding: 24px;")
         self._info_label.setWordWrap(True)
         self._stack.addWidget(self._info_label)
 
@@ -267,24 +268,35 @@ class PreviewPane(QWidget):
         except OSError:
             stat = None
 
+        file_type = f'{entry.extension.upper()} File' if entry.extension else 'File'
         info_html = f"""
-        <div style="font-family: Segoe UI; line-height: 1.8;">
-            <p><b style="color: {MOCHA['blue']};">Name:</b> {entry.name}</p>
-            <p><b style="color: {MOCHA['blue']};">Type:</b> {entry.extension.upper() + ' File' if entry.extension else 'File'}</p>
-            <p><b style="color: {MOCHA['blue']};">Path:</b> {path}</p>
+        <div style="font-family: Segoe UI; line-height: 2.0;">
+            <p><span style="color: {MOCHA['subtext0']};">Name</span><br>
+               <span style="color: {MOCHA['text']};">{entry.name}</span></p>
+            <p><span style="color: {MOCHA['subtext0']};">Type</span><br>
+               <span style="color: {MOCHA['text']};">{file_type}</span></p>
+            <p><span style="color: {MOCHA['subtext0']};">Location</span><br>
+               <span style="color: {MOCHA['text']}; font-size: 12px;">{path}</span></p>
         """
 
         if stat:
             info_html += f"""
-            <p><b style="color: {MOCHA['blue']};">Size:</b> {format_size(stat.st_size)} ({stat.st_size:,} bytes)</p>
-            <p><b style="color: {MOCHA['blue']};">Modified:</b> {format_datetime(entry.date_modified)}</p>
-            <p><b style="color: {MOCHA['blue']};">Created:</b> {format_datetime(entry.date_created)}</p>
+            <p><span style="color: {MOCHA['subtext0']};">Size</span><br>
+               <span style="color: {MOCHA['text']};">{format_size(stat.st_size)}  <span style="color: {MOCHA['overlay0']};">({stat.st_size:,} bytes)</span></span></p>
+            <p><span style="color: {MOCHA['subtext0']};">Modified</span><br>
+               <span style="color: {MOCHA['text']};">{format_datetime(entry.date_modified)}</span></p>
+            <p><span style="color: {MOCHA['subtext0']};">Created</span><br>
+               <span style="color: {MOCHA['text']};">{format_datetime(entry.date_created)}</span></p>
             """
 
-        info_html += f"""
-            <p><b style="color: {MOCHA['blue']};">Attributes:</b> {format_attributes(entry.attributes)}</p>
-        </div>
-        """
+        attrs = format_attributes(entry.attributes)
+        if attrs:
+            info_html += f"""
+            <p><span style="color: {MOCHA['subtext0']};">Attributes</span><br>
+               <span style="color: {MOCHA['text']};">{attrs}</span></p>
+            """
+
+        info_html += "</div>"
 
         self._file_info.setText(info_html)
         self._stack.setCurrentIndex(3)
@@ -292,13 +304,21 @@ class PreviewPane(QWidget):
     def _show_dir_info(self, entry: FileEntry, path: str):
         """Show directory info."""
         info_html = f"""
-        <div style="font-family: Segoe UI; line-height: 1.8;">
-            <p><b style="color: {MOCHA['blue']};">Folder:</b> {entry.name}</p>
-            <p><b style="color: {MOCHA['blue']};">Path:</b> {path}</p>
-            <p><b style="color: {MOCHA['blue']};">Modified:</b> {format_datetime(entry.date_modified)}</p>
-            <p><b style="color: {MOCHA['blue']};">Attributes:</b> {format_attributes(entry.attributes)}</p>
-        </div>
+        <div style="font-family: Segoe UI; line-height: 2.0;">
+            <p><span style="color: {MOCHA['subtext0']};">Folder</span><br>
+               <span style="color: {MOCHA['text']};">{entry.name}</span></p>
+            <p><span style="color: {MOCHA['subtext0']};">Location</span><br>
+               <span style="color: {MOCHA['text']}; font-size: 12px;">{path}</span></p>
+            <p><span style="color: {MOCHA['subtext0']};">Modified</span><br>
+               <span style="color: {MOCHA['text']};">{format_datetime(entry.date_modified)}</span></p>
         """
+        attrs = format_attributes(entry.attributes)
+        if attrs:
+            info_html += f"""
+            <p><span style="color: {MOCHA['subtext0']};">Attributes</span><br>
+               <span style="color: {MOCHA['text']};">{attrs}</span></p>
+            """
+        info_html += "</div>"
         self._file_info.setText(info_html)
         self._stack.setCurrentIndex(3)
 

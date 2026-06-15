@@ -27,47 +27,57 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>QuickFind - Remote Search</title>
+<title>QuickFind</title>
 <style>
 * {{ margin: 0; padding: 0; box-sizing: border-box; }}
 body {{
     background: {bg};
     color: {text};
-    font-family: 'Segoe UI', -apple-system, sans-serif;
+    font-family: 'Segoe UI', -apple-system, system-ui, sans-serif;
     min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
 }}
 .header {{
     background: {mantle};
     border-bottom: 1px solid {surface0};
-    padding: 16px 24px;
+    padding: 14px 24px;
     display: flex;
     align-items: center;
     gap: 16px;
+    position: sticky;
+    top: 0;
+    z-index: 10;
 }}
 .header h1 {{
-    font-size: 18px;
+    font-size: 16px;
     color: {accent};
     font-weight: 600;
+    letter-spacing: -0.2px;
+    white-space: nowrap;
 }}
 .search-box {{
     flex: 1;
-    max-width: 600px;
+    max-width: 640px;
     background: {surface0};
-    border: 2px solid {surface1};
+    border: 1.5px solid {surface1};
     border-radius: 8px;
-    padding: 8px 16px;
+    padding: 9px 16px;
     color: {text};
-    font-size: 15px;
+    font-size: 14px;
     outline: none;
-    transition: border-color 0.2s;
+    transition: border-color 0.15s ease;
 }}
 .search-box:focus {{ border-color: {accent}; }}
-.results-count {{
+.search-box::placeholder {{ color: {overlay0}; }}
+.meta-bar {{
     color: {subtext0};
-    font-size: 13px;
-    padding: 8px 24px;
+    font-size: 12px;
+    padding: 6px 24px;
     background: {mantle};
     border-bottom: 1px solid {surface0};
+    display: flex;
+    align-items: center;
+    gap: 12px;
 }}
 table {{
     width: 100%;
@@ -77,38 +87,41 @@ th {{
     background: {mantle};
     color: {subtext0};
     font-weight: 600;
-    font-size: 12px;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
     text-align: left;
-    padding: 8px 12px;
+    padding: 8px 14px;
     border-bottom: 1px solid {surface0};
     position: sticky;
-    top: 0;
+    top: 49px;
+    z-index: 5;
 }}
 td {{
-    padding: 6px 12px;
+    padding: 7px 14px;
     border-bottom: 1px solid {surface0};
     font-size: 13px;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    max-width: 400px;
+    max-width: 420px;
 }}
+tr {{ transition: background 0.1s ease; }}
 tr:hover {{ background: {surface0}; }}
-tr:nth-child(even) {{ background: {mantle}; }}
+tr:nth-child(even) {{ background: rgba(24,24,37,0.4); }}
 tr:nth-child(even):hover {{ background: {surface0}; }}
-a {{ color: {accent}; text-decoration: none; }}
-a:hover {{ text-decoration: underline; }}
-.size {{ text-align: right; }}
-.empty {{ padding: 40px; text-align: center; color: {overlay0}; font-size: 15px; }}
+.size {{ text-align: right; font-variant-numeric: tabular-nums; }}
+.date {{ font-variant-numeric: tabular-nums; color: {subtext0}; }}
+.empty {{ padding: 48px 24px; text-align: center; color: {overlay0}; font-size: 14px; }}
 </style>
 </head>
 <body>
 <div class="header">
     <h1>QuickFind</h1>
-    <input class="search-box" type="text" id="search" placeholder="Search files and folders..."
-           value="{query}" autofocus>
+    <input class="search-box" type="text" id="search" placeholder="Search files and folders…"
+           value="{query}" autofocus aria-label="Search">
 </div>
-<div class="results-count" id="count">{count} results</div>
+<div class="meta-bar" id="count">{count} results</div>
 <table>
 <thead><tr><th>Name</th><th>Path</th><th class="size">Size</th><th>Modified</th></tr></thead>
 <tbody id="results">{rows}</tbody>
@@ -116,18 +129,22 @@ a:hover {{ text-decoration: underline; }}
 <script>
 let timer;
 const search = document.getElementById('search');
+const countEl = document.getElementById('count');
 const token = new URLSearchParams(window.location.search).get('token') || '';
 search.addEventListener('input', () => {{
     clearTimeout(timer);
+    countEl.textContent = 'Searching…';
     timer = setTimeout(() => {{
         const params = new URLSearchParams({{q: search.value}});
         if (token) params.set('token', token);
         fetch('/api/search?' + params)
             .then(r => r.json())
             .then(data => {{
-                document.getElementById('count').textContent = data.count + ' results';
+                const n = data.count;
+                countEl.textContent = n + ' result' + (n !== 1 ? 's' : '');
                 document.getElementById('results').innerHTML = data.rows;
-            }});
+            }})
+            .catch(() => {{ countEl.textContent = 'Search failed'; }});
     }}, 200);
 }});
 search.select();
@@ -273,7 +290,7 @@ class SearchHandler(BaseHTTPRequestHandler):
     def _build_rows(self, results):
         """Build HTML table rows from search results."""
         if not results:
-            return '<tr><td colspan="4" class="empty">No results</td></tr>'
+            return '<tr><td colspan="4" class="empty">Type a query to search your files</td></tr>'
 
         rows = []
         for entry in results[:1000]:
@@ -295,7 +312,7 @@ class SearchHandler(BaseHTTPRequestHandler):
 
             rows.append(
                 f'<tr><td>{name_escaped}</td><td>{path_escaped}</td>'
-                f'<td class="size">{size}</td><td>{dm}</td></tr>'
+                f'<td class="size">{size}</td><td class="date">{dm}</td></tr>'
             )
 
         return '\n'.join(rows)

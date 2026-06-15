@@ -4,6 +4,40 @@ All notable changes to QuickFind will be documented in this file.
 
 ## [v0.7.2] - 2026-06-15
 
+### Premium polish pass
+- Theme: Added border-radius to inputs, combos, spinboxes, text edits (was flat 0px — felt dated)
+- Theme: Rounded menu items and dropdown popups with proper spacing for modern feel
+- Theme: Added focus states to buttons, combos, spinboxes, and text edits (accessibility)
+- Theme: Transparent scrollbar tracks instead of mantle-colored (cleaner)
+- Theme: Splitter handle hover state for better discoverability
+- Theme: Improved padding and spacing throughout — menu items, buttons, tabs, headers
+- Theme: Added hover:!selected state to tabs for visual hierarchy
+- Theme: Rounded tab corners (border-top-left/right-radius)
+- Theme: Dialog button min-width for consistent button sizing
+- Theme: Selected+hover state for table items to avoid flash on hover
+- Launcher: Drop shadow and refined container border for depth and presence
+- Launcher: Result count + keyboard hints shown below results ("10+ results · Enter to open · Esc to close")
+- Launcher: Empty state message ("No files found") instead of just hiding results
+- Launcher: Refined spacing, border-radius, and padding throughout
+- Launcher: Slightly narrower (640px) with better vertical position (28% vs 25%)
+- Main window: Search row height increased from 26px to 30px for less cramped feel
+- Main window: Search input and filter combo height 24px (was 22px)
+- Main window: Improved tab bar styling — accent underline on selected, rounded close button hover
+- Main window: Status bar result count uses font-weight 500 for better visual hierarchy
+- Main window: Consistent status bar label padding (8px)
+- Preview pane: File info uses label-above-value layout instead of "Key: Value" pattern for scannability
+- Preview pane: Header styling refined — uppercase feel with letter-spacing
+- Preview pane: Empty state has more padding for breathing room
+- Preview pane: Attributes only shown when non-empty (no blank "Attributes:" line)
+- HTTP server: Sticky header that stays visible during scroll
+- HTTP server: "Searching…" loading state in result count while typing
+- HTTP server: Error handling for failed fetch requests
+- HTTP server: Proper empty state message ("Type a query to search your files")
+- HTTP server: Tabular-nums for size and date columns for perfect alignment
+- HTTP server: ARIA label on search input
+- HTTP server: Refined typography — uppercase table headers, proper letter-spacing
+- Microcopy: Ellipsis character (…) replaces three dots (...) in placeholder text
+
 ### Audit fixes (engineering, security, reliability)
 - Fixed: Invalid regex pattern in `regex:` modifier no longer crashes (returns no-match instead of None dereference)
 - Fixed: `len:` modifier with non-numeric values no longer raises ValueError

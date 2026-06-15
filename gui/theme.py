@@ -1,6 +1,6 @@
 """
 Catppuccin Mocha dark theme for QuickFind.
-Everything-inspired compact, information-dense styling.
+Everything-inspired compact, information-dense styling with premium polish.
 """
 
 from PyQt6.QtWidgets import QApplication
@@ -72,8 +72,9 @@ QMenuBar {{
     font-size: 12px;
 }}
 QMenuBar::item {{
-    padding: 4px 8px;
+    padding: 5px 10px;
     margin: 0;
+    border-radius: 3px;
 }}
 QMenuBar::item:selected {{
     background-color: {MOCHA['surface0']};
@@ -81,11 +82,13 @@ QMenuBar::item:selected {{
 QMenu {{
     background-color: {MOCHA['mantle']};
     border: 1px solid {MOCHA['surface0']};
-    padding: 2px 0;
+    border-radius: 6px;
+    padding: 4px 0;
 }}
 QMenu::item {{
-    padding: 4px 24px 4px 8px;
-    margin: 0;
+    padding: 5px 28px 5px 12px;
+    margin: 1px 4px;
+    border-radius: 4px;
 }}
 QMenu::item:selected {{
     background-color: {MOCHA['surface0']};
@@ -93,7 +96,7 @@ QMenu::item:selected {{
 QMenu::separator {{
     height: 1px;
     background: {MOCHA['surface0']};
-    margin: 2px 0;
+    margin: 4px 8px;
 }}
 QMenu::icon {{
     padding-left: 4px;
@@ -104,18 +107,18 @@ QToolBar {{
     background-color: {MOCHA['mantle']};
     border-bottom: 1px solid {MOCHA['surface0']};
     spacing: 2px;
-    padding: 1px 2px;
+    padding: 2px 4px;
 }}
 QToolBar::separator {{
     width: 1px;
     background: {MOCHA['surface0']};
-    margin: 2px 4px;
+    margin: 4px 6px;
 }}
 QToolButton {{
     background: transparent;
     border: none;
-    border-radius: 2px;
-    padding: 2px 6px;
+    border-radius: 4px;
+    padding: 3px 8px;
     color: {MOCHA['subtext1']};
     font-size: 11px;
 }}
@@ -135,13 +138,17 @@ QToolButton:checked {{
 QLineEdit {{
     background-color: {MOCHA['surface0']};
     border: 1px solid {MOCHA['surface1']};
-    border-radius: 0px;
-    padding: 2px 4px;
+    border-radius: 4px;
+    padding: 3px 6px;
     color: {MOCHA['text']};
     font-size: 12px;
 }}
 QLineEdit:focus {{
     border-color: {ACCENT};
+}}
+QLineEdit:disabled {{
+    color: {MOCHA['overlay0']};
+    background-color: {MOCHA['mantle']};
 }}
 
 /* ── Table / Tree / List Views ────────────────────────── */
@@ -154,7 +161,7 @@ QTableView, QTreeView, QListView {{
     font-size: 12px;
 }}
 QTableView::item, QTreeView::item, QListView::item {{
-    padding: 1px 4px;
+    padding: 2px 4px;
     border: none;
 }}
 QTableView::item:selected, QTreeView::item:selected, QListView::item:selected {{
@@ -163,6 +170,9 @@ QTableView::item:selected, QTreeView::item:selected, QListView::item:selected {{
 }}
 QTableView::item:hover, QTreeView::item:hover, QListView::item:hover {{
     background-color: {MOCHA['surface0']};
+}}
+QTableView::item:selected:hover, QTreeView::item:selected:hover {{
+    background-color: {ACCENT_DIM};
 }}
 
 QHeaderView {{
@@ -176,7 +186,7 @@ QHeaderView::section {{
     border: none;
     border-right: 1px solid {MOCHA['surface0']};
     border-bottom: 1px solid {MOCHA['surface0']};
-    padding: 3px 6px;
+    padding: 4px 8px;
     font-weight: 600;
 }}
 QHeaderView::section:hover {{
@@ -186,7 +196,7 @@ QHeaderView::section:hover {{
 
 /* ── Scrollbars ───────────────────────────────────────── */
 QScrollBar:vertical {{
-    background: {MOCHA['mantle']};
+    background: transparent;
     width: 8px;
     margin: 0;
 }}
@@ -202,8 +212,11 @@ QScrollBar::handle:vertical:hover {{
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
     height: 0;
 }}
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{
+    background: transparent;
+}}
 QScrollBar:horizontal {{
-    background: {MOCHA['mantle']};
+    background: transparent;
     height: 8px;
     margin: 0;
 }}
@@ -219,6 +232,9 @@ QScrollBar::handle:horizontal:hover {{
 QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{
     width: 0;
 }}
+QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {{
+    background: transparent;
+}}
 
 /* ── Status Bar ───────────────────────────────────────── */
 QStatusBar {{
@@ -227,8 +243,8 @@ QStatusBar {{
     border-top: 1px solid {MOCHA['surface0']};
     font-size: 11px;
     padding: 0 4px;
-    min-height: 18px;
-    max-height: 20px;
+    min-height: 20px;
+    max-height: 22px;
 }}
 QStatusBar::item {{
     border: none;
@@ -237,6 +253,9 @@ QStatusBar::item {{
 /* ── Splitter ─────────────────────────────────────────── */
 QSplitter::handle {{
     background: {MOCHA['surface0']};
+}}
+QSplitter::handle:hover {{
+    background: {MOCHA['surface1']};
 }}
 QSplitter::handle:horizontal {{
     width: 2px;
@@ -255,8 +274,10 @@ QTabBar::tab {{
     color: {MOCHA['subtext0']};
     border: 1px solid {MOCHA['surface0']};
     border-bottom: none;
-    padding: 4px 12px;
+    padding: 5px 14px;
     margin-right: 1px;
+    border-top-left-radius: 4px;
+    border-top-right-radius: 4px;
 }}
 QTabBar::tab:selected {{
     background: {MOCHA['base']};
@@ -265,14 +286,15 @@ QTabBar::tab:selected {{
 }}
 QTabBar::tab:hover:!selected {{
     background: {MOCHA['surface0']};
+    color: {MOCHA['subtext1']};
 }}
 
 /* ── Buttons ──────────────────────────────────────────── */
 QPushButton {{
     background-color: {MOCHA['surface0']};
     border: 1px solid {MOCHA['surface1']};
-    border-radius: 3px;
-    padding: 4px 12px;
+    border-radius: 4px;
+    padding: 5px 14px;
     color: {MOCHA['text']};
     font-size: 12px;
 }}
@@ -286,6 +308,10 @@ QPushButton:pressed {{
 QPushButton:disabled {{
     color: {MOCHA['overlay0']};
     background-color: {MOCHA['mantle']};
+    border-color: {MOCHA['surface0']};
+}}
+QPushButton:focus {{
+    border-color: {ACCENT};
 }}
 
 /* Primary accent button */
@@ -298,13 +324,16 @@ QPushButton[accent="true"] {{
 QPushButton[accent="true"]:hover {{
     background-color: {ACCENT_HOVER};
 }}
+QPushButton[accent="true"]:pressed {{
+    background-color: {MOCHA['blue']};
+}}
 
 /* ── ComboBox ─────────────────────────────────────────── */
 QComboBox {{
     background-color: {MOCHA['surface0']};
     border: 1px solid {MOCHA['surface1']};
-    border-radius: 0px;
-    padding: 2px 6px;
+    border-radius: 4px;
+    padding: 3px 8px;
     color: {MOCHA['text']};
     font-size: 12px;
     min-width: 60px;
@@ -312,35 +341,43 @@ QComboBox {{
 QComboBox:hover {{
     border-color: {MOCHA['overlay0']};
 }}
+QComboBox:focus {{
+    border-color: {ACCENT};
+}}
 QComboBox::drop-down {{
     border: none;
-    width: 16px;
+    width: 18px;
 }}
 QComboBox::down-arrow {{
     image: none;
     border-left: 3px solid transparent;
     border-right: 3px solid transparent;
     border-top: 4px solid {MOCHA['subtext0']};
-    margin-right: 4px;
+    margin-right: 5px;
 }}
 QComboBox QAbstractItemView {{
     background-color: {MOCHA['mantle']};
     border: 1px solid {MOCHA['surface0']};
+    border-radius: 4px;
     selection-background-color: {ACCENT_DIM};
     outline: none;
+    padding: 2px;
 }}
 
 /* ── CheckBox / Radio ─────────────────────────────────── */
 QCheckBox, QRadioButton {{
     color: {MOCHA['text']};
-    spacing: 4px;
+    spacing: 6px;
 }}
 QCheckBox::indicator, QRadioButton::indicator {{
-    width: 14px;
-    height: 14px;
+    width: 16px;
+    height: 16px;
     border: 1px solid {MOCHA['surface2']};
-    border-radius: 2px;
+    border-radius: 3px;
     background: {MOCHA['surface0']};
+}}
+QCheckBox::indicator:hover, QRadioButton::indicator:hover {{
+    border-color: {MOCHA['overlay0']};
 }}
 QCheckBox::indicator:checked, QRadioButton::indicator:checked {{
     background: {ACCENT};
@@ -353,15 +390,15 @@ QRadioButton::indicator {{
 /* ── Group Box ────────────────────────────────────────── */
 QGroupBox {{
     border: 1px solid {MOCHA['surface0']};
-    border-radius: 4px;
-    margin-top: 8px;
-    padding-top: 14px;
+    border-radius: 6px;
+    margin-top: 10px;
+    padding-top: 16px;
     font-weight: 600;
 }}
 QGroupBox::title {{
     subcontrol-origin: margin;
-    left: 8px;
-    padding: 0 4px;
+    left: 10px;
+    padding: 0 6px;
     color: {MOCHA['subtext1']};
 }}
 
@@ -369,9 +406,12 @@ QGroupBox::title {{
 QSpinBox, QDoubleSpinBox {{
     background: {MOCHA['surface0']};
     border: 1px solid {MOCHA['surface1']};
-    border-radius: 0px;
-    padding: 2px 6px;
+    border-radius: 4px;
+    padding: 3px 6px;
     color: {MOCHA['text']};
+}}
+QSpinBox:focus, QDoubleSpinBox:focus {{
+    border-color: {ACCENT};
 }}
 
 /* ── Dialogs ──────────────────────────────────────────── */
@@ -383,14 +423,14 @@ QDialog {{
 QProgressBar {{
     background: {MOCHA['surface0']};
     border: none;
-    border-radius: 2px;
-    height: 4px;
+    border-radius: 3px;
+    height: 6px;
     text-align: center;
     color: transparent;
 }}
 QProgressBar::chunk {{
     background: {ACCENT};
-    border-radius: 2px;
+    border-radius: 3px;
 }}
 
 /* ── Tooltip ──────────────────────────────────────────── */
@@ -398,7 +438,8 @@ QToolTip {{
     background-color: {MOCHA['surface0']};
     color: {MOCHA['text']};
     border: 1px solid {MOCHA['surface1']};
-    padding: 2px 6px;
+    border-radius: 4px;
+    padding: 4px 8px;
     font-size: 11px;
 }}
 
@@ -409,7 +450,7 @@ QDockWidget {{
 }}
 QDockWidget::title {{
     background: {MOCHA['mantle']};
-    padding: 4px;
+    padding: 6px 8px;
     border-bottom: 1px solid {MOCHA['surface0']};
 }}
 
@@ -418,16 +459,24 @@ QTextEdit, QPlainTextEdit {{
     background-color: {MOCHA['mantle']};
     color: {MOCHA['text']};
     border: 1px solid {MOCHA['surface0']};
-    border-radius: 0px;
-    padding: 4px;
+    border-radius: 4px;
+    padding: 6px;
     font-family: "Cascadia Code", "Consolas", monospace;
     font-size: 12px;
+}}
+QTextEdit:focus, QPlainTextEdit:focus {{
+    border-color: {ACCENT};
+}}
+
+/* ── Dialog Buttons ───────────────────────────────────── */
+QDialogButtonBox QPushButton {{
+    min-width: 80px;
 }}
 
 /* ── Filter ComboBox override ─────────────────────────── */
 QComboBox#filterCombo {{
     min-width: 100px;
-    padding: 2px 6px;
+    padding: 3px 8px;
 }}
 """
 

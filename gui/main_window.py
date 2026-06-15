@@ -183,7 +183,7 @@ class MainWindow(QMainWindow):
         # ── Search row (Everything-style: single compact row) ──
         search_row = QWidget()
         search_row.setObjectName("searchRow")
-        search_row.setFixedHeight(26)
+        search_row.setFixedHeight(30)
         search_row.setStyleSheet(f"""
             #searchRow {{
                 background-color: {MOCHA['mantle']};
@@ -191,13 +191,13 @@ class MainWindow(QMainWindow):
             }}
         """)
         search_layout = QHBoxLayout(search_row)
-        search_layout.setContentsMargins(2, 2, 2, 2)
-        search_layout.setSpacing(4)
+        search_layout.setContentsMargins(4, 3, 4, 3)
+        search_layout.setSpacing(6)
 
-        # Filter dropdown (Everything-style)
+        # Filter dropdown
         self._filter_combo = QComboBox()
         self._filter_combo.setObjectName("filterCombo")
-        self._filter_combo.setFixedHeight(22)
+        self._filter_combo.setFixedHeight(24)
         self._filter_combo.setFixedWidth(120)
         self._filter_combo.setAccessibleName("Filter type")
         self._filter_combo.setAccessibleDescription("Select file type filter")
@@ -206,11 +206,11 @@ class MainWindow(QMainWindow):
 
         # Search input (fills remaining space) with autocomplete
         self._search_input = QLineEdit()
-        self._search_input.setFixedHeight(22)
+        self._search_input.setFixedHeight(24)
         self._search_input.setClearButtonEnabled(True)
-        self._search_input.setPlaceholderText("Search files and folders...")
+        self._search_input.setPlaceholderText("Search files and folders…")
         self._search_input.setAccessibleName("Search input")
-        self._search_input.setAccessibleDescription("Type to search files and folders")
+        self._search_input.setAccessibleDescription("Type to search files and folders. Use modifiers like ext:, size:, dm: for advanced queries.")
         self._search_input.setToolTip(SYNTAX_HELP)
 
         # Autocomplete from search history
@@ -241,7 +241,7 @@ class MainWindow(QMainWindow):
             QTabBar::tab {{
                 background: {MOCHA['surface0']};
                 color: {MOCHA['subtext0']};
-                padding: 4px 12px;
+                padding: 5px 14px;
                 border: none;
                 border-right: 1px solid {MOCHA['base']};
                 min-width: 80px;
@@ -249,13 +249,16 @@ class MainWindow(QMainWindow):
             QTabBar::tab:selected {{
                 background: {MOCHA['base']};
                 color: {MOCHA['text']};
+                border-bottom: 2px solid {ACCENT};
             }}
-            QTabBar::tab:hover {{
+            QTabBar::tab:hover:!selected {{
                 background: {MOCHA['surface1']};
+                color: {MOCHA['subtext1']};
             }}
             QTabBar::close-button {{
-                image: none;
                 subcontrol-position: right;
+                padding: 2px;
+                border-radius: 3px;
             }}
             QTabBar::close-button:hover {{
                 background: {MOCHA['surface2']};
@@ -295,7 +298,7 @@ class MainWindow(QMainWindow):
         self.setStatusBar(self._status_bar)
 
         self._result_count_label = QLabel("0 objects")
-        self._result_count_label.setStyleSheet(f"color: {MOCHA['subtext0']}; font-size: 11px; padding: 0 4px;")
+        self._result_count_label.setStyleSheet(f"color: {MOCHA['subtext1']}; font-size: 11px; font-weight: 500; padding: 0 6px;")
         self._result_count_label.setAccessibleName("Result count")
         self._status_bar.addWidget(self._result_count_label)
 
@@ -303,22 +306,20 @@ class MainWindow(QMainWindow):
         self._status_label.setStyleSheet(f"color: {MOCHA['overlay0']}; font-size: 11px;")
         self._status_bar.addWidget(self._status_label, 1)
 
-        # Live DB stats
         self._db_stats_label = QLabel("")
-        self._db_stats_label.setStyleSheet(f"color: {MOCHA['overlay1']}; font-size: 11px; padding: 0 6px;")
+        self._db_stats_label.setStyleSheet(f"color: {MOCHA['overlay0']}; font-size: 11px; padding: 0 8px;")
         self._status_bar.addPermanentWidget(self._db_stats_label)
 
-        # Startup performance metrics
         self._perf_label = QLabel("")
-        self._perf_label.setStyleSheet(f"color: {MOCHA['overlay1']}; font-size: 11px; padding: 0 6px;")
+        self._perf_label.setStyleSheet(f"color: {MOCHA['overlay0']}; font-size: 11px; padding: 0 8px;")
         self._status_bar.addPermanentWidget(self._perf_label)
 
         self._last_update_label = QLabel("")
-        self._last_update_label.setStyleSheet(f"color: {MOCHA['overlay1']}; font-size: 11px; padding: 0 6px;")
+        self._last_update_label.setStyleSheet(f"color: {MOCHA['overlay0']}; font-size: 11px; padding: 0 8px;")
         self._status_bar.addPermanentWidget(self._last_update_label)
 
         self._index_status = QLabel("")
-        self._index_status.setStyleSheet(f"color: {MOCHA['subtext0']}; font-size: 11px; padding: 0 4px;")
+        self._index_status.setStyleSheet(f"color: {MOCHA['subtext0']}; font-size: 11px; padding: 0 6px;")
         self._status_bar.addPermanentWidget(self._index_status)
 
         self._progress_bar = QProgressBar()
