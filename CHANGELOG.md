@@ -7,6 +7,8 @@ All notable changes to QuickFind will be documented in this file.
 - Fixed: `recycle_file` import crash — Delete key handler referenced wrong function name
 - Fixed: Startup crash on non-admin — `Path` used before import, bogus `setWindowIcon` on Win32 HWND
 - Fixed: `requirements.txt` now pip-installable (removed internal module names)
+- Security: HTTP server uses `html.escape()` for all user-derived content, adds CSP + X-Content-Type-Options headers
+- Fixed: Log rotation — `RotatingFileHandler` with 5MB max and 3 backups replaces unbounded `FileHandler`
 
 ## [v0.7.1]
 

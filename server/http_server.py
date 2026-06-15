@@ -4,6 +4,7 @@ Provides a lightweight web interface for searching the index remotely.
 Supports optional token-based authentication.
 """
 
+import html
 import json
 import logging
 import os
@@ -164,6 +165,10 @@ class SearchHandler(BaseHTTPRequestHandler):
                 request_token = auth_header[7:]
         return secrets.compare_digest(request_token, self.auth_token)
 
+    def _send_security_headers(self):
+        self.send_header('Content-Security-Policy', "default-src 'self'; script-src 'unsafe-inline'; style-src 'unsafe-inline'")
+        self.send_header('X-Content-Type-Options', 'nosniff')
+
     def do_GET(self):
         parsed = urlparse(self.path)
         params = parse_qs(parsed.query)
@@ -201,6 +206,7 @@ class SearchHandler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header('Content-Type', 'application/json')
         self.send_header('Access-Control-Allow-Origin', '*')
+        self._send_security_headers()
         self.end_headers()
         self.wfile.write(response.encode('utf-8'))
 
@@ -211,20 +217,21 @@ class SearchHandler(BaseHTTPRequestHandler):
         results = self.search_engine.search(query, max_results=1000) if query else []
         rows_html = self._build_rows(results)
 
-        html = HTML_TEMPLATE.format(
+        page_html = HTML_TEMPLATE.format(
             bg=MOCHA['base'], text=MOCHA['text'], mantle=MOCHA['mantle'],
             surface0=MOCHA['surface0'], surface1=MOCHA['surface1'],
             subtext0=MOCHA['subtext0'], overlay0=MOCHA['overlay0'],
             accent=MOCHA['blue'],
-            query=query.replace('"', '&quot;'),
+            query=html.escape(query, quote=True),
             count=len(results),
             rows=rows_html,
         )
 
         self.send_response(200)
         self.send_header('Content-Type', 'text/html; charset=utf-8')
+        self._send_security_headers()
         self.end_headers()
-        self.wfile.write(html.encode('utf-8'))
+        self.wfile.write(page_html.encode('utf-8'))
 
     def _build_rows(self, results):
         """Build HTML table rows from search results."""
@@ -246,8 +253,8 @@ class SearchHandler(BaseHTTPRequestHandler):
 
             dm = entry.date_modified.strftime('%Y-%m-%d %H:%M') if entry.date_modified else ''
 
-            name_escaped = entry.name.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
-            path_escaped = path.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+            name_escaped = html.escape(entry.name)
+            path_escaped = html.escape(path)
 
             rows.append(
                 f'<tr><td>{name_escaped}</td><td>{path_escaped}</td>'

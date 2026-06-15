@@ -41,6 +41,7 @@ _bootstrap()
 
 import ctypes
 import logging
+import logging.handlers
 import traceback
 from datetime import datetime
 
@@ -58,7 +59,9 @@ _root_logger = logging.getLogger()
 _root_logger.setLevel(logging.DEBUG)
 
 # File handler -- detailed debug log
-_file_handler = logging.FileHandler(str(LOG_FILE), encoding='utf-8')
+_file_handler = logging.handlers.RotatingFileHandler(
+    str(LOG_FILE), encoding='utf-8', maxBytes=5*1024*1024, backupCount=3
+)
 _file_handler.setLevel(logging.DEBUG)
 _file_handler.setFormatter(logging.Formatter(
     '%(asctime)s.%(msecs)03d [%(levelname)-5s] %(name)s: %(message)s',
