@@ -2,80 +2,73 @@
 
 Lightning-fast file search for Windows, powered by NTFS MFT + USN Journal.
 
-An open-source alternative to Voidtools Everything, built with Python and PyQt6 for extensibility and customization.
+An open-source alternative to [Voidtools Everything](https://www.voidtools.com/), built with Python and PyQt6 for extensibility and customization.
 
 ![Python](https://img.shields.io/badge/Python-3.10+-blue)
 ![License](https://img.shields.io/badge/License-MIT-green)
 ![Platform](https://img.shields.io/badge/Platform-Windows-lightgrey)
+![Tests](https://img.shields.io/badge/Tests-141%20passing-brightgreen)
 
 ## Features
 
 ### Core Engine
 - **Instant indexing** via NTFS Master File Table (MFT) direct read with parallel scanning
 - **FAT32/exFAT/ReFS support** for external drives and Dev Drives via recursive `os.scandir` walk
-- **USN Journal V2/V3/V4** support - V3/V4 with 128-bit file IDs for ReFS compatibility
-- **Real-time updates** via USN Change Journal monitoring (NTFS) and periodic rescan (FAT/exFAT/ReFS)
-- **Batch incremental DB writes** - USN changes applied in single transactions for performance
-- **Non-admin fallback** - gracefully degrades to `os.scandir` when UAC is declined
-- **Thread-safe USN change application** with lock-protected flat list rebuild
-- **Cancel support** during indexing with cooperative cancellation
+- **USN Journal V2/V3/V4** support — V3/V4 with 128-bit file IDs for ReFS compatibility
+- **Real-time updates** via USN Change Journal monitoring (NTFS) and configurable periodic rescan (FAT/exFAT/ReFS)
+- **Non-admin fallback** — gracefully degrades to `os.scandir` when UAC is declined
 - **SQLite FTS5** full-text search cache with WAL mode and memory-mapped I/O
 - **DB corruption recovery** with automatic integrity checks and rebuild
 - **Sub-second search** across millions of files with compiled pattern matching
-- **Minimal footprint** - lightweight in-memory index with `__slots__` optimization
+- **Incremental availability** — search is available as soon as the first drive finishes indexing
+- **Minimal footprint** — lightweight in-memory index with `__slots__` optimization
 
 ### Search
 - Instant-as-you-type results with debounced search
+- **Smart case sensitivity** — uppercase in query auto-switches to case-sensitive (fd-style); explicit `case:`/`nocase:` overrides
+- **Fuzzy matching** via `fuzzy:` modifier — subsequence matching for typo-tolerant search
 - **Search history** with autocomplete suggestions
-- **Result highlighting** - match substrings painted in accent color
-- **Inline column filtering** - per-column filter row below headers
+- **Result highlighting** — match substrings painted in accent color
+- **Inline column filtering** — per-column filter row below headers
 - **Regex** support (`regex:pattern`)
 - **Wildcards** (`*.py`, `test?.log`)
-- **Boolean logic** - AND (spaces), OR (`|`), NOT (`!term`)
-- **Search modifiers**: `case:`, `path:`, `file:`, `folder:`, `wholeword:`, `ext:`, `size:`, `dm:`, `dc:`, `len:`, `attrib:`, `content:`, `parent:`, `dupe:`, `fuzzy:`
-- **Fuzzy matching** via `fuzzy:` modifier — subsequence matching for typo-tolerant search
-- **Smart case sensitivity** — uppercase in query auto-switches to case-sensitive (fd-style)
-- Size filters: `size:>1mb`, `size:100kb..5mb`
-- Date filters: `dm:today`, `dm:>2024-01-01`, `dc:thisweek`
-- Attribute filters: `attrib:hs` (hidden + system)
-- Content search: `content:searchterm` (reads file content, slower)
+- **Boolean logic** — AND (spaces), OR (`|`), NOT (`!term`)
+- **Content search** — `content:keyword` searches inside text files
 - **Usage-based ranking** — frequently opened files rank higher with Relevance sort
-- **Search syntax help** panel accessible from menu
+- **16 search modifiers**: `case:`, `path:`, `file:`, `folder:`, `wholeword:`, `ext:`, `size:`, `dm:`, `dc:`, `len:`, `attrib:`, `content:`, `parent:`, `dupe:`, `fuzzy:`, `regex:`
+- **Search syntax help** panel accessible from Help menu
 
 ### GUI
-- **Launcher popup** (Ctrl+Shift+F) — floating search bar, Wox/Flow Launcher style
-- **Catppuccin Mocha** dark theme - premium paid-software aesthetic
+- **Launcher popup** — `Ctrl+Shift+F` summons a floating search bar (Wox/Flow Launcher style) with keyboard hints and empty-state feedback
+- **Catppuccin Mocha** dark theme — premium polished aesthetic with rounded inputs, focus rings, and consistent spacing
 - **Details view** with sortable columns (Name, Path, Size, Date Modified, Date Created, Type, Attributes)
-- **Column visibility** - right-click header to show/hide columns, persisted in settings
-- **Keyboard navigation** - Enter=open, Delete=recycle, F2=rename, Ctrl+Enter=open folder
+- **Column visibility** — right-click header to show/hide columns, persisted in settings
+- **Keyboard navigation** — `Enter` open, `Delete` recycle, `F2` rename, `Ctrl+Enter` open folder
 - **Thumbnail view** for visual browsing
-- **Preview pane** for text files, images, and file info
+- **Preview pane** for text files, images, and file info with label-above-value layout
 - **Filter bar** with built-in filters (Audio, Video, Image, Document, Executable, Compressed, Folder) + custom filters
-- **Bookmarks** - save/restore search + filter state, organized in folders
-- **Context menu** - Open, Open Path, Copy Name/Path, Terminal Here (CMD/PowerShell/WT), Delete to Recycle Bin, Properties
+- **Bookmarks** — save/restore search + filter state
+- **Context menu** — Open, Open Path, Copy Name/Path, Terminal Here (CMD/PowerShell/WT), Delete to Recycle Bin, Properties
 - **System tray** with minimize-to-tray and close-to-tray
-- **Global hotkey** (Ctrl+Shift+F) to show/activate from anywhere
-- **Startup performance metrics** - entries/sec displayed in status bar
-- **Proper app icon** (.ico) for window, taskbar, and tray
 - **Dark title bar** via DwmSetWindowAttribute on Windows 10/11
-- **Regex validation** with inline error highlighting
-- **Result count in tab titles** for multi-tab awareness
-- **Index progress in tray tooltip** shows live indexing status
+- **Accessibility** — `accessibleName`/`accessibleDescription` on key widgets; focus-visible states on all interactive elements
 
 ### Advanced
-- **HTTP server** for remote web browser access with optional **token-based authentication**
+- **HTTP server** for remote web browser access with token-based authentication, per-IP rate limiting (60 req/min), XSS protection (CSP headers + `html.escape`), and sticky-header web UI
+- **`.quickfindignore`** files — place in any directory with glob patterns to exclude files/folders from indexing (like `.gitignore`)
 - **EFU file lists** for indexing non-NTFS and network drives
-- **CLI tool** (`es.py`) with full search syntax, CSV/JSON output, and **DB cache** for instant results
-- **Export/import settings** - save and restore configuration as JSON
-- **Settings** for indexing, search, UI, drives, columns, and server configuration
+- **CLI tool** (`es.py`) with full search syntax, CSV/JSON output, and DB cache for instant results
+- **Per-drive rescan intervals** — configure different rescan frequencies for SSD vs NAS drives
+- **Export/import settings** — save and restore configuration as JSON
+- **Log rotation** — `RotatingFileHandler` with 5 MB max and 3 backups
+- **141 automated tests** covering search parsing, MFT record parsing, cache helpers, and ignore patterns
 - **PyInstaller build script** for single-file or single-folder distribution
-- **Multiple instance** support
 
 ## Requirements
 
 - Windows 10/11
 - Python 3.10+
-- Administrator privileges recommended (for NTFS MFT access; falls back to os.scandir without admin)
+- Administrator privileges recommended (for NTFS MFT access; falls back to `os.scandir` without admin)
 
 ## Quick Start
 
@@ -84,7 +77,10 @@ An open-source alternative to Voidtools Everything, built with Python and PyQt6 
 git clone https://github.com/SysAdminDoc/QuickFind.git
 cd QuickFind
 
-# Run (auto-installs PyQt6, attempts admin elevation, falls back gracefully)
+# Install dependencies
+pip install -r requirements.txt
+
+# Run (attempts admin elevation, falls back gracefully)
 python quickfind.py
 ```
 
@@ -133,50 +129,78 @@ python build.py --clean
 | `"exact phrase"` | Match exact phrase |
 | `*.py` | Wildcard matching |
 | `regex:^test\d+` | Regex matching |
+| `fuzzy:qickfind` | Fuzzy subsequence matching |
 | `case:FooBar` | Case-sensitive match |
 | `path:src\utils` | Match in full path |
 | `file:` / `folder:` | Files or folders only |
 | `ext:py;js;ts` | Filter by extension |
-| `size:>1mb` | Size greater than 1MB |
+| `size:>1mb` | Size greater than 1 MB |
 | `size:100kb..5mb` | Size range |
 | `dm:today` | Modified today |
 | `dm:>2024-01-01` | Modified after date |
 | `dc:thisweek` | Created this week |
+| `content:TODO` | Search inside file content |
 | `len:>20` | Filename length > 20 chars |
 | `attrib:rh` | Read-only + hidden |
-| `content:TODO` | Search file content |
 | `parent:node_modules` | Parent directory filter |
-| `fuzzy:qickfind` | Fuzzy subsequence matching |
 | `dupe:` | Find duplicate filenames |
+
+**Smart case:** Queries with uppercase letters automatically use case-sensitive matching. All-lowercase queries match case-insensitively. Override with `case:` or `nocase:`.
+
+## .quickfindignore
+
+Place a `.quickfindignore` file in any directory to exclude matching files and folders from indexing. Uses glob patterns, one per line (like `.gitignore`):
+
+```
+node_modules
+*.pyc
+.git
+__pycache__
+.venv
+```
+
+Lines starting with `#` are treated as comments.
 
 ## Architecture
 
 ```
 QuickFind/
-  quickfind.py          # Entry point (bootstrap + admin elevation + fallback)
-  build.py              # PyInstaller packaging script
+  quickfind.py              # Entry point (bootstrap + admin elevation + fallback)
+  build.py                  # PyInstaller packaging script
+  requirements.txt          # pip dependencies
   core/
-    ntfs.py             # NTFS MFT/USN via ctypes + ReFS/Dev Drive support
-    index.py            # In-memory index + USN monitor + deferred path resolution
-    cache.py            # SQLite FTS5 cache + integrity check + search history
-    search.py           # Search engine with modifiers
-    file_list.py        # EFU file list import/export
+    ntfs.py                 # NTFS MFT/USN via ctypes + ReFS/Dev Drive support
+    index.py                # In-memory index + USN monitor + deferred path resolution
+    cache.py                # SQLite FTS5 cache + integrity check + search history + usage tracking
+    search.py               # Search engine with modifiers + fuzzy matching
+    utils.py                # Shared utilities (size parsing)
+    file_list.py            # EFU file list import/export
+    hidden_paths.py         # Per-filter hidden path management
+    everything_import.py    # Everything config file import
   gui/
-    main_window.py      # Main window (menus, toolbar, layout, syntax help)
-    results_view.py     # Table model + highlight delegate + column filters
-    preview_pane.py     # Text/image/info preview
-    filters.py          # Filter bar + custom filter editor
-    bookmarks.py        # Bookmark manager + panel
-    context_menu.py     # Right-click menu with shell integration
-    tray.py             # System tray + global hotkey + app icon
-    settings_dialog.py  # Settings dialog with tabs + export/import
-    theme.py            # Catppuccin Mocha stylesheet
+    main_window.py          # Main window (menus, toolbar, layout, multi-tab search)
+    launcher_popup.py       # Floating launcher search bar (Ctrl+Shift+F)
+    results_view.py         # Table model + highlight delegate + column filters
+    preview_pane.py         # Text/image/info preview
+    filters.py              # Filter bar + custom filter editor
+    bookmarks.py            # Bookmark manager + panel
+    context_menu.py         # Right-click menu with shell integration
+    tray.py                 # System tray + global hotkey + app icon
+    settings_dialog.py      # Settings dialog with tabs + export/import
+    hidden_paths_dialog.py  # Hidden paths management dialog
+    theme.py                # Catppuccin Mocha theme system
   server/
-    http_server.py      # Remote web search server + token auth
+    http_server.py          # Remote web search server + token auth + rate limiting
   cli/
-    es.py               # Command-line search tool + DB cache
+    es.py                   # Command-line search tool + DB cache
+  tests/
+    test_search.py          # Search parsing, modifiers, smart case, fuzzy matching
+    test_ntfs.py            # MFT record parsing, FILETIME conversion, USA fixup
+    test_cache.py           # Datetime conversion, FTS5 detection
+    test_index.py           # .quickfindignore pattern matching
+    test_file_list.py       # EFU file loading and FILETIME parsing
   assets/
-    quickfind.ico       # App icon (auto-generated on first run)
+    quickfind.ico           # App icon (auto-generated on first run)
 ```
 
 ## How It Works
@@ -184,12 +208,31 @@ QuickFind/
 1. **MFT Scan** (NTFS): Reads the NTFS Master File Table directly to enumerate all file/folder records in ~1-2 seconds per drive (parallel scanning across drives)
 2. **Directory Walk** (FAT/exFAT/ReFS): Uses recursive `os.scandir` for non-NTFS drives (external USB, SD cards, Dev Drives)
 3. **Non-Admin Fallback**: If UAC elevation is declined, falls back to `os.scandir` for all drives
-4. **Path Resolution**: Builds parent-child FRN tree to resolve full paths on demand with deferred batch resolution
-5. **USN Journal** (NTFS): Polls the NTFS Change Journal (V2/V3/V4) every second for creates/deletes/renames/modifications
-6. **Batch DB Writes**: USN changes are collected and applied in single SQLite transactions for efficiency
-7. **Periodic Rescan** (FAT/exFAT/ReFS): Re-walks non-NTFS drives every 60 seconds for change detection
-8. **Search**: Parses query modifiers, compiles matchers (regex/wildcard/substring), and filters the in-memory index
+4. **Incremental Availability**: Search is available as soon as the first drive finishes indexing — no waiting for all drives to complete
+5. **Path Resolution**: Builds parent-child FRN tree to resolve full paths on demand with deferred batch resolution
+6. **USN Journal** (NTFS): Polls the NTFS Change Journal (V2/V3/V4) every second for creates/deletes/renames/modifications
+7. **Periodic Rescan** (FAT/exFAT/ReFS): Re-walks non-NTFS drives at configurable intervals for change detection
+8. **Search**: Parses query modifiers, compiles matchers (regex/wildcard/substring/fuzzy), and filters the in-memory index — falls back to SQLite FTS5 for simple queries
 9. **DB Cache**: SQLite FTS5 database persists the index for instant CLI searches and fast startup recovery
+10. **Usage Tracking**: Files opened via QuickFind have their open counts tracked in SQLite for relevance-based ranking
+
+## Testing
+
+```bash
+# Run the test suite (141 tests)
+python -m pytest tests/ -v
+```
+
+Tests cover search query parsing (all modifiers), size/date helpers, smart case sensitivity, fuzzy matching, MFT record parsing, USA fixup, USN records, cache datetime round-trip, FTS5 detection, `.quickfindignore` pattern matching, and EFU file loading.
+
+## Security
+
+- **XSS protection**: HTTP server uses `html.escape()` for all user-derived content with `Content-Security-Policy` and `X-Content-Type-Options` headers
+- **Rate limiting**: Per-IP rate limiter (60 requests/minute) on the HTTP server with `429 Too Many Requests` response
+- **Token authentication**: Optional Bearer token authentication for the HTTP server
+- **Safe Win32 calls**: All ctypes DLL loads use `WinDLL(use_last_error=True)` with complete `argtypes` declarations
+- **Atomic config saves**: Settings, bookmarks, filters, and hidden paths use atomic write (temp file + rename) to prevent corruption on crash
+- **Privilege scoping**: `SeBackupPrivilege` enabled only when needed for NTFS MFT access
 
 ## License
 
