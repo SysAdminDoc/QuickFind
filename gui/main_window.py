@@ -25,6 +25,7 @@ from PyQt6.QtGui import (
 from core.index import FileIndex, FileEntry, IndexWorker
 from core.search import SearchEngine, SearchOptions, SearchFilter, BUILTIN_FILTERS
 from core.file_list import load_efu
+from core.version import VERSION, APP_TITLE
 
 from gui.theme import MOCHA, ACCENT
 from gui.results_view import ResultsView
@@ -37,8 +38,6 @@ from gui.settings_dialog import Settings, SettingsDialog
 from core.hidden_paths import HiddenPathsManager
 
 logger = logging.getLogger('QuickFind.MainWindow')
-
-VERSION = "0.7.2"
 
 
 def _set_dark_title_bar(hwnd):
@@ -53,8 +52,6 @@ def _set_dark_title_bar(hwnd):
     except Exception:
         pass
 
-
-APP_TITLE = f"QuickFind v{VERSION}"
 
 # Search syntax help text
 SYNTAX_HELP = """Search Syntax:
@@ -123,6 +120,8 @@ class MainWindow(QMainWindow):
         self._search_engine = SearchEngine(self._file_index)
         self._bookmark_manager = BookmarkManager()
         self._hidden_paths_manager = HiddenPathsManager()
+        self._http_server = None
+        self._http_server_config = None
 
         # State
         self._search_worker: Optional[SearchWorker] = None
@@ -674,6 +673,54 @@ class MainWindow(QMainWindow):
         if hasattr(s, 'column_visibility') and s.column_visibility:
             for tab in self._tabs:
                 tab.results_view.table_view.apply_column_visibility(s.column_visibility)
+
+        self._apply_http_server_settings()
+
+    def _apply_http_server_settings(self):
+        """Start, stop, or restart the remote search server based on settings."""
+        s = self._settings
+        if not s.enable_http_server:
+            if self._http_server:
+                self._http_server.stop()
+                self._http_server = None
+                self._http_server_config = None
+                self._status_label.setText("Remote search server stopped")
+            return
+
+        config = (
+            s.http_bind.strip() or "127.0.0.1",
+            int(s.http_port),
+            s.http_auth_token,
+            s.http_use_https,
+            s.https_cert_file.strip(),
+            s.https_key_file.strip(),
+        )
+        if self._http_server and self._http_server_config == config:
+            return
+
+        if self._http_server:
+            self._http_server.stop()
+            self._http_server = None
+            self._http_server_config = None
+
+        from server.http_server import QuickFindHTTPServer
+
+        self._http_server = QuickFindHTTPServer(
+            self._file_index,
+            self._search_engine,
+            host=config[0],
+            port=config[1],
+            auth_token=config[2],
+            use_https=config[3],
+            certfile=config[4],
+            keyfile=config[5],
+        )
+        if self._http_server.start():
+            self._http_server_config = config
+            self._status_label.setText(f"Remote search server: {self._http_server.url}")
+        else:
+            self._http_server = None
+            self._status_label.setText("Remote search server failed to start")
 
     # ── Search ─────────────────────────────────────────
 
@@ -1382,6 +1429,9 @@ class MainWindow(QMainWindow):
             self._file_index.save_to_cache()
         except Exception:
             pass
+        if self._http_server:
+            self._http_server.stop()
+            self._http_server = None
         self._file_index.shutdown()
         self._tray.stop_hotkey()
         self._tray.hide()

@@ -20,6 +20,8 @@ for mod_name in _QT_MODULES:
             'QApplication': MagicMock,
             'QMessageBox': MagicMock,
             'QIcon': MagicMock,
+            'QPalette': MagicMock,
+            'QColor': MagicMock,
             'QFont': MagicMock,
             'QMenu': MagicMock,
             'QAction': MagicMock,

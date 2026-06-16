@@ -2,6 +2,13 @@
 
 All notable changes to QuickFind will be documented in this file.
 
+## [v0.7.3] - 2026-06-16
+
+- Added optional HTTPS/TLS support for the remote search server with configurable certificate and private key paths.
+- Fixed remote server settings so enabling the server from the UI starts/stops the background server and reports the active URL.
+- Centralized application version metadata in `core.version` so runtime, build, and UI version strings cannot drift.
+- Added server/version tests and expanded the passing suite to 145 tests.
+
 ## [v0.7.2] - 2026-06-15
 
 ### Premium polish pass

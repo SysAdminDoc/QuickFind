@@ -9,6 +9,7 @@ import json
 import logging
 import os
 import secrets
+import ssl
 import time
 import threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
@@ -322,9 +323,13 @@ class QuickFindHTTPServer:
     """Wrapper to run the HTTP server in a background thread."""
 
     def __init__(self, file_index: FileIndex, search_engine: SearchEngine,
-                 host: str = '127.0.0.1', port: int = 8080, auth_token: str = ''):
+                 host: str = '127.0.0.1', port: int = 8080, auth_token: str = '',
+                 use_https: bool = False, certfile: str = '', keyfile: str = ''):
         self._host = host
         self._port = port
+        self._use_https = use_https
+        self._certfile = certfile
+        self._keyfile = keyfile
         self._server: Optional[HTTPServer] = None
         self._thread: Optional[threading.Thread] = None
 
@@ -337,12 +342,29 @@ class QuickFindHTTPServer:
         """Start the HTTP server in a background thread."""
         try:
             self._server = HTTPServer((self._host, self._port), SearchHandler)
+            if self._use_https:
+                if not self._certfile:
+                    raise ValueError("HTTPS requires a TLS certificate file")
+                context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+                context.load_cert_chain(
+                    certfile=self._certfile,
+                    keyfile=self._keyfile or None,
+                )
+                self._server.socket = context.wrap_socket(
+                    self._server.socket,
+                    server_side=True,
+                )
             self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
             self._thread.start()
             auth_status = " (auth enabled)" if SearchHandler.auth_token else ""
-            logger.info(f"HTTP server started on {self._host}:{self._port}{auth_status}")
+            logger.info(f"{self.scheme.upper()} server started on {self._host}:{self._port}{auth_status}")
+            return True
         except Exception as e:
-            logger.error(f"Failed to start HTTP server: {e}")
+            if self._server:
+                self._server.server_close()
+                self._server = None
+            logger.error(f"Failed to start {self.scheme.upper()} server: {e}")
+            return False
 
     def stop(self):
         """Stop the HTTP server."""
@@ -353,4 +375,8 @@ class QuickFindHTTPServer:
 
     @property
     def url(self) -> str:
-        return f"http://{self._host}:{self._port}"
+        return f"{self.scheme}://{self._host}:{self._port}"
+
+    @property
+    def scheme(self) -> str:
+        return "https" if self._use_https else "http"

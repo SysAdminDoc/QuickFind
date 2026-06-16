@@ -14,6 +14,8 @@ import sys
 import shutil
 from pathlib import Path
 
+from core.version import APP_NAME, VERSION
+
 ROOT = Path(__file__).parent
 DIST = ROOT / 'dist'
 BUILD = ROOT / 'build'
@@ -21,9 +23,7 @@ SPEC = ROOT / 'QuickFind.spec'
 ASSETS = ROOT / 'assets'
 ICON = ASSETS / 'quickfind.ico'
 
-APP_NAME = "QuickFind"
 ENTRY = "quickfind.py"
-VERSION = "0.7.2"
 
 
 def ensure_pyinstaller():

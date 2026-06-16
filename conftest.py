@@ -19,6 +19,8 @@ except (ImportError, ModuleNotFoundError):
                 'QApplication': MagicMock,
                 'QMessageBox': MagicMock,
                 'QIcon': MagicMock,
+                'QPalette': MagicMock,
+                'QColor': MagicMock,
                 'QFont': MagicMock,
                 'QMenu': MagicMock,
                 'QAction': MagicMock,

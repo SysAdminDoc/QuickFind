@@ -48,6 +48,8 @@ from PyQt6.QtWidgets import QApplication, QMessageBox
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QIcon, QFont
 
+from core.version import APP_NAME, VERSION
+
 # Crash logging
 LOG_DIR = Path.home() / '.quickfind'
 LOG_DIR.mkdir(exist_ok=True)
@@ -77,9 +79,6 @@ _console_handler.setFormatter(logging.Formatter(
 _root_logger.addHandler(_console_handler)
 
 logger = logging.getLogger('QuickFind')
-
-VERSION = "0.7.2"
-APP_NAME = "QuickFind"
 
 
 def excepthook(exc_type, exc_value, exc_tb):

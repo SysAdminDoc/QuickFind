@@ -67,6 +67,9 @@ class Settings:
     http_port: int = 8080
     http_bind: str = "127.0.0.1"
     http_auth_token: str = ""
+    http_use_https: bool = False
+    https_cert_file: str = ""
+    https_key_file: str = ""
 
     # EFU file lists
     efu_files: list[str] = field(default_factory=list)
@@ -295,6 +298,25 @@ class SettingsDialog(QDialog):
         self._http_auth_token.setPlaceholderText("Leave empty to disable authentication")
         http_form.addRow("Auth token:", self._http_auth_token)
 
+        self._http_use_https = QCheckBox("Enable HTTPS")
+        http_form.addRow(self._http_use_https)
+
+        cert_row = QHBoxLayout()
+        self._https_cert_file = QLineEdit()
+        cert_btn = QPushButton("Browse...")
+        cert_btn.clicked.connect(lambda: self._browse_file(self._https_cert_file, "Select TLS Certificate"))
+        cert_row.addWidget(self._https_cert_file)
+        cert_row.addWidget(cert_btn)
+        http_form.addRow("TLS certificate:", cert_row)
+
+        key_row = QHBoxLayout()
+        self._https_key_file = QLineEdit()
+        key_btn = QPushButton("Browse...")
+        key_btn.clicked.connect(lambda: self._browse_file(self._https_key_file, "Select TLS Private Key"))
+        key_row.addWidget(self._https_key_file)
+        key_row.addWidget(key_btn)
+        http_form.addRow("TLS private key:", key_row)
+
         http_layout.addWidget(http_group)
         http_layout.addStretch()
         tabs.addTab(http_tab, "HTTP Server")
@@ -344,6 +366,9 @@ class SettingsDialog(QDialog):
         self._http_port.setValue(s.http_port)
         self._http_bind.setText(s.http_bind)
         self._http_auth_token.setText(s.http_auth_token)
+        self._http_use_https.setChecked(s.http_use_https)
+        self._https_cert_file.setText(s.https_cert_file)
+        self._https_key_file.setText(s.https_key_file)
 
         # Column visibility
         for col_name, cb in self._col_checks.items():
@@ -375,6 +400,9 @@ class SettingsDialog(QDialog):
         s.http_port = self._http_port.value()
         s.http_bind = self._http_bind.text()
         s.http_auth_token = self._http_auth_token.text()
+        s.http_use_https = self._http_use_https.isChecked()
+        s.https_cert_file = self._https_cert_file.text()
+        s.https_key_file = self._https_key_file.text()
 
         # Column visibility
         for col_name, cb in self._col_checks.items():
@@ -413,6 +441,14 @@ class SettingsDialog(QDialog):
         row = self._efu_list.currentRow()
         if row >= 0:
             self._efu_list.takeItem(row)
+
+    def _browse_file(self, target: QLineEdit, title: str):
+        path, _ = QFileDialog.getOpenFileName(
+            self, title, "",
+            "PEM Files (*.pem *.crt *.cer *.key);;All Files (*)"
+        )
+        if path:
+            target.setText(path)
 
     def _export_settings(self):
         path, _ = QFileDialog.getSaveFileName(

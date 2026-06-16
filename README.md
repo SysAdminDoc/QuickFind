@@ -1,13 +1,14 @@
-# QuickFind v0.7.2
+# QuickFind v0.7.3
 
 Lightning-fast file search for Windows, powered by NTFS MFT + USN Journal.
 
 An open-source alternative to [Voidtools Everything](https://www.voidtools.com/), built with Python and PyQt6 for extensibility and customization.
 
+![Version](https://img.shields.io/badge/Version-v0.7.3-blueviolet)
 ![Python](https://img.shields.io/badge/Python-3.10+-blue)
 ![License](https://img.shields.io/badge/License-MIT-green)
 ![Platform](https://img.shields.io/badge/Platform-Windows-lightgrey)
-![Tests](https://img.shields.io/badge/Tests-141%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/Tests-145%20passing-brightgreen)
 
 ## Features
 
@@ -54,14 +55,14 @@ An open-source alternative to [Voidtools Everything](https://www.voidtools.com/)
 - **Accessibility** — `accessibleName`/`accessibleDescription` on key widgets; focus-visible states on all interactive elements
 
 ### Advanced
-- **HTTP server** for remote web browser access with token-based authentication, per-IP rate limiting (60 req/min), XSS protection (CSP headers + `html.escape`), and sticky-header web UI
+- **HTTP/HTTPS server** for remote web browser access with TLS certificate support, token-based authentication, per-IP rate limiting (60 req/min), XSS protection (CSP headers + `html.escape`), and sticky-header web UI
 - **`.quickfindignore`** files — place in any directory with glob patterns to exclude files/folders from indexing (like `.gitignore`)
 - **EFU file lists** for indexing non-NTFS and network drives
 - **CLI tool** (`es.py`) with full search syntax, CSV/JSON output, and DB cache for instant results
 - **Per-drive rescan intervals** — configure different rescan frequencies for SSD vs NAS drives
 - **Export/import settings** — save and restore configuration as JSON
 - **Log rotation** — `RotatingFileHandler` with 5 MB max and 3 backups
-- **141 automated tests** covering search parsing, MFT record parsing, cache helpers, and ignore patterns
+- **145 automated tests** covering search parsing, MFT record parsing, cache helpers, remote server configuration, and ignore patterns
 - **PyInstaller build script** for single-file or single-folder distribution
 
 ## Requirements
@@ -229,7 +230,8 @@ Tests cover search query parsing (all modifiers), size/date helpers, smart case 
 
 - **XSS protection**: HTTP server uses `html.escape()` for all user-derived content with `Content-Security-Policy` and `X-Content-Type-Options` headers
 - **Rate limiting**: Per-IP rate limiter (60 requests/minute) on the HTTP server with `429 Too Many Requests` response
-- **Token authentication**: Optional Bearer token authentication for the HTTP server
+- **HTTPS support**: Optional TLS certificate/key configuration for encrypted remote search access
+- **Token authentication**: Optional Bearer token authentication for the HTTP/HTTPS server
 - **Safe Win32 calls**: All ctypes DLL loads use `WinDLL(use_last_error=True)` with complete `argtypes` declarations
 - **Atomic config saves**: Settings, bookmarks, filters, and hidden paths use atomic write (temp file + rename) to prevent corruption on crash
 - **Privilege scoping**: `SeBackupPrivilege` enabled only when needed for NTFS MFT access
