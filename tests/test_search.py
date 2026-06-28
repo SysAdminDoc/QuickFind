@@ -226,6 +226,11 @@ class TestParseQuery:
         parsed = parse_query("dupe:")
         assert parsed.dupe_mode is True
 
+    def test_archive_modifier(self):
+        parsed = parse_query("archive:report")
+        assert parsed.archive_mode is True
+        assert parsed.terms == ["report"]
+
     def test_exclude_term(self):
         parsed = parse_query("hello !temp")
         assert parsed.terms == ["hello"]

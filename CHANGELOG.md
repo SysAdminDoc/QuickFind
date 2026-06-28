@@ -2,6 +2,11 @@
 
 All notable changes to QuickFind will be documented in this file.
 
+## [v0.7.9] - 2026-06-28
+
+- Added opt-in `archive:` search for filenames inside ZIP and 7z archives, returning virtual paths like `archive.zip\folder\file.txt`.
+- Added `py7zr` packaging support and archive-search tests, expanding the passing suite to 169 tests.
+
 ## [v0.7.8] - 2026-06-27
 
 - Bounded the native file icon cache with least-recently-used eviction to prevent unbounded growth while browsing many file types.

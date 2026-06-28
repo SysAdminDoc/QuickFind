@@ -4,7 +4,7 @@ Routes simple queries through SQLite for speed, falls back to in-memory for comp
 
 Supports: plain text, regex:, wildcards:, case:, path:, file:, folder:,
 wholeword:, wholefilename:, content:, size:, dm: (date modified),
-dc: (date created), ext:, attrib:, len:, parent:, dupe:
+dc: (date created), ext:, attrib:, len:, parent:, dupe:, archive:
 """
 
 import re
@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import Optional, Callable
 
+from core.archives import is_supported_archive, iter_archive_entries
 from core.index import FileEntry, FileIndex
 from core.utils import parse_size as _parse_size
 
@@ -207,6 +208,7 @@ class ParsedQuery:
     attrib_exclude: int = 0
     content_search: str = ""
     dupe_mode: bool = False
+    archive_mode: bool = False
     or_groups: list[list[str]] = field(default_factory=list)
     exclude_terms: list[str] = field(default_factory=list)
     _case_explicit: bool = False
@@ -396,6 +398,11 @@ def parse_query(raw_query: str, base_options: Optional[SearchOptions] = None) ->
             elif mod_lower == 'dupe':
                 parsed.dupe_mode = True
                 i += 1; continue
+            elif mod_lower == 'archive':
+                parsed.archive_mode = True
+                if val:
+                    remaining_terms.append(val)
+                i += 1; continue
             remaining_terms.append(token)
             i += 1; continue
 
@@ -494,6 +501,8 @@ class SearchEngine:
         if parsed.content_search:
             return False
         if parsed.dupe_mode:
+            return False
+        if parsed.archive_mode:
             return False
         if parsed.or_groups:
             return False
@@ -638,6 +647,12 @@ class SearchEngine:
         exclude_matchers = self._compile_exclude_matchers(parsed)
         or_matchers = self._compile_or_matchers(parsed)
 
+        if parsed.archive_mode:
+            return self._archive_search(
+                parsed, term_matchers, exclude_matchers, or_matchers,
+                filter_exclude_paths, cancel_check,
+            )
+
         results = []
         entries = self._index.all_entries
         limit = parsed.options.max_results or 0
@@ -651,6 +666,52 @@ class SearchEngine:
 
             if self._matches(entry, parsed, term_matchers, exclude_matchers, or_matchers, filter_exclude_paths):
                 results.append(entry)
+
+        if cancel_check and cancel_check():
+            return results
+
+        if parsed.dupe_mode:
+            results = self._filter_duplicate_results(results)
+
+        results = self._sort_results(results, parsed.options, cancel_check)
+        if parsed.dupe_mode and limit:
+            results = results[:limit]
+
+        return results
+
+    def _archive_search(self, parsed: ParsedQuery,
+                        term_matchers: list,
+                        exclude_matchers: list,
+                        or_matchers: list,
+                        filter_exclude_paths: list[str],
+                        cancel_check: Optional[Callable[[], bool]] = None) -> list[FileEntry]:
+        results = []
+        limit = parsed.options.max_results or 0
+
+        for archive_entry in self._index.all_entries:
+            if cancel_check and cancel_check():
+                break
+
+            if limit and not parsed.dupe_mode and len(results) >= limit:
+                break
+
+            if not is_supported_archive(archive_entry):
+                continue
+
+            if filter_exclude_paths:
+                archive_path = archive_entry.get_path(self._index).lower()
+                if any(excluded in archive_path for excluded in filter_exclude_paths):
+                    continue
+
+            for entry in iter_archive_entries(archive_entry, self._index):
+                if cancel_check and cancel_check():
+                    break
+
+                if limit and not parsed.dupe_mode and len(results) >= limit:
+                    break
+
+                if self._matches(entry, parsed, term_matchers, exclude_matchers, or_matchers, []):
+                    results.append(entry)
 
         if cancel_check and cancel_check():
             return results
@@ -805,7 +866,7 @@ class SearchEngine:
                     return False
 
         if parsed.parent_filter:
-            parent_path = self._index.resolve_parent_path(entry.drive, entry.parent_frn)
+            parent_path = os.path.dirname(entry.get_path(self._index))
             if parsed.parent_filter.lower() not in parent_path.lower():
                 return False
 

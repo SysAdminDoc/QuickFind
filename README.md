@@ -1,14 +1,14 @@
-# QuickFind v0.7.8
+# QuickFind v0.7.9
 
 Lightning-fast file search for Windows, powered by NTFS MFT + USN Journal.
 
 An open-source alternative to [Voidtools Everything](https://www.voidtools.com/), built with Python and PyQt6 for extensibility and customization.
 
-![Version](https://img.shields.io/badge/Version-v0.7.8-blueviolet)
+![Version](https://img.shields.io/badge/Version-v0.7.9-blueviolet)
 ![Python](https://img.shields.io/badge/Python-3.10+-blue)
 ![License](https://img.shields.io/badge/License-MIT-green)
 ![Platform](https://img.shields.io/badge/Platform-Windows-lightgrey)
-![Tests](https://img.shields.io/badge/Tests-163%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/Tests-169%20passing-brightgreen)
 
 ## Features
 
@@ -35,8 +35,9 @@ An open-source alternative to [Voidtools Everything](https://www.voidtools.com/)
 - **Wildcards** (`*.py`, `test?.log`)
 - **Boolean logic** — AND (spaces), OR (`|`), NOT (`!term`)
 - **Content search** — `content:keyword` searches inside text files
+- **Archive search** — `archive:` searches filenames inside ZIP and 7z archives without extracting them
 - **Usage-based ranking** — frequently opened files rank higher with Relevance sort
-- **16 search modifiers**: `case:`, `path:`, `file:`, `folder:`, `wholeword:`, `ext:`, `size:`, `dm:`, `dc:`, `len:`, `attrib:`, `content:`, `parent:`, `dupe:`, `fuzzy:`, `regex:`
+- **17 search modifiers**: `case:`, `path:`, `file:`, `folder:`, `wholeword:`, `ext:`, `size:`, `dm:`, `dc:`, `len:`, `attrib:`, `content:`, `parent:`, `dupe:`, `archive:`, `fuzzy:`, `regex:`
 - **Search syntax help** panel accessible from Help menu
 
 ### GUI
@@ -63,7 +64,7 @@ An open-source alternative to [Voidtools Everything](https://www.voidtools.com/)
 - **Per-drive rescan intervals** — configure different rescan frequencies for SSD vs NAS drives
 - **Export/import settings** — save and restore configuration as validated JSON
 - **Log rotation** — `RotatingFileHandler` with 5 MB max and 3 backups
-- **163 automated tests** covering search parsing, duplicate detection, MFT record parsing, privilege lifecycle, settings validation, index mode UI state, results-view cache bounds, cache helpers, remote server configuration, and ignore patterns
+- **169 automated tests** covering search parsing, archive search, duplicate detection, MFT record parsing, privilege lifecycle, settings validation, index mode UI state, results-view cache bounds, cache helpers, remote server configuration, and ignore patterns
 - **PyInstaller build script** for single-file or single-folder distribution
 
 ## Requirements
@@ -146,6 +147,7 @@ python build.py --clean
 | `attrib:rh` | Read-only + hidden |
 | `parent:node_modules` | Parent directory filter |
 | `dupe:` | Find duplicate filenames |
+| `archive:report` | Find files named report inside ZIP/7z archives |
 
 **Smart case:** Queries with uppercase letters automatically use case-sensitive matching. All-lowercase queries match case-insensitively. Override with `case:` or `nocase:`.
 
@@ -175,6 +177,7 @@ QuickFind/
     index.py                # In-memory index + USN monitor + deferred path resolution
     cache.py                # SQLite FTS5 cache + integrity check + search history + usage tracking
     search.py               # Search engine with modifiers + fuzzy matching
+    archives.py             # ZIP/7z member enumeration for archive: searches
     utils.py                # Shared utilities (size parsing)
     file_list.py            # EFU file list import/export
     hidden_paths.py         # Per-filter hidden path management
@@ -197,6 +200,7 @@ QuickFind/
     es.py                   # Command-line search tool + DB cache
   tests/
     test_search.py          # Search parsing, modifiers, smart case, fuzzy matching
+    test_archive_search.py  # ZIP/7z archive member search
     test_ntfs.py            # MFT record parsing, FILETIME conversion, USA fixup
     test_cache.py           # Datetime conversion, FTS5 detection
     test_index.py           # .quickfindignore pattern matching
@@ -221,11 +225,11 @@ QuickFind/
 ## Testing
 
 ```bash
-# Run the test suite (163 tests)
+# Run the test suite (169 tests)
 python -m pytest tests/ -v
 ```
 
-Tests cover search query parsing (all modifiers), size/date helpers, smart case sensitivity, fuzzy matching, MFT record parsing, USA fixup, USN records, cache datetime round-trip, FTS5 detection, results-view cache bounds, `.quickfindignore` pattern matching, and EFU file loading.
+Tests cover search query parsing (all modifiers), archive member search, size/date helpers, smart case sensitivity, fuzzy matching, MFT record parsing, USA fixup, USN records, cache datetime round-trip, FTS5 detection, results-view cache bounds, `.quickfindignore` pattern matching, and EFU file loading.
 
 ## Security
 
