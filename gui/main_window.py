@@ -35,6 +35,7 @@ from gui.bookmarks import BookmarkManager, BookmarksPanel, Bookmark
 from gui.context_menu import build_context_menu
 from gui.tray import SystemTray
 from gui.settings_dialog import Settings, SettingsDialog
+from gui.status_indicators import index_mode_indicator_state
 from core.hidden_paths import HiddenPathsManager
 
 logger = logging.getLogger('QuickFind.MainWindow')
@@ -316,6 +317,15 @@ class MainWindow(QMainWindow):
         self._last_update_label = QLabel("")
         self._last_update_label.setStyleSheet(f"color: {MOCHA['overlay0']}; font-size: 11px; padding: 0 8px;")
         self._status_bar.addPermanentWidget(self._last_update_label)
+
+        self._index_mode_label = QLabel("")
+        self._index_mode_label.setAccessibleName("Index mode")
+        self._index_mode_label.setStyleSheet(
+            f"color: {MOCHA['peach']}; font-size: 11px; font-weight: 600; "
+            f"padding: 1px 6px; border: 1px solid {MOCHA['surface1']}; border-radius: 4px;"
+        )
+        self._index_mode_label.hide()
+        self._status_bar.addPermanentWidget(self._index_mode_label)
 
         self._index_status = QLabel("")
         self._index_status.setStyleSheet(f"color: {MOCHA['subtext0']}; font-size: 11px; padding: 0 6px;")
@@ -919,8 +929,7 @@ class MainWindow(QMainWindow):
             self._perf_label.setText("")
 
         # Show non-admin mode indicator
-        if not self._file_index.is_admin_mode:
-            self._status_label.setText("Running in non-admin mode (os.scandir fallback)")
+        self._refresh_index_mode_indicator()
 
         self._refresh_status_bar()
 
@@ -974,6 +983,8 @@ class MainWindow(QMainWindow):
         """Update the live status bar with DB stats."""
         from core.cache import db_count, db_size_bytes
 
+        self._refresh_index_mode_indicator()
+
         try:
             entry_count = db_count()
             db_size = db_size_bytes()
@@ -999,6 +1010,19 @@ class MainWindow(QMainWindow):
             pass
 
     # ── Results interaction ─────────────────────────────
+
+    def _refresh_index_mode_indicator(self):
+        """Keep index mode visible without overwriting transient status text."""
+        if not hasattr(self, '_index_mode_label'):
+            return
+
+        state = index_mode_indicator_state(self._file_index.is_admin_mode)
+        self._index_mode_label.setText(state.text)
+        self._index_mode_label.setToolTip(state.tooltip)
+        if state.visible:
+            self._index_mode_label.show()
+        else:
+            self._index_mode_label.hide()
 
     def _on_item_activated(self, entry: FileEntry):
         """Open a file/folder when double-clicked or Enter pressed."""

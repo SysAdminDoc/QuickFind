@@ -1,14 +1,14 @@
-# QuickFind v0.7.4
+# QuickFind v0.7.5
 
 Lightning-fast file search for Windows, powered by NTFS MFT + USN Journal.
 
 An open-source alternative to [Voidtools Everything](https://www.voidtools.com/), built with Python and PyQt6 for extensibility and customization.
 
-![Version](https://img.shields.io/badge/Version-v0.7.4-blueviolet)
+![Version](https://img.shields.io/badge/Version-v0.7.5-blueviolet)
 ![Python](https://img.shields.io/badge/Python-3.10+-blue)
 ![License](https://img.shields.io/badge/License-MIT-green)
 ![Platform](https://img.shields.io/badge/Platform-Windows-lightgrey)
-![Tests](https://img.shields.io/badge/Tests-148%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/Tests-152%20passing-brightgreen)
 
 ## Features
 
@@ -17,7 +17,7 @@ An open-source alternative to [Voidtools Everything](https://www.voidtools.com/)
 - **FAT32/exFAT/ReFS support** for external drives and Dev Drives via recursive `os.scandir` walk
 - **USN Journal V2/V3/V4** support — V3/V4 with 128-bit file IDs for ReFS compatibility
 - **Real-time updates** via USN Change Journal monitoring (NTFS) and configurable periodic rescan (FAT/exFAT/ReFS)
-- **Non-admin fallback** — gracefully degrades to `os.scandir` when UAC is declined
+- **Non-admin fallback** — gracefully degrades to `os.scandir` when UAC is declined, with a persistent status-bar indicator
 - **SQLite FTS5** full-text search cache with WAL mode and memory-mapped I/O
 - **DB corruption recovery** with automatic integrity checks and rebuild
 - **Sub-second search** across millions of files with compiled pattern matching
@@ -62,7 +62,7 @@ An open-source alternative to [Voidtools Everything](https://www.voidtools.com/)
 - **Per-drive rescan intervals** — configure different rescan frequencies for SSD vs NAS drives
 - **Export/import settings** — save and restore configuration as JSON
 - **Log rotation** — `RotatingFileHandler` with 5 MB max and 3 backups
-- **148 automated tests** covering search parsing, MFT record parsing, privilege lifecycle, cache helpers, remote server configuration, and ignore patterns
+- **152 automated tests** covering search parsing, MFT record parsing, privilege lifecycle, index mode UI state, cache helpers, remote server configuration, and ignore patterns
 - **PyInstaller build script** for single-file or single-folder distribution
 
 ## Requirements
@@ -220,7 +220,7 @@ QuickFind/
 ## Testing
 
 ```bash
-# Run the test suite (148 tests)
+# Run the test suite (152 tests)
 python -m pytest tests/ -v
 ```
 

@@ -6,6 +6,7 @@ import tempfile
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pytest
+import core.index as index_mod
 from core.index import FileIndex
 
 
@@ -41,3 +42,22 @@ class TestIgnorePatterns:
 
     def test_no_patterns(self):
         assert FileIndex._matches_ignore("anything", []) is False
+
+
+class TestIndexMode:
+    def test_full_index_resets_admin_mode(self, monkeypatch):
+        index = FileIndex()
+        index._admin_mode = False
+        monkeypatch.setattr(index_mod, "get_all_drives", lambda: [])
+
+        index.index_all_drives(drives=[])
+
+        assert index.is_admin_mode is True
+
+    def test_force_walk_reports_non_admin_mode(self, monkeypatch):
+        index = FileIndex()
+        monkeypatch.setattr(index_mod, "get_all_drives", lambda: [])
+
+        index.index_all_drives(drives=[], force_walk=True)
+
+        assert index.is_admin_mode is False

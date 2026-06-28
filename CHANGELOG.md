@@ -2,6 +2,12 @@
 
 All notable changes to QuickFind will be documented in this file.
 
+## [v0.7.5] - 2026-06-27
+
+- Added a persistent status-bar badge when QuickFind falls back to non-admin `os.scandir` indexing.
+- Reset index mode at the start of each full scan so the fallback badge clears after a later successful MFT scan.
+- Added index-mode indicator tests and expanded the passing suite to 152 tests.
+
 ## [v0.7.4] - 2026-06-27
 
 - Disabled `SeBackupPrivilege` after direct MFT scans using a reference-counted guard that is safe for parallel drive indexing.

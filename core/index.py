@@ -610,6 +610,7 @@ class FileIndex(QObject):
         This should be called from a worker thread.
         """
         self._cancel_flag = False
+        self._admin_mode = not force_walk
         self.indexing_started.emit()
 
         # Build drive info map for all available drives
