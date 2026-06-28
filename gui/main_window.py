@@ -100,6 +100,39 @@ class SearchWorker(QThread):
             self.results_ready.emit(results)
 
 
+class ContentIndexWorker(QThread):
+    """Background thread for content cache indexing."""
+    progress = pyqtSignal(object)
+    job_finished = pyqtSignal(object)
+
+    def __init__(self, file_index: FileIndex, settings):
+        super().__init__()
+        self._file_index = file_index
+        self._settings = settings
+        self._cancelled = False
+
+    def cancel(self):
+        self._cancelled = True
+
+    def run(self):
+        from core.content.indexer import ContentIndexJob, ContentIndexSettings
+
+        job_settings = ContentIndexSettings(
+            roots=tuple(self._settings.content_index_roots),
+            extensions=frozenset(self._settings.content_index_extensions) if self._settings.content_index_extensions else None,
+            max_cache_bytes=self._settings.content_index_max_cache_mb * 1024 * 1024,
+            max_file_bytes=self._settings.content_index_max_file_mb * 1024 * 1024,
+        )
+        entries = list(self._file_index.all_entries)
+        job = ContentIndexJob(
+            job_settings,
+            cancel_check=lambda: self._cancelled,
+            progress_callback=self.progress.emit,
+        )
+        stats = job.run(entries, lambda entry: entry.get_path(self._file_index))
+        self.job_finished.emit(stats)
+
+
 class SearchTab:
     """State for a single search tab."""
     def __init__(self, file_index: FileIndex):
@@ -123,6 +156,8 @@ class MainWindow(QMainWindow):
         self._hidden_paths_manager = HiddenPathsManager()
         self._http_server = None
         self._http_server_config = None
+        self._content_index_worker: Optional[ContentIndexWorker] = None
+        self._content_index_stats = None
 
         # State
         self._search_worker: Optional[SearchWorker] = None
@@ -309,6 +344,11 @@ class MainWindow(QMainWindow):
         self._db_stats_label = QLabel("")
         self._db_stats_label.setStyleSheet(f"color: {MOCHA['overlay0']}; font-size: 11px; padding: 0 8px;")
         self._status_bar.addPermanentWidget(self._db_stats_label)
+
+        self._content_status_label = QLabel("")
+        self._content_status_label.setAccessibleName("Content index status")
+        self._content_status_label.setStyleSheet(f"color: {MOCHA['mauve']}; font-size: 11px; padding: 0 8px;")
+        self._status_bar.addPermanentWidget(self._content_status_label)
 
         self._service_status_label = QLabel("")
         self._service_status_label.setAccessibleName("Service status")
@@ -623,6 +663,14 @@ class MainWindow(QMainWindow):
         reindex = tools_menu.addAction("&Rebuild Index")
         reindex.setShortcut(QKeySequence("Ctrl+Shift+R"))
         reindex.triggered.connect(self._start_indexing)
+
+        tools_menu.addSeparator()
+
+        content_index = tools_menu.addAction("Start Content Indexing")
+        content_index.triggered.connect(self._start_content_indexing)
+
+        stop_content_index = tools_menu.addAction("Stop Content Indexing")
+        stop_content_index.triggered.connect(self._stop_content_indexing)
 
         tools_menu.addSeparator()
 
@@ -972,6 +1020,68 @@ class MainWindow(QMainWindow):
         if self._search_input.text().strip() or self._file_index.all_entries:
             self._trigger_search()
         self._refresh_status_bar()
+        if self._settings.content_index_enabled:
+            self._start_content_indexing()
+
+    # -- Content indexing ---------------------------------
+
+    def _start_content_indexing(self):
+        if self._content_index_worker and self._content_index_worker.isRunning():
+            self._status_label.setText("Content indexing already running")
+            return
+        if not self._file_index.all_entries:
+            self._status_label.setText("Content indexing waits for file index")
+            return
+
+        self._content_index_worker = ContentIndexWorker(self._file_index, self._settings)
+        self._content_index_worker.progress.connect(self._on_content_index_progress)
+        self._content_index_worker.job_finished.connect(self._on_content_index_finished)
+        self._content_status_label.setText("Content: indexing...")
+        self._content_status_label.setToolTip("Content indexing job is running")
+        self._content_index_worker.start()
+
+    def _stop_content_indexing(self):
+        if self._content_index_worker and self._content_index_worker.isRunning():
+            self._content_index_worker.cancel()
+            self._content_status_label.setText("Content: stopping...")
+            self._content_status_label.setToolTip("Content indexing cancellation requested")
+        else:
+            self._status_label.setText("Content indexing is not running")
+
+    def _on_content_index_progress(self, stats):
+        self._content_index_stats = stats
+        self._content_status_label.setText(
+            f"Content: {stats.indexed:,} indexed / {stats.scanned:,} scanned"
+        )
+        self._content_status_label.setToolTip(self._content_index_tooltip(stats))
+
+    def _on_content_index_finished(self, stats):
+        self._content_index_stats = stats
+        state = "cancelled" if stats.cancelled else "done"
+        self._content_status_label.setText(
+            f"Content: {state}, {stats.indexed:,} indexed, {stats.failed:,} failed"
+        )
+        self._content_status_label.setToolTip(self._content_index_tooltip(stats))
+        self._refresh_status_bar()
+
+    def _content_index_tooltip(self, stats) -> str:
+        failures = ", ".join(
+            f"{name}: {count}" for name, count in sorted(stats.adapter_failures.items())
+        )
+        parts = [
+            f"Scanned: {stats.scanned:,}",
+            f"Indexed: {stats.indexed:,}",
+            f"Cached fresh: {stats.cached:,}",
+            f"Skipped: {stats.skipped:,}",
+            f"Quota skipped: {stats.quota_skipped:,}",
+            f"Failed: {stats.failed:,}",
+            f"Cache text bytes: {stats.bytes_cached:,}",
+        ]
+        if failures:
+            parts.append(f"Adapter failures: {failures}")
+        if stats.last_error:
+            parts.append(f"Last error: {stats.last_error}")
+        return "\n".join(parts)
 
     def _on_index_updated(self, count: int):
         # Debounce: don't re-search on every USN tick
@@ -986,7 +1096,7 @@ class MainWindow(QMainWindow):
 
     def _refresh_status_bar(self):
         """Update the live status bar with DB stats."""
-        from core.cache import db_count, db_size_bytes
+        from core.cache import db_count, db_size_bytes, get_content_cache_stats
         from service.ipc import query_service_status
 
         self._refresh_index_mode_indicator()
@@ -1005,6 +1115,18 @@ class MainWindow(QMainWindow):
                 self._db_stats_label.setText(f"DB: {entry_count:,} entries ({size_str})")
             else:
                 self._db_stats_label.setText("")
+
+            if not (self._content_index_worker and self._content_index_worker.isRunning()):
+                content_stats = get_content_cache_stats()
+                if content_stats["count"] > 0:
+                    content_mb = content_stats["text_bytes"] / (1024 * 1024)
+                    self._content_status_label.setText(
+                        f"Content: {content_stats['count']:,} docs ({content_mb:.1f} MB)"
+                    )
+                    self._content_status_label.setToolTip("Cached extracted document text")
+                elif not self._content_index_stats:
+                    self._content_status_label.setText("")
+                    self._content_status_label.setToolTip("")
 
             service_status = query_service_status()
             if service_status and service_status.get("ok"):
@@ -1479,6 +1601,9 @@ class MainWindow(QMainWindow):
         if self._http_server:
             self._http_server.stop()
             self._http_server = None
+        if self._content_index_worker and self._content_index_worker.isRunning():
+            self._content_index_worker.cancel()
+            self._content_index_worker.wait(2000)
         self._file_index.shutdown()
         self._tray.stop_hotkey()
         self._tray.hide()

@@ -2,6 +2,7 @@
 
 import logging
 import os
+import importlib.util
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
@@ -25,6 +26,14 @@ TEXT_EXTENSIONS = {
 class ExtractedContent:
     text: str
     extractor: str
+
+
+@dataclass(frozen=True)
+class AdapterDiagnostic:
+    name: str
+    extensions: tuple[str, ...]
+    available: bool
+    detail: str = ""
 
 
 class ContentAdapter(Protocol):
@@ -133,8 +142,37 @@ def is_supported_content_path(path: str) -> bool:
     return _extension(path) in SUPPORTED_CONTENT_EXTENSIONS
 
 
+def adapter_for_path(path: str) -> ContentAdapter | None:
+    return _ADAPTER_BY_EXTENSION.get(_extension(path))
+
+
+def adapter_diagnostics() -> list[AdapterDiagnostic]:
+    module_names = {
+        'text': None,
+        'pdfplumber': 'pdfplumber',
+        'python-docx': 'docx',
+        'python-pptx': 'pptx',
+    }
+    diagnostics = []
+    for adapter in ADAPTERS:
+        module_name = module_names.get(adapter.name)
+        available = True
+        detail = ""
+        if module_name:
+            available = importlib.util.find_spec(module_name) is not None
+            if not available:
+                detail = f"Missing Python module: {module_name}"
+        diagnostics.append(AdapterDiagnostic(
+            name=adapter.name,
+            extensions=tuple(sorted(adapter.extensions)),
+            available=available,
+            detail=detail,
+        ))
+    return diagnostics
+
+
 def extract_text(path: str, max_chars: int = MAX_EXTRACT_CHARS) -> ExtractedContent | None:
-    adapter = _ADAPTER_BY_EXTENSION.get(_extension(path))
+    adapter = adapter_for_path(path)
     if adapter is None:
         return None
     try:

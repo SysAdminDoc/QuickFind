@@ -11,6 +11,8 @@ INT_RANGES = {
     "search_delay_ms": (0, 2000),
     "window_width": (640, 10000),
     "window_height": (480, 10000),
+    "content_index_max_cache_mb": (1, 102400),
+    "content_index_max_file_mb": (1, 1024),
 }
 
 STRING_FIELDS = {
@@ -89,5 +91,35 @@ def sanitize_settings_data(
     else:
         warnings.append("efu_files reset because it was not a list.")
     sanitized["efu_files"] = valid_efu_files
+
+    content_roots = sanitized.get("content_index_roots", [])
+    valid_content_roots = []
+    if isinstance(content_roots, list):
+        for path in content_roots:
+            if not isinstance(path, str) or not path.strip():
+                warnings.append("Ignored an empty or invalid content index root.")
+                continue
+            cleaned = path.strip()
+            if _path_exists(cleaned):
+                valid_content_roots.append(cleaned)
+            else:
+                warnings.append(f"Ignored missing content index root: {cleaned}")
+    else:
+        warnings.append("content_index_roots reset because it was not a list.")
+    sanitized["content_index_roots"] = valid_content_roots
+
+    content_extensions = sanitized.get("content_index_extensions", [])
+    valid_extensions = []
+    if isinstance(content_extensions, list):
+        for ext in content_extensions:
+            if not isinstance(ext, str):
+                warnings.append("Ignored an invalid content extension.")
+                continue
+            cleaned = ext.strip().lower().lstrip(".")
+            if cleaned:
+                valid_extensions.append(cleaned)
+    else:
+        warnings.append("content_index_extensions reset because it was not a list.")
+    sanitized["content_index_extensions"] = sorted(set(valid_extensions))
 
     return sanitized, warnings

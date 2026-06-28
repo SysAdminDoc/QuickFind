@@ -1,14 +1,14 @@
-# QuickFind v0.8.4
+# QuickFind v0.8.5
 
 Lightning-fast file search for Windows, powered by NTFS MFT + USN Journal.
 
 An open-source alternative to [Voidtools Everything](https://www.voidtools.com/), built with Python and PyQt6 for extensibility and customization.
 
-![Version](https://img.shields.io/badge/Version-v0.8.4-blueviolet)
+![Version](https://img.shields.io/badge/Version-v0.8.5-blueviolet)
 ![Python](https://img.shields.io/badge/Python-3.10+-blue)
 ![License](https://img.shields.io/badge/License-MIT-green)
 ![Platform](https://img.shields.io/badge/Platform-Windows-lightgrey)
-![Tests](https://img.shields.io/badge/Tests-192%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/Tests-197%20passing-brightgreen)
 
 ## Features
 
@@ -34,7 +34,7 @@ An open-source alternative to [Voidtools Everything](https://www.voidtools.com/)
 - **Regex** support (`regex:pattern`)
 - **Wildcards** (`*.py`, `test?.log`)
 - **Boolean logic** — AND (spaces), OR (`|`), NOT (`!term`)
-- **Content search** — `content:keyword` searches cached TXT/PDF/DOCX/PPTX extracted text through adapters
+- **Content search** — `content:keyword` searches cached TXT/PDF/DOCX/PPTX extracted text through adapters, with cancellable background indexing, root/type filters, quotas, and adapter diagnostics
 - **Archive search** — `archive:` searches filenames inside ZIP and 7z archives without extracting them
 - **Usage-based ranking** — frequently opened files rank higher with Relevance sort
 - **17 search modifiers**: `case:`, `path:`, `file:`, `folder:`, `wholeword:`, `ext:`, `size:`, `dm:`, `dc:`, `len:`, `attrib:`, `content:`, `parent:`, `dupe:`, `archive:`, `fuzzy:`, `regex:`
@@ -65,7 +65,7 @@ An open-source alternative to [Voidtools Everything](https://www.voidtools.com/)
 - **Per-drive rescan intervals** — configure different rescan frequencies for SSD vs NAS drives
 - **Export/import settings** — save and restore configuration as validated JSON
 - **Log rotation** — `RotatingFileHandler` with 5 MB max and 3 backups
-- **192 automated tests** covering startup dependency handling, SQLite/FTS5 version gates, remote auth/CORS hardening, search parsing, archive search, content adapters/cache, service IPC, duplicate detection, MFT record parsing, privilege lifecycle, settings validation, index mode UI state, results-view cache bounds, cache helpers, remote server configuration, and ignore patterns
+- **197 automated tests** covering startup dependency handling, SQLite/FTS5 version gates, remote auth/CORS hardening, content indexing jobs/quotas/diagnostics, search parsing, archive search, content adapters/cache, service IPC, duplicate detection, MFT record parsing, privilege lifecycle, settings validation, index mode UI state, results-view cache bounds, cache helpers, remote server configuration, and ignore patterns
 - **PyInstaller build script** for single-file or single-folder distribution
 
 ## Requirements
@@ -195,7 +195,7 @@ QuickFind/
     cache.py                # SQLite FTS5 cache + integrity check + search history + content cache
     search.py               # Search engine with modifiers + fuzzy/content matching
     archives.py             # ZIP/7z member enumeration for archive: searches
-    content/                # TXT/PDF/DOCX/PPTX extraction adapters
+    content/                # TXT/PDF/DOCX/PPTX extraction adapters + content indexing jobs
     utils.py                # Shared utilities (size parsing)
     file_list.py            # EFU file list import/export
     hidden_paths.py         # Per-filter hidden path management
@@ -250,11 +250,11 @@ QuickFind/
 ## Testing
 
 ```bash
-# Run the test suite (192 tests)
+# Run the test suite (197 tests)
 python -m pytest tests/ -v
 ```
 
-Tests cover startup dependency handling, SQLite/FTS5 version gates, remote auth/CORS hardening, search query parsing (all modifiers), archive member search, content extraction/cache, service IPC, size/date helpers, smart case sensitivity, fuzzy matching, MFT record parsing, USA fixup, USN records, cache datetime round-trip, FTS5 detection, results-view cache bounds, `.quickfindignore` pattern matching, and EFU file loading.
+Tests cover startup dependency handling, SQLite/FTS5 version gates, remote auth/CORS hardening, content indexing jobs/quotas/diagnostics, search query parsing (all modifiers), archive member search, content extraction/cache, service IPC, size/date helpers, smart case sensitivity, fuzzy matching, MFT record parsing, USA fixup, USN records, cache datetime round-trip, FTS5 detection, results-view cache bounds, `.quickfindignore` pattern matching, and EFU file loading.
 
 ## Security
 

@@ -75,6 +75,13 @@ class Settings:
     # EFU file lists
     efu_files: list[str] = field(default_factory=list)
 
+    # Content indexing
+    content_index_enabled: bool = False
+    content_index_roots: list[str] = field(default_factory=list)
+    content_index_extensions: list[str] = field(default_factory=list)
+    content_index_max_cache_mb: int = 512
+    content_index_max_file_mb: int = 10
+
     def sanitize(self) -> list[str]:
         data, warnings = sanitize_settings_data(asdict(self), asdict(Settings()))
         for k, v in data.items():
@@ -291,6 +298,50 @@ class SettingsDialog(QDialog):
 
         tabs.addTab(efu_tab, "File Lists")
 
+        # -- Content Tab -----------------------------------
+        content_tab = QWidget()
+        content_layout = QVBoxLayout(content_tab)
+
+        content_group = QGroupBox("Content Indexing")
+        content_form = QFormLayout(content_group)
+
+        self._content_index_enabled = QCheckBox("Enable background content indexing after file indexing")
+        content_form.addRow(self._content_index_enabled)
+
+        self._content_index_roots = QLineEdit()
+        self._content_index_roots.setPlaceholderText("Blank = all indexed paths; separate roots with semicolons")
+        content_form.addRow("Roots:", self._content_index_roots)
+
+        self._content_index_extensions = QLineEdit()
+        self._content_index_extensions.setPlaceholderText("Blank = all supported; example: txt;pdf;docx;pptx")
+        content_form.addRow("Extensions:", self._content_index_extensions)
+
+        self._content_index_max_cache = QSpinBox()
+        self._content_index_max_cache.setRange(1, 102400)
+        self._content_index_max_cache.setSuffix(" MB")
+        content_form.addRow("Cache quota:", self._content_index_max_cache)
+
+        self._content_index_max_file = QSpinBox()
+        self._content_index_max_file.setRange(1, 1024)
+        self._content_index_max_file.setSuffix(" MB")
+        content_form.addRow("Max file size:", self._content_index_max_file)
+
+        content_layout.addWidget(content_group)
+        adapter_lines = []
+        try:
+            from core.content import adapter_diagnostics
+            for diagnostic in adapter_diagnostics():
+                state = "available" if diagnostic.available else diagnostic.detail
+                adapter_lines.append(f"{diagnostic.name}: {state}")
+        except Exception as exc:
+            adapter_lines.append(f"Adapter diagnostics unavailable: {exc}")
+        self._content_adapter_status = QLabel("\n".join(adapter_lines))
+        self._content_adapter_status.setWordWrap(True)
+        self._content_adapter_status.setStyleSheet(f"color: {MOCHA['subtext0']}; font-size: 11px;")
+        content_layout.addWidget(self._content_adapter_status)
+        content_layout.addStretch()
+        tabs.addTab(content_tab, "Content")
+
         # -- HTTP Server Tab -------------------------------
         http_tab = QWidget()
         http_layout = QVBoxLayout(http_tab)
@@ -392,6 +443,11 @@ class SettingsDialog(QDialog):
         self._efu_list.clear()
         for path in s.efu_files:
             self._efu_list.addItem(path)
+        self._content_index_enabled.setChecked(s.content_index_enabled)
+        self._content_index_roots.setText(";".join(s.content_index_roots))
+        self._content_index_extensions.setText(";".join(s.content_index_extensions))
+        self._content_index_max_cache.setValue(s.content_index_max_cache_mb)
+        self._content_index_max_file.setValue(s.content_index_max_file_mb)
 
     def _apply(self) -> bool:
         s = self._settings
@@ -437,6 +493,18 @@ class SettingsDialog(QDialog):
         s.efu_files = []
         for i in range(self._efu_list.count()):
             s.efu_files.append(self._efu_list.item(i).text())
+        s.content_index_enabled = self._content_index_enabled.isChecked()
+        s.content_index_roots = [
+            root.strip() for root in self._content_index_roots.text().split(";")
+            if root.strip()
+        ]
+        s.content_index_extensions = [
+            ext.strip().lower().lstrip(".")
+            for ext in self._content_index_extensions.text().split(";")
+            if ext.strip()
+        ]
+        s.content_index_max_cache_mb = self._content_index_max_cache.value()
+        s.content_index_max_file_mb = self._content_index_max_file.value()
 
         warnings = s.sanitize()
         if warnings:

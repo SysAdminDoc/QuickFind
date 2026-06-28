@@ -2,6 +2,12 @@
 
 All notable changes to QuickFind will be documented in this file.
 
+## [v0.8.5] - 2026-06-28
+
+- Added cancellable background content indexing jobs with per-root and per-extension settings.
+- Added content cache quota enforcement, max-file-size controls, cache stats, and adapter diagnostics/failure counts.
+- Added content-index status UI and expanded the passing suite to 197 tests.
+
 ## [v0.8.4] - 2026-06-28
 
 - Hardened remote search authentication by removing query-string token acceptance.

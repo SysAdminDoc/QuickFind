@@ -16,6 +16,10 @@ DEFAULTS = {
     "https_cert_file": "",
     "https_key_file": "",
     "efu_files": [],
+    "content_index_roots": [],
+    "content_index_extensions": [],
+    "content_index_max_cache_mb": 512,
+    "content_index_max_file_mb": 10,
 }
 
 
@@ -82,3 +86,23 @@ def test_efu_files_keep_only_existing_paths(tmp_path):
     assert sanitized["efu_files"] == [str(efu)]
     assert any("Ignored missing EFU file" in warning for warning in warnings)
     assert any("empty or invalid EFU" in warning for warning in warnings)
+
+
+def test_content_index_settings_are_validated(tmp_path):
+    root = tmp_path / "docs"
+    root.mkdir()
+
+    sanitized, warnings = sanitize_settings_data(
+        {
+            "content_index_roots": [str(root), str(tmp_path / "missing"), ""],
+            "content_index_extensions": [" TXT", ".Pdf", "", 42],
+            "content_index_max_cache_mb": 0,
+        },
+        DEFAULTS,
+    )
+
+    assert sanitized["content_index_roots"] == [str(root)]
+    assert sanitized["content_index_extensions"] == ["pdf", "txt"]
+    assert sanitized["content_index_max_cache_mb"] == 512
+    assert any("content_index_max_cache_mb reset" in warning for warning in warnings)
+    assert any("Ignored missing content index root" in warning for warning in warnings)

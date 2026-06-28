@@ -7,8 +7,9 @@ import pytest
 
 from core import cache
 import core.content as content
-from core.content import extract_text, matched_line_context
+from core.content import adapter_diagnostics, extract_text, matched_line_context
 from core.content.adapters import PdfAdapter
+from core.content.indexer import ContentIndexJob, ContentIndexSettings
 from core.index import FileEntry
 from core.search import SearchEngine
 
@@ -98,6 +99,9 @@ def test_content_cache_roundtrip_and_search(temp_cache):
     assert cache.get_content_cache("C:\\docs\\a.txt", 13, 100) is None
     assert cache.search_content_cache("needle") == ["C:\\docs\\a.txt"]
     assert cache.get_content_cached_paths() == {"C:\\docs\\a.txt"}
+    stats = cache.get_content_cache_stats()
+    assert stats["count"] == 1
+    assert stats["text_bytes"] == len("alpha needle omega")
 
 
 def test_search_engine_content_search_reuses_cache(temp_cache, monkeypatch, tmp_path):
@@ -152,6 +156,64 @@ def test_matched_line_context_keeps_three_line_window():
     assert "  8: line 8" in context
     assert "line 1" not in context
     assert "line 9" not in context
+
+
+def test_adapter_diagnostics_reports_text_adapter():
+    diagnostics = adapter_diagnostics()
+
+    text_adapter = next(item for item in diagnostics if item.name == "text")
+    assert text_adapter.available is True
+    assert "txt" in text_adapter.extensions
+
+
+def test_content_index_job_honors_roots_extensions_and_cache(temp_cache, tmp_path):
+    root = tmp_path / "docs"
+    other = tmp_path / "other"
+    root.mkdir()
+    other.mkdir()
+    match = root / "match.txt"
+    ignored_ext = root / "ignored.md"
+    ignored_root = other / "outside.txt"
+    match.write_text("alpha needle omega", encoding="utf-8")
+    ignored_ext.write_text("needle", encoding="utf-8")
+    ignored_root.write_text("needle", encoding="utf-8")
+    entries = [_file_entry(path, idx) for idx, path in enumerate([match, ignored_ext, ignored_root], start=1)]
+
+    settings = ContentIndexSettings(
+        roots=(str(root),),
+        extensions=frozenset({"txt"}),
+        max_cache_bytes=10_000,
+    )
+    stats = ContentIndexJob(settings).run(entries, lambda entry: entry.get_path(None))
+
+    assert stats.indexed == 1
+    assert stats.skipped == 2
+    assert cache.search_content_cache("needle") == [str(match)]
+
+
+def test_content_index_job_enforces_cache_quota(temp_cache, tmp_path):
+    path = tmp_path / "large.txt"
+    path.write_text("alpha needle omega", encoding="utf-8")
+    entry = _file_entry(path)
+    settings = ContentIndexSettings(max_cache_bytes=5)
+
+    stats = ContentIndexJob(settings).run([entry], lambda entry: entry.get_path(None))
+
+    assert stats.indexed == 0
+    assert stats.quota_skipped == 1
+    assert cache.search_content_cache("needle") == []
+
+
+def test_content_index_job_records_adapter_failures(temp_cache, tmp_path, monkeypatch):
+    path = tmp_path / "broken.txt"
+    path.write_text("needle", encoding="utf-8")
+    entry = _file_entry(path)
+    monkeypatch.setattr("core.content.indexer.extract_text", lambda *_args, **_kwargs: None)
+
+    stats = ContentIndexJob(ContentIndexSettings()).run([entry], lambda entry: entry.get_path(None))
+
+    assert stats.failed == 1
+    assert stats.adapter_failures["text"] == 1
 
 
 def os_path_mtime(path: str) -> float:
