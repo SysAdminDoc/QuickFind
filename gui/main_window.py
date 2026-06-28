@@ -23,7 +23,7 @@ from PyQt6.QtGui import (
 )
 
 from core.index import FileIndex, FileEntry, IndexWorker
-from core.search import SearchEngine, SearchOptions, SearchFilter, BUILTIN_FILTERS
+from core.search import SearchEngine, SearchOptions, SearchFilter, BUILTIN_FILTERS, parse_query
 from core.file_list import load_efu
 from core.version import VERSION, APP_TITLE
 
@@ -1065,10 +1065,15 @@ class MainWindow(QMainWindow):
     def _on_selection_changed(self, entry: Optional[FileEntry]):
         """Update preview pane and status bar on selection."""
         logger.debug(f"Selection changed: {entry.name if entry else None}")
-        self._preview_pane.preview_entry(entry)
+        content_query, case_sensitive = self._current_content_preview_query()
+        self._preview_pane.preview_entry(entry, content_query, case_sensitive)
         if entry:
             path = entry.get_path(self._file_index)
             self._status_label.setText(path)
+
+    def _current_content_preview_query(self) -> tuple[str, bool]:
+        parsed = parse_query(self._search_input.text().strip())
+        return parsed.content_search, parsed.options.match_case
 
     def _show_context_menu(self, pos):
         entries = self._results_view.selected_entries()

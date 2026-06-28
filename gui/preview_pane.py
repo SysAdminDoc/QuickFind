@@ -14,6 +14,7 @@ from PyQt6.QtCore import Qt, QSize, QThread, pyqtSignal
 from PyQt6.QtGui import QPixmap, QImage, QFont, QColor, QPalette
 
 from core.index import FileEntry, FileIndex
+from core.content import matched_line_context
 from gui.theme import MOCHA
 from gui.results_view import format_size, format_datetime, format_attributes
 
@@ -40,10 +41,13 @@ class TextPreviewLoader(QThread):
     loaded = pyqtSignal(str, str)  # (path, content)
     error = pyqtSignal(str, str)  # (path, error_message)
 
-    def __init__(self, path: str, max_size: int = MAX_TEXT_PREVIEW_SIZE):
+    def __init__(self, path: str, max_size: int = MAX_TEXT_PREVIEW_SIZE,
+                 highlight_text: str = "", case_sensitive: bool = False):
         super().__init__()
         self._path = path
         self._max_size = max_size
+        self._highlight_text = highlight_text
+        self._case_sensitive = case_sensitive
 
     def run(self):
         try:
@@ -55,6 +59,13 @@ class TextPreviewLoader(QThread):
 
             if truncated:
                 content += f"\n\n--- Truncated ({size:,} bytes total) ---"
+
+            if self._highlight_text:
+                content = matched_line_context(
+                    content,
+                    self._highlight_text,
+                    case_sensitive=self._case_sensitive,
+                )
 
             self.loaded.emit(self._path, content)
         except Exception as e:
@@ -181,7 +192,9 @@ class PreviewPane(QWidget):
                 pass
             self._loader_thread = None
 
-    def preview_entry(self, entry: Optional[FileEntry]):
+    def preview_entry(self, entry: Optional[FileEntry],
+                      content_query: str = "",
+                      case_sensitive: bool = False):
         """Preview a file entry."""
         self._cleanup_loader()
 
@@ -203,16 +216,22 @@ class PreviewPane(QWidget):
         elif ext in IMAGE_EXTENSIONS:
             self._load_image_preview(path)
         elif ext in TEXT_EXTENSIONS:
-            self._load_text_preview(path)
+            self._load_text_preview(path, content_query, case_sensitive)
         else:
             self._show_file_info(entry, path)
 
-    def _load_text_preview(self, path: str):
+    def _load_text_preview(self, path: str,
+                           content_query: str = "",
+                           case_sensitive: bool = False):
         """Load text file preview in background."""
         self._text_edit.clear()
         self._stack.setCurrentIndex(1)
 
-        loader = TextPreviewLoader(path)
+        loader = TextPreviewLoader(
+            path,
+            highlight_text=content_query,
+            case_sensitive=case_sensitive,
+        )
         loader.loaded.connect(self._on_text_loaded)
         loader.error.connect(self._on_preview_error)
         loader.finished.connect(self._on_loader_finished)

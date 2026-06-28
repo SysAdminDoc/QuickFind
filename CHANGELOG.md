@@ -2,6 +2,13 @@
 
 All notable changes to QuickFind will be documented in this file.
 
+## [v0.8.0] - 2026-06-28
+
+- Replaced synchronous text-only `content:` reads with a content adapter pipeline for TXT, PDF, DOCX, and PPTX extraction.
+- Added an on-disk SQLite content cache with FTS5 indexing for faster repeated `content:` searches.
+- Preview pane text results now show matched-line context for active `content:` queries.
+- Added content adapter/cache tests and expanded the passing suite to 175 tests.
+
 ## [v0.7.9] - 2026-06-28
 
 - Added opt-in `archive:` search for filenames inside ZIP and 7z archives, returning virtual paths like `archive.zip\folder\file.txt`.

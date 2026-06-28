@@ -30,7 +30,7 @@ CONFIG_DIR = Path.home() / '.quickfind'
 DB_FILE = CONFIG_DIR / 'index.db'
 OLD_CACHE_FILE = CONFIG_DIR / 'index_cache.bin'
 
-DB_VERSION = 3
+DB_VERSION = 4
 
 # Thread-local connections for safe multi-threaded access
 import threading
@@ -159,6 +159,17 @@ def _init_schema(conn: sqlite3.Connection):
             last_opened_ms INTEGER DEFAULT 0
         );
         CREATE INDEX IF NOT EXISTS idx_usage_count ON usage_stats(open_count DESC);
+
+        CREATE TABLE IF NOT EXISTS content_cache (
+            path TEXT PRIMARY KEY,
+            size INTEGER NOT NULL,
+            modified_ms INTEGER NOT NULL,
+            extractor TEXT NOT NULL,
+            text TEXT NOT NULL,
+            indexed_ms INTEGER NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_content_cache_freshness
+            ON content_cache(path, size, modified_ms);
     """)
 
     # FTS5 table for fast substring search
@@ -172,6 +183,14 @@ def _init_schema(conn: sqlite3.Connection):
             """)
         except Exception as e:
             logger.warning(f"Failed to create FTS5 table: {e}")
+
+        try:
+            conn.execute("""
+                CREATE VIRTUAL TABLE IF NOT EXISTS content_fts
+                USING fts5(path, text)
+            """)
+        except Exception as e:
+            logger.warning(f"Failed to create content FTS5 table: {e}")
 
     # Set/update version
     conn.execute(
@@ -373,6 +392,115 @@ def get_usage_scores(paths: list[str]) -> dict[str, int]:
         return {row[0]: row[1] for row in rows}
     except Exception:
         return {}
+
+
+# ── Content Search Cache ─────────────────────────────────────
+
+def get_content_cache(path: str, size: int, modified_ms: int) -> Optional[str]:
+    try:
+        conn = _get_connection()
+        _init_schema(conn)
+        row = conn.execute(
+            "SELECT text FROM content_cache "
+            "WHERE path=? AND size=? AND modified_ms=?",
+            (path, size, modified_ms)
+        ).fetchone()
+        return row[0] if row else None
+    except Exception as e:
+        logger.debug(f"get_content_cache failed: {e}")
+        return None
+
+
+def upsert_content_cache(path: str, size: int, modified_ms: int,
+                         extractor: str, text: str):
+    try:
+        conn = _get_connection()
+        _init_schema(conn)
+        indexed_ms = int(time.time() * 1000)
+        conn.execute(
+            "INSERT OR REPLACE INTO content_cache "
+            "(path, size, modified_ms, extractor, text, indexed_ms) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (path, size, modified_ms, extractor, text, indexed_ms)
+        )
+        if _FTS5_AVAILABLE:
+            conn.execute("DELETE FROM content_fts WHERE path=?", (path,))
+            conn.execute(
+                "INSERT INTO content_fts (path, text) VALUES (?, ?)",
+                (path, text)
+            )
+        conn.commit()
+    except Exception as e:
+        logger.debug(f"upsert_content_cache failed: {e}")
+
+
+def search_content_cache(search_text: str, case_sensitive: bool = False,
+                         limit: int = 0) -> list[str]:
+    if not search_text:
+        return []
+
+    try:
+        conn = _get_connection()
+        _init_schema(conn)
+        sql_limit = " LIMIT ?" if limit else ""
+        params: list[object]
+
+        if _FTS5_AVAILABLE:
+            try:
+                query = _content_fts_query(search_text)
+                params = [query]
+                if limit:
+                    params.append(limit)
+                rows = conn.execute(
+                    "SELECT path, text FROM content_fts WHERE content_fts MATCH ?"
+                    f"{sql_limit}",
+                    params
+                ).fetchall()
+            except Exception:
+                rows = []
+        else:
+            rows = []
+
+        if not rows:
+            params = [f"%{search_text}%"]
+            if limit:
+                params.append(limit)
+            rows = conn.execute(
+                "SELECT path, text FROM content_cache "
+                "WHERE text LIKE ? COLLATE NOCASE"
+                f"{sql_limit}",
+                params
+            ).fetchall()
+
+        if case_sensitive:
+            rows = [(path, text) for path, text in rows if search_text in text]
+
+        return [path for path, _ in rows]
+    except Exception as e:
+        logger.debug(f"search_content_cache failed: {e}")
+        return []
+
+
+def get_content_cached_paths() -> set[str]:
+    return set(get_content_cache_freshness())
+
+
+def get_content_cache_freshness() -> dict[str, tuple[int, int]]:
+    try:
+        conn = _get_connection()
+        _init_schema(conn)
+        rows = conn.execute(
+            "SELECT path, size, modified_ms FROM content_cache"
+        ).fetchall()
+        return {row[0]: (row[1], row[2]) for row in rows}
+    except Exception as e:
+        logger.debug(f"get_content_cache_freshness failed: {e}")
+        return {}
+
+
+def _content_fts_query(search_text: str) -> str:
+    escaped = search_text.replace('"', '""')
+    return f'"{escaped}"'
 
 
 # ── Batch DB Operations ──────────────────────────────────

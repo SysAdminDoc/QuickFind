@@ -12,7 +12,7 @@ import os
 import fnmatch
 import logging
 from datetime import datetime, timedelta
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import Enum, auto
 from typing import Optional, Callable
 
@@ -656,6 +656,8 @@ class SearchEngine:
         results = []
         entries = self._index.all_entries
         limit = parsed.options.max_results or 0
+        content_cache = self._content_cache_filter(parsed)
+        parsed_without_content = replace(parsed, content_search="") if content_cache else parsed
 
         for entry in entries:
             if cancel_check and cancel_check():
@@ -664,7 +666,16 @@ class SearchEngine:
             if limit and not parsed.dupe_mode and len(results) >= limit:
                 break
 
-            if self._matches(entry, parsed, term_matchers, exclude_matchers, or_matchers, filter_exclude_paths):
+            entry_parsed = parsed
+            if content_cache:
+                path_key = self._content_path_key(entry)
+                freshness = content_cache['freshness'].get(path_key)
+                if freshness and self._content_entry_cache_is_fresh(entry, freshness):
+                    if path_key not in content_cache['matches']:
+                        continue
+                    entry_parsed = parsed_without_content
+
+            if self._matches(entry, entry_parsed, term_matchers, exclude_matchers, or_matchers, filter_exclude_paths):
                 results.append(entry)
 
         if cancel_check and cancel_check():
@@ -678,6 +689,48 @@ class SearchEngine:
             results = results[:limit]
 
         return results
+
+    def _content_cache_filter(self, parsed: ParsedQuery) -> Optional[dict[str, set[str]]]:
+        if not parsed.content_search:
+            return None
+        try:
+            from core.cache import get_content_cache_freshness, search_content_cache
+            freshness = get_content_cache_freshness()
+            if not freshness:
+                return None
+            matching_paths = search_content_cache(
+                parsed.content_search,
+                parsed.options.match_case,
+            )
+            return {
+                'freshness': {
+                    self._normalize_path_key(path): meta
+                    for path, meta in freshness.items()
+                },
+                'matches': {self._normalize_path_key(path) for path in matching_paths},
+            }
+        except Exception as exc:
+            logger.debug(f"Content cache filter unavailable: {exc}")
+            return None
+
+    def _content_entry_cache_is_fresh(self, entry: FileEntry,
+                                      freshness: tuple[int, int]) -> bool:
+        try:
+            path = entry.get_path(self._index)
+            st = os.stat(path)
+            return freshness == (st.st_size, int(st.st_mtime * 1000))
+        except (OSError, PermissionError):
+            return False
+
+    def _content_path_key(self, entry: FileEntry) -> str:
+        try:
+            return self._normalize_path_key(entry.get_path(self._index))
+        except Exception:
+            return ""
+
+    @staticmethod
+    def _normalize_path_key(path: str) -> str:
+        return os.path.normcase(os.path.abspath(path))
 
     def _archive_search(self, parsed: ParsedQuery,
                         term_matchers: list,
@@ -952,10 +1005,31 @@ class SearchEngine:
                        case_sensitive: bool = False) -> bool:
         try:
             path = entry.get_path(self._index)
-            with open(path, 'r', encoding='utf-8', errors='ignore') as f:
-                content = f.read(1024 * 1024)
-                if case_sensitive:
-                    return search_text in content
-                return search_text.lower() in content.lower()
+            from core.content import extract_text, is_supported_content_path
+            from core.cache import get_content_cache, upsert_content_cache
+
+            if not is_supported_content_path(path):
+                return False
+
+            st = os.stat(path)
+            size = st.st_size
+            modified_ms = int(st.st_mtime * 1000)
+            content = get_content_cache(path, size, modified_ms)
+            if content is None:
+                extracted = extract_text(path)
+                if extracted is None:
+                    return False
+                content = extracted.text
+                upsert_content_cache(
+                    path=path,
+                    size=size,
+                    modified_ms=modified_ms,
+                    extractor=extracted.extractor,
+                    text=content,
+                )
+
+            if case_sensitive:
+                return search_text in content
+            return search_text.lower() in content.lower()
         except (OSError, PermissionError, UnicodeDecodeError):
             return False

@@ -1,14 +1,14 @@
-# QuickFind v0.7.9
+# QuickFind v0.8.0
 
 Lightning-fast file search for Windows, powered by NTFS MFT + USN Journal.
 
 An open-source alternative to [Voidtools Everything](https://www.voidtools.com/), built with Python and PyQt6 for extensibility and customization.
 
-![Version](https://img.shields.io/badge/Version-v0.7.9-blueviolet)
+![Version](https://img.shields.io/badge/Version-v0.8.0-blueviolet)
 ![Python](https://img.shields.io/badge/Python-3.10+-blue)
 ![License](https://img.shields.io/badge/License-MIT-green)
 ![Platform](https://img.shields.io/badge/Platform-Windows-lightgrey)
-![Tests](https://img.shields.io/badge/Tests-169%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/Tests-175%20passing-brightgreen)
 
 ## Features
 
@@ -34,7 +34,7 @@ An open-source alternative to [Voidtools Everything](https://www.voidtools.com/)
 - **Regex** support (`regex:pattern`)
 - **Wildcards** (`*.py`, `test?.log`)
 - **Boolean logic** — AND (spaces), OR (`|`), NOT (`!term`)
-- **Content search** — `content:keyword` searches inside text files
+- **Content search** — `content:keyword` searches cached TXT/PDF/DOCX/PPTX extracted text through adapters
 - **Archive search** — `archive:` searches filenames inside ZIP and 7z archives without extracting them
 - **Usage-based ranking** — frequently opened files rank higher with Relevance sort
 - **17 search modifiers**: `case:`, `path:`, `file:`, `folder:`, `wholeword:`, `ext:`, `size:`, `dm:`, `dc:`, `len:`, `attrib:`, `content:`, `parent:`, `dupe:`, `archive:`, `fuzzy:`, `regex:`
@@ -48,7 +48,7 @@ An open-source alternative to [Voidtools Everything](https://www.voidtools.com/)
 - **Column visibility** — right-click header to show/hide columns, persisted in settings
 - **Keyboard navigation** — `Enter` open, `Delete` recycle, `F2` rename, `Ctrl+Enter` open folder
 - **Thumbnail view** for visual browsing
-- **Preview pane** for text files, images, and file info with label-above-value layout
+- **Preview pane** for text files, images, and file info with matched-line context for `content:` searches
 - **Filter bar** with built-in filters (Audio, Video, Image, Document, Executable, Compressed, Folder) + custom filters
 - **Bookmarks** — save/restore search + filter state
 - **Context menu** — Open, Open Path, Copy Name/Path, Terminal Here (CMD/PowerShell/WT), Delete to Recycle Bin, Properties
@@ -64,7 +64,7 @@ An open-source alternative to [Voidtools Everything](https://www.voidtools.com/)
 - **Per-drive rescan intervals** — configure different rescan frequencies for SSD vs NAS drives
 - **Export/import settings** — save and restore configuration as validated JSON
 - **Log rotation** — `RotatingFileHandler` with 5 MB max and 3 backups
-- **169 automated tests** covering search parsing, archive search, duplicate detection, MFT record parsing, privilege lifecycle, settings validation, index mode UI state, results-view cache bounds, cache helpers, remote server configuration, and ignore patterns
+- **175 automated tests** covering search parsing, archive search, content adapters/cache, duplicate detection, MFT record parsing, privilege lifecycle, settings validation, index mode UI state, results-view cache bounds, cache helpers, remote server configuration, and ignore patterns
 - **PyInstaller build script** for single-file or single-folder distribution
 
 ## Requirements
@@ -142,7 +142,7 @@ python build.py --clean
 | `dm:today` | Modified today |
 | `dm:>2024-01-01` | Modified after date |
 | `dc:thisweek` | Created this week |
-| `content:TODO` | Search inside file content |
+| `content:TODO` | Search inside cached TXT/PDF/DOCX/PPTX content |
 | `len:>20` | Filename length > 20 chars |
 | `attrib:rh` | Read-only + hidden |
 | `parent:node_modules` | Parent directory filter |
@@ -175,9 +175,10 @@ QuickFind/
   core/
     ntfs.py                 # NTFS MFT/USN via ctypes + ReFS/Dev Drive support
     index.py                # In-memory index + USN monitor + deferred path resolution
-    cache.py                # SQLite FTS5 cache + integrity check + search history + usage tracking
-    search.py               # Search engine with modifiers + fuzzy matching
+    cache.py                # SQLite FTS5 cache + integrity check + search history + content cache
+    search.py               # Search engine with modifiers + fuzzy/content matching
     archives.py             # ZIP/7z member enumeration for archive: searches
+    content/                # TXT/PDF/DOCX/PPTX extraction adapters
     utils.py                # Shared utilities (size parsing)
     file_list.py            # EFU file list import/export
     hidden_paths.py         # Per-filter hidden path management
@@ -201,6 +202,7 @@ QuickFind/
   tests/
     test_search.py          # Search parsing, modifiers, smart case, fuzzy matching
     test_archive_search.py  # ZIP/7z archive member search
+    test_content_search.py  # Content extraction, cache, and preview context
     test_ntfs.py            # MFT record parsing, FILETIME conversion, USA fixup
     test_cache.py           # Datetime conversion, FTS5 detection
     test_index.py           # .quickfindignore pattern matching
@@ -218,18 +220,19 @@ QuickFind/
 5. **Path Resolution**: Builds parent-child FRN tree to resolve full paths on demand with deferred batch resolution
 6. **USN Journal** (NTFS): Polls the NTFS Change Journal (V2/V3/V4) every second for creates/deletes/renames/modifications
 7. **Periodic Rescan** (FAT/exFAT/ReFS): Re-walks non-NTFS drives at configurable intervals for change detection
-8. **Search**: Parses query modifiers, compiles matchers (regex/wildcard/substring/fuzzy), and filters the in-memory index — falls back to SQLite FTS5 for simple queries
-9. **DB Cache**: SQLite FTS5 database persists the index for instant CLI searches and fast startup recovery
-10. **Usage Tracking**: Files opened via QuickFind have their open counts tracked in SQLite for relevance-based ranking
+8. **Search**: Parses query modifiers, compiles matchers (regex/wildcard/substring/fuzzy/content), and filters the in-memory index — falls back to SQLite FTS5 for simple queries
+9. **Content Cache**: TXT/PDF/DOCX/PPTX adapters extract text into an on-disk SQLite FTS5 cache for faster repeated `content:` searches
+10. **DB Cache**: SQLite FTS5 database persists the index for instant CLI searches and fast startup recovery
+11. **Usage Tracking**: Files opened via QuickFind have their open counts tracked in SQLite for relevance-based ranking
 
 ## Testing
 
 ```bash
-# Run the test suite (169 tests)
+# Run the test suite (175 tests)
 python -m pytest tests/ -v
 ```
 
-Tests cover search query parsing (all modifiers), archive member search, size/date helpers, smart case sensitivity, fuzzy matching, MFT record parsing, USA fixup, USN records, cache datetime round-trip, FTS5 detection, results-view cache bounds, `.quickfindignore` pattern matching, and EFU file loading.
+Tests cover search query parsing (all modifiers), archive member search, content extraction/cache, size/date helpers, smart case sensitivity, fuzzy matching, MFT record parsing, USA fixup, USN records, cache datetime round-trip, FTS5 detection, results-view cache bounds, `.quickfindignore` pattern matching, and EFU file loading.
 
 ## Security
 

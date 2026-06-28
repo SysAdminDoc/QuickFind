@@ -72,8 +72,10 @@ def build(onefile=False):
     # Hidden imports for dynamic modules
     hidden = [
         'core.ntfs', 'core.index', 'core.cache', 'core.search', 'core.archives',
+        'core.content', 'core.content.adapters',
         'gui.main_window', 'gui.results_view', 'gui.settings_dialog',
         'gui.theme', 'gui.tray', 'cli.es', 'server.http_server', 'py7zr',
+        'pdfplumber', 'docx', 'pptx',
     ]
     for h in hidden:
         cmd.extend(['--hidden-import', h])

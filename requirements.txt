@@ -1,2 +1,5 @@
 PyQt6
+pdfplumber
 py7zr
+python-docx
+python-pptx
