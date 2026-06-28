@@ -2,6 +2,11 @@
 
 All notable changes to QuickFind will be documented in this file.
 
+## [v0.7.8] - 2026-06-27
+
+- Bounded the native file icon cache with least-recently-used eviction to prevent unbounded growth while browsing many file types.
+- Added results-view icon cache tests and expanded the passing suite to 163 tests.
+
 ## [v0.7.7] - 2026-06-27
 
 - Implemented the `dupe:` search modifier for duplicate filename detection in in-memory searches.

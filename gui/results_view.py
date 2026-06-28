@@ -9,6 +9,7 @@ v0.6.0: Column right-click menu, keyboard nav, match highlighting delegate,
 
 import os
 import logging
+from collections import OrderedDict
 from datetime import datetime
 from typing import Optional
 
@@ -52,6 +53,7 @@ COLUMN_ATTRIB = 6
 
 # Number of rows to load at a time for virtualization
 FETCH_BATCH_SIZE = 5000
+MAX_FILE_ICON_CACHE_SIZE = 256
 
 
 def format_size(size: int) -> str:
@@ -90,14 +92,14 @@ def format_attributes(attrs: int) -> str:
 
 class FileIconCache:
     """Cache for file type icons, using QFileIconProvider with QFileInfo for OS-native icons."""
-    _cache: dict[str, QIcon] = {}
+    _cache: OrderedDict[str, QIcon] = OrderedDict()
     _provider = None
 
     @classmethod
     def get(cls, entry: FileEntry, index: FileIndex = None) -> QIcon:
         if cls._provider is None:
             cls._provider = QFileIconProvider()
-            cls._cache = {}
+            cls._cache = OrderedDict()
 
         if entry.is_dir:
             key = '__dir__'
@@ -105,17 +107,28 @@ class FileIconCache:
             ext = entry.extension
             key = ext if ext else '__file__'
 
-        if key not in cls._cache:
-            if key == '__dir__':
-                cls._cache[key] = cls._provider.icon(QFileIconProvider.IconType.Folder)
-            elif key == '__file__':
-                cls._cache[key] = cls._provider.icon(QFileIconProvider.IconType.File)
-            else:
-                # Use QFileInfo with a dummy path so QFileIconProvider returns
-                # the OS-registered icon for this extension
-                cls._cache[key] = cls._provider.icon(QFileInfo(f"dummy.{ext}"))
+        if key in cls._cache:
+            icon = cls._cache.pop(key)
+            cls._cache[key] = icon
+            return icon
+
+        if key == '__dir__':
+            icon = cls._provider.icon(QFileIconProvider.IconType.Folder)
+        elif key == '__file__':
+            icon = cls._provider.icon(QFileIconProvider.IconType.File)
+        else:
+            # Use QFileInfo with a dummy path so QFileIconProvider returns
+            # the OS-registered icon for this extension
+            icon = cls._provider.icon(QFileInfo(f"dummy.{ext}"))
+        cls._cache[key] = icon
+        cls._trim_cache()
 
         return cls._cache.get(key, QIcon())
+
+    @classmethod
+    def _trim_cache(cls):
+        while len(cls._cache) > MAX_FILE_ICON_CACHE_SIZE:
+            cls._cache.popitem(last=False)
 
 
 # ── Match Highlighting Delegate ──────────────────────────

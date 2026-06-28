@@ -1,14 +1,14 @@
-# QuickFind v0.7.7
+# QuickFind v0.7.8
 
 Lightning-fast file search for Windows, powered by NTFS MFT + USN Journal.
 
 An open-source alternative to [Voidtools Everything](https://www.voidtools.com/), built with Python and PyQt6 for extensibility and customization.
 
-![Version](https://img.shields.io/badge/Version-v0.7.7-blueviolet)
+![Version](https://img.shields.io/badge/Version-v0.7.8-blueviolet)
 ![Python](https://img.shields.io/badge/Python-3.10+-blue)
 ![License](https://img.shields.io/badge/License-MIT-green)
 ![Platform](https://img.shields.io/badge/Platform-Windows-lightgrey)
-![Tests](https://img.shields.io/badge/Tests-161%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/Tests-163%20passing-brightgreen)
 
 ## Features
 
@@ -43,6 +43,7 @@ An open-source alternative to [Voidtools Everything](https://www.voidtools.com/)
 - **Launcher popup** — `Ctrl+Shift+F` summons a floating search bar (Wox/Flow Launcher style) with keyboard hints and empty-state feedback
 - **Catppuccin Mocha** dark theme — premium polished aesthetic with rounded inputs, focus rings, and consistent spacing
 - **Details view** with sortable columns (Name, Path, Size, Date Modified, Date Created, Type, Attributes)
+- **Bounded native icon cache** keeps file-type icons responsive without unbounded memory growth
 - **Column visibility** — right-click header to show/hide columns, persisted in settings
 - **Keyboard navigation** — `Enter` open, `Delete` recycle, `F2` rename, `Ctrl+Enter` open folder
 - **Thumbnail view** for visual browsing
@@ -62,7 +63,7 @@ An open-source alternative to [Voidtools Everything](https://www.voidtools.com/)
 - **Per-drive rescan intervals** — configure different rescan frequencies for SSD vs NAS drives
 - **Export/import settings** — save and restore configuration as validated JSON
 - **Log rotation** — `RotatingFileHandler` with 5 MB max and 3 backups
-- **161 automated tests** covering search parsing, duplicate detection, MFT record parsing, privilege lifecycle, settings validation, index mode UI state, cache helpers, remote server configuration, and ignore patterns
+- **163 automated tests** covering search parsing, duplicate detection, MFT record parsing, privilege lifecycle, settings validation, index mode UI state, results-view cache bounds, cache helpers, remote server configuration, and ignore patterns
 - **PyInstaller build script** for single-file or single-folder distribution
 
 ## Requirements
@@ -220,11 +221,11 @@ QuickFind/
 ## Testing
 
 ```bash
-# Run the test suite (161 tests)
+# Run the test suite (163 tests)
 python -m pytest tests/ -v
 ```
 
-Tests cover search query parsing (all modifiers), size/date helpers, smart case sensitivity, fuzzy matching, MFT record parsing, USA fixup, USN records, cache datetime round-trip, FTS5 detection, `.quickfindignore` pattern matching, and EFU file loading.
+Tests cover search query parsing (all modifiers), size/date helpers, smart case sensitivity, fuzzy matching, MFT record parsing, USA fixup, USN records, cache datetime round-trip, FTS5 detection, results-view cache bounds, `.quickfindignore` pattern matching, and EFU file loading.
 
 ## Security
 
