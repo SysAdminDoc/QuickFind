@@ -2,6 +2,11 @@
 
 All notable changes to QuickFind will be documented in this file.
 
+## [v0.7.4] - 2026-06-27
+
+- Disabled `SeBackupPrivilege` after direct MFT scans using a reference-counted guard that is safe for parallel drive indexing.
+- Added NTFS privilege lifecycle tests and expanded the passing suite to 148 tests.
+
 ## [v0.7.3] - 2026-06-16
 
 - Added optional HTTPS/TLS support for the remote search server with configurable certificate and private key paths.

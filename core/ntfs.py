@@ -11,6 +11,8 @@ import ctypes.wintypes as wintypes
 import struct
 import string
 import logging
+import threading
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Callable
@@ -120,6 +122,41 @@ TOKEN_QUERY = 0x0008
 SE_PRIVILEGE_ENABLED = 0x00000002
 
 _backup_privilege_enabled = False
+_backup_privilege_users = 0
+_backup_privilege_lock = threading.Lock()
+
+
+def _set_backup_privilege(enabled: bool) -> bool:
+    """Enable or disable SeBackupPrivilege on the current process token."""
+    try:
+        token = wintypes.HANDLE()
+        if not OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, ctypes.byref(token)):
+            logger.warning("Failed to open process token")
+            return False
+
+        try:
+            luid = ctypes.c_longlong(0)
+            if not LookupPrivilegeValueW(None, "SeBackupPrivilege", ctypes.byref(luid)):
+                logger.warning("Failed to lookup SeBackupPrivilege")
+                return False
+
+            attributes = SE_PRIVILEGE_ENABLED if enabled else 0
+            tp = ctypes.create_string_buffer(16)
+            struct.pack_into('<IqI', tp, 0, 1, luid.value, attributes)
+
+            if not AdjustTokenPrivileges(token, False, tp, 0, None, None):
+                action = "enable" if enabled else "disable"
+                logger.warning(f"Failed to {action} backup privilege")
+                return False
+        finally:
+            CloseHandle(token)
+
+        return True
+
+    except Exception as e:
+        action = "enable" if enabled else "disable"
+        logger.warning(f"Failed to {action} backup privilege: {e}")
+        return False
 
 
 def _enable_backup_privilege() -> bool:
@@ -128,36 +165,49 @@ def _enable_backup_privilege() -> bool:
     if _backup_privilege_enabled:
         return True
 
-    try:
-        token = wintypes.HANDLE()
-        if not OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, ctypes.byref(token)):
-            logger.warning("Failed to open process token")
-            return False
-
-        # LUID for SeBackupPrivilege
-        luid = ctypes.c_longlong(0)
-        if not LookupPrivilegeValueW(None, "SeBackupPrivilege", ctypes.byref(luid)):
-            CloseHandle(token)
-            logger.warning("Failed to lookup SeBackupPrivilege")
-            return False
-
-        # TOKEN_PRIVILEGES: PrivilegeCount(4) + LUID(8) + Attributes(4) = 16 bytes
-        tp = ctypes.create_string_buffer(16)
-        struct.pack_into('<IqI', tp, 0, 1, luid.value, SE_PRIVILEGE_ENABLED)
-
-        if not AdjustTokenPrivileges(token, False, tp, 0, None, None):
-            CloseHandle(token)
-            logger.warning("Failed to adjust token privileges")
-            return False
-
-        CloseHandle(token)
+    if _set_backup_privilege(True):
         _backup_privilege_enabled = True
         logger.info("SeBackupPrivilege enabled")
         return True
 
-    except Exception as e:
-        logger.warning(f"Failed to enable backup privilege: {e}")
-        return False
+    return False
+
+
+def _disable_backup_privilege() -> bool:
+    """Disable SeBackupPrivilege when no MFT scans still need it."""
+    global _backup_privilege_enabled
+    if not _backup_privilege_enabled:
+        return True
+
+    if _set_backup_privilege(False):
+        _backup_privilege_enabled = False
+        logger.info("SeBackupPrivilege disabled")
+        return True
+
+    return False
+
+
+@contextmanager
+def _backup_privilege_scope():
+    """Reference-count process-wide SeBackupPrivilege for parallel MFT scans."""
+    global _backup_privilege_users
+    acquired = False
+
+    with _backup_privilege_lock:
+        acquired = _enable_backup_privilege()
+        if acquired:
+            _backup_privilege_users += 1
+
+    try:
+        yield acquired
+    finally:
+        if not acquired:
+            return
+
+        with _backup_privilege_lock:
+            _backup_privilege_users = max(0, _backup_privilege_users - 1)
+            if _backup_privilege_users == 0:
+                _disable_backup_privilege()
 
 ReadFile = kernel32.ReadFile
 ReadFile.restype = wintypes.BOOL
@@ -719,88 +769,87 @@ class NTFSVolume:
         if bytes_per_sector <= 0:
             bytes_per_sector = 512
 
-        # Enable SeBackupPrivilege (required to open NTFS metafiles)
-        _enable_backup_privilege()
-
-        # Open $MFT file directly (requires admin + backup semantics)
-        mft_path = f"{self.drive_letter}:\\$MFT"
-        mft_handle = CreateFileW(
-            mft_path,
-            GENERIC_READ,
-            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-            None,
-            OPEN_EXISTING,
-            FILE_FLAG_BACKUP_SEMANTICS,
-            None
-        )
-
-        if mft_handle == INVALID_HANDLE_VALUE or mft_handle is None:
-            err = ctypes.get_last_error()
-            logger.warning(f"Cannot open $MFT on {self.drive_letter}: (error {err}), falling back to USN enum")
-            yield from self.enumerate_mft(callback, cancel_check)
-            return
-
-        logger.info(f"Reading $MFT directly on {self.drive_letter}: (record_size={record_size})")
-
+        # SeBackupPrivilege is process-wide. Keep it enabled only for the direct
+        # $MFT read and release it before any fallback enumeration starts.
         fallback_needed = False
-        try:
-            frn = 0
-            record_count = 0
-            records_per_chunk = 4096
-            chunk_size = record_size * records_per_chunk
-            callback_interval = 10000
-
-            # Allocate read buffer and record buffer ONCE — reused every iteration
-            buf = ctypes.create_string_buffer(chunk_size)
-            record_buf = bytearray(record_size)
-            bytes_read = wintypes.DWORD(0)
-
-            while True:
-                if cancel_check and cancel_check():
-                    logger.info("MFT direct read cancelled")
-                    break
-
-                ok = ReadFile(mft_handle, buf, chunk_size, ctypes.byref(bytes_read), None)
-
-                if not ok or bytes_read.value == 0:
-                    break
-
-                read_len = bytes_read.value
-
-                for pos in range(0, read_len, record_size):
-                    if pos + record_size > read_len:
-                        break
-
-                    # Copy into reusable record buffer instead of allocating new bytearray
-                    record_buf[:] = buf.raw[pos:pos + record_size]
-                    record = _parse_mft_record(record_buf, frn, bytes_per_sector)
-                    frn += 1
-
-                    if record is not None:
-                        yield record
-                        record_count += 1
-
-                        if callback and record_count % callback_interval == 0:
-                            callback(record, record_count)
-
-                    # Check cancel every 4096 records for responsive cancellation
-                    if cancel_check and frn % 4096 == 0 and cancel_check():
-                        break
-
-                if cancel_check and cancel_check():
-                    break
-
-            logger.info(
-                f"Direct MFT read: {record_count} records from {self.drive_letter}: "
-                f"({frn} MFT entries scanned)"
+        with _backup_privilege_scope():
+            # Open $MFT file directly (requires admin + backup semantics)
+            mft_path = f"{self.drive_letter}:\\$MFT"
+            mft_handle = CreateFileW(
+                mft_path,
+                GENERIC_READ,
+                FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                None,
+                OPEN_EXISTING,
+                FILE_FLAG_BACKUP_SEMANTICS,
+                None
             )
 
-        except Exception as e:
-            logger.error(f"Error reading $MFT on {self.drive_letter}: {e}, falling back to USN enum")
-            fallback_needed = True
+            if mft_handle == INVALID_HANDLE_VALUE or mft_handle is None:
+                err = ctypes.get_last_error()
+                logger.warning(f"Cannot open $MFT on {self.drive_letter}: (error {err}), falling back to USN enum")
+                fallback_needed = True
+            else:
+                logger.info(f"Reading $MFT directly on {self.drive_letter}: (record_size={record_size})")
 
-        finally:
-            CloseHandle(mft_handle)
+                try:
+                    frn = 0
+                    record_count = 0
+                    records_per_chunk = 4096
+                    chunk_size = record_size * records_per_chunk
+                    callback_interval = 10000
+
+                    # Allocate read buffer and record buffer ONCE — reused every iteration
+                    buf = ctypes.create_string_buffer(chunk_size)
+                    record_buf = bytearray(record_size)
+                    bytes_read = wintypes.DWORD(0)
+
+                    while True:
+                        if cancel_check and cancel_check():
+                            logger.info("MFT direct read cancelled")
+                            break
+
+                        ok = ReadFile(mft_handle, buf, chunk_size, ctypes.byref(bytes_read), None)
+
+                        if not ok or bytes_read.value == 0:
+                            break
+
+                        read_len = bytes_read.value
+
+                        for pos in range(0, read_len, record_size):
+                            if pos + record_size > read_len:
+                                break
+
+                            # Copy into reusable record buffer instead of allocating new bytearray
+                            record_buf[:] = buf.raw[pos:pos + record_size]
+                            record = _parse_mft_record(record_buf, frn, bytes_per_sector)
+                            frn += 1
+
+                            if record is not None:
+                                yield record
+                                record_count += 1
+
+                                if callback and record_count % callback_interval == 0:
+                                    callback(record, record_count)
+
+                            # Check cancel every 4096 records for responsive cancellation
+                            if cancel_check and frn % 4096 == 0 and cancel_check():
+                                break
+
+                        if cancel_check and cancel_check():
+                            break
+
+                    logger.info(
+                        f"Direct MFT read: {record_count} records from {self.drive_letter}: "
+                        f"({frn} MFT entries scanned)"
+                    )
+
+                except Exception as e:
+                    logger.error(f"Error reading $MFT on {self.drive_letter}: {e}, falling back to USN enum")
+                    fallback_needed = True
+
+                finally:
+                    CloseHandle(mft_handle)
 
         if fallback_needed:
             yield from self.enumerate_mft(callback, cancel_check)

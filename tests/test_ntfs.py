@@ -6,6 +6,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import struct
 import pytest
+import core.ntfs as ntfs
 from datetime import datetime, timezone
 from core.ntfs import (
     filetime_to_datetime, _apply_usa_fixup, _parse_mft_record,
@@ -168,3 +169,70 @@ class TestDriveInfo:
     def test_is_exfat(self):
         d = DriveInfo(letter='F', filesystem='exFAT', drive_type=2)
         assert d.is_fat is True
+
+
+class TestBackupPrivilegeScope:
+    def test_reference_counts_parallel_mft_scans(self, monkeypatch):
+        calls = []
+        monkeypatch.setattr(ntfs, "_backup_privilege_enabled", False)
+        monkeypatch.setattr(ntfs, "_backup_privilege_users", 0)
+        monkeypatch.setattr(ntfs, "_set_backup_privilege", lambda enabled: calls.append(enabled) or True)
+
+        with ntfs._backup_privilege_scope() as outer_acquired:
+            assert outer_acquired is True
+            assert ntfs._backup_privilege_enabled is True
+            assert ntfs._backup_privilege_users == 1
+            assert calls == [True]
+
+            with ntfs._backup_privilege_scope() as inner_acquired:
+                assert inner_acquired is True
+                assert ntfs._backup_privilege_users == 2
+                assert calls == [True]
+
+            assert ntfs._backup_privilege_enabled is True
+            assert ntfs._backup_privilege_users == 1
+            assert calls == [True]
+
+        assert ntfs._backup_privilege_enabled is False
+        assert ntfs._backup_privilege_users == 0
+        assert calls == [True, False]
+
+    def test_failed_enable_does_not_schedule_disable(self, monkeypatch):
+        calls = []
+        monkeypatch.setattr(ntfs, "_backup_privilege_enabled", False)
+        monkeypatch.setattr(ntfs, "_backup_privilege_users", 0)
+        monkeypatch.setattr(ntfs, "_set_backup_privilege", lambda enabled: calls.append(enabled) or False)
+
+        with ntfs._backup_privilege_scope() as acquired:
+            assert acquired is False
+
+        assert ntfs._backup_privilege_enabled is False
+        assert ntfs._backup_privilege_users == 0
+        assert calls == [True]
+
+    def test_direct_mft_open_failure_releases_privilege_before_fallback(self, monkeypatch):
+        calls = []
+        volume = ntfs.NTFSVolume("C")
+
+        monkeypatch.setattr(ntfs, "_backup_privilege_enabled", False)
+        monkeypatch.setattr(ntfs, "_backup_privilege_users", 0)
+        monkeypatch.setattr(ntfs, "_set_backup_privilege", lambda enabled: calls.append(enabled) or True)
+        monkeypatch.setattr(ntfs.ctypes, "get_last_error", lambda: 5)
+        monkeypatch.setattr(
+            volume,
+            "get_volume_info",
+            lambda: VolumeInfo(drive_letter="C", bytes_per_file_record=1024, bytes_per_sector=512),
+        )
+        monkeypatch.setattr(ntfs, "CreateFileW", lambda *args: ntfs.INVALID_HANDLE_VALUE)
+
+        def fallback_enumerate_mft(callback=None, cancel_check=None):
+            assert ntfs._backup_privilege_enabled is False
+            assert ntfs._backup_privilege_users == 0
+            yield FileRecord(frn=1, parent_frn=0, name="fallback.txt")
+
+        monkeypatch.setattr(volume, "enumerate_mft", fallback_enumerate_mft)
+
+        records = list(volume.enumerate_mft_direct())
+
+        assert [record.name for record in records] == ["fallback.txt"]
+        assert calls == [True, False]
