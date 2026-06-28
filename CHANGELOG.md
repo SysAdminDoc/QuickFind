@@ -2,6 +2,12 @@
 
 All notable changes to QuickFind will be documented in this file.
 
+## [v0.8.4] - 2026-06-28
+
+- Hardened remote search authentication by removing query-string token acceptance.
+- Added Bearer-token API auth plus same-origin browser session cookies for the web UI.
+- Removed wildcard CORS from authenticated search API responses and expanded the passing suite to 192 tests.
+
 ## [v0.8.3] - 2026-06-28
 
 - Added a SQLite/FTS5 runtime gate that disables FTS5 on SQLite versions below the patched 3.53.2 minimum.

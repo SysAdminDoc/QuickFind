@@ -12,6 +12,7 @@ import secrets
 import ssl
 import time
 import threading
+from http.cookies import SimpleCookie
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 from typing import Optional
@@ -21,6 +22,8 @@ from core.search import SearchEngine, SearchOptions
 from gui.theme import MOCHA
 
 logger = logging.getLogger('QuickFind.HTTPServer')
+
+_SESSION_COOKIE_NAME = "qf_session"
 
 
 HTML_TEMPLATE = """<!DOCTYPE html>
@@ -131,14 +134,12 @@ tr:nth-child(even):hover {{ background: {surface0}; }}
 let timer;
 const search = document.getElementById('search');
 const countEl = document.getElementById('count');
-const token = new URLSearchParams(window.location.search).get('token') || '';
 search.addEventListener('input', () => {{
     clearTimeout(timer);
     countEl.textContent = 'Searching…';
     timer = setTimeout(() => {{
         const params = new URLSearchParams({{q: search.value}});
-        if (token) params.set('token', token);
-        fetch('/api/search?' + params)
+        fetch('/api/search?' + params, {{ credentials: 'same-origin' }})
             .then(r => r.json())
             .then(data => {{
                 const n = data.count;
@@ -150,6 +151,60 @@ search.addEventListener('input', () => {{
 }});
 search.select();
 </script>
+</body>
+</html>"""
+
+
+LOGIN_TEMPLATE = """<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>QuickFind Login</title>
+<style>
+* {{ margin: 0; padding: 0; box-sizing: border-box; }}
+body {{
+    background: {bg};
+    color: {text};
+    font-family: 'Segoe UI', -apple-system, system-ui, sans-serif;
+    min-height: 100vh;
+    display: grid;
+    place-items: center;
+}}
+form {{
+    width: min(360px, calc(100vw - 32px));
+    display: grid;
+    gap: 12px;
+}}
+h1 {{ color: {accent}; font-size: 18px; font-weight: 600; }}
+input {{
+    background: {surface0};
+    border: 1.5px solid {surface1};
+    border-radius: 8px;
+    color: {text};
+    font-size: 14px;
+    padding: 10px 12px;
+}}
+button {{
+    background: {accent};
+    border: 0;
+    border-radius: 8px;
+    color: {bg};
+    cursor: pointer;
+    font-weight: 700;
+    padding: 10px 12px;
+}}
+.error {{ color: {red}; min-height: 18px; font-size: 13px; }}
+</style>
+</head>
+<body>
+<form method="post" action="/auth">
+    <h1>QuickFind</h1>
+    <input name="token" type="password" autocomplete="current-password"
+           placeholder="Auth token" aria-label="Auth token" autofocus>
+    <button type="submit">Sign in</button>
+    <div class="error">{error}</div>
+</form>
 </body>
 </html>"""
 
@@ -192,25 +247,54 @@ class SearchHandler(BaseHTTPRequestHandler):
     file_index: FileIndex = None
     search_engine: SearchEngine = None
     auth_token: str = ""
+    session_token: str = ""
 
     def log_message(self, format, *args):
         logger.debug(format % args)
 
-    def _check_auth(self, params) -> bool:
+    def _check_auth(self) -> bool:
         """Validate token if authentication is enabled."""
         if not self.auth_token:
             return True
-        request_token = params.get('token', [''])[0]
-        if not request_token:
-            # Also check Authorization header
-            auth_header = self.headers.get('Authorization', '')
-            if auth_header.startswith('Bearer '):
-                request_token = auth_header[7:]
-        return secrets.compare_digest(request_token, self.auth_token)
+
+        auth_header = self.headers.get('Authorization', '')
+        if auth_header.startswith('Bearer '):
+            request_token = auth_header[7:]
+            if secrets.compare_digest(request_token, self.auth_token):
+                return True
+
+        session_cookie = self._session_cookie_value()
+        return bool(
+            self.session_token
+            and session_cookie
+            and secrets.compare_digest(session_cookie, self.session_token)
+        )
+
+    def _session_cookie_value(self) -> str:
+        raw_cookie = self.headers.get('Cookie', '')
+        if not raw_cookie:
+            return ''
+        try:
+            cookie = SimpleCookie()
+            cookie.load(raw_cookie)
+            morsel = cookie.get(_SESSION_COOKIE_NAME)
+            return morsel.value if morsel else ''
+        except Exception:
+            return ''
+
+    def _session_cookie_header(self) -> str:
+        return f"{_SESSION_COOKIE_NAME}={self.session_token}; HttpOnly; Path=/; SameSite=Strict"
 
     def _send_security_headers(self):
         self.send_header('Content-Security-Policy', "default-src 'self'; script-src 'unsafe-inline'; style-src 'unsafe-inline'")
         self.send_header('X-Content-Type-Options', 'nosniff')
+
+    def _send_unauthorized(self):
+        self.send_response(401)
+        self.send_header('Content-Type', 'application/json')
+        self._send_security_headers()
+        self.end_headers()
+        self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
 
     def do_GET(self):
         client_ip = self.client_address[0]
@@ -225,11 +309,11 @@ class SearchHandler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         params = parse_qs(parsed.query)
 
-        if not self._check_auth(params):
-            self.send_response(401)
-            self.send_header('Content-Type', 'application/json')
-            self.end_headers()
-            self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+        if not self._check_auth():
+            if parsed.path == '/' or parsed.path == '':
+                self._handle_login_page()
+            else:
+                self._send_unauthorized()
             return
 
         if parsed.path == '/api/search':
@@ -238,6 +322,58 @@ class SearchHandler(BaseHTTPRequestHandler):
             self._handle_page(params)
         else:
             self.send_error(404)
+
+    def do_POST(self):
+        client_ip = self.client_address[0]
+        if not _rate_limiter.allow(client_ip):
+            self.send_response(429)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Retry-After', '60')
+            self.end_headers()
+            self.wfile.write(json.dumps({'error': 'Too many requests'}).encode('utf-8'))
+            return
+
+        parsed = urlparse(self.path)
+        if parsed.path != '/auth':
+            self.send_error(404)
+            return
+        self._handle_auth_post()
+
+    def _handle_auth_post(self):
+        if not self.auth_token:
+            self.send_error(404)
+            return
+
+        try:
+            length = int(self.headers.get('Content-Length', '0'))
+        except ValueError:
+            length = 0
+        if length > 4096:
+            self.send_response(413)
+            self.end_headers()
+            return
+
+        body = self.rfile.read(length).decode('utf-8', errors='replace')
+        submitted_token = ''
+        content_type = self.headers.get('Content-Type', '')
+        if 'application/json' in content_type:
+            try:
+                payload = json.loads(body)
+                submitted_token = str(payload.get('token', ''))
+            except json.JSONDecodeError:
+                submitted_token = ''
+        else:
+            submitted_token = parse_qs(body).get('token', [''])[0]
+
+        if secrets.compare_digest(submitted_token, self.auth_token):
+            self.send_response(303)
+            self.send_header('Location', '/')
+            self.send_header('Set-Cookie', self._session_cookie_header())
+            self._send_security_headers()
+            self.end_headers()
+            return
+
+        self._handle_login_page(error="Invalid token", status=401)
 
     def _handle_api_search(self, params):
         """JSON API for AJAX search."""
@@ -260,7 +396,6 @@ class SearchHandler(BaseHTTPRequestHandler):
 
         self.send_response(200)
         self.send_header('Content-Type', 'application/json')
-        self.send_header('Access-Control-Allow-Origin', '*')
         self._send_security_headers()
         self.end_headers()
         self.wfile.write(response.encode('utf-8'))
@@ -283,6 +418,20 @@ class SearchHandler(BaseHTTPRequestHandler):
         )
 
         self.send_response(200)
+        self.send_header('Content-Type', 'text/html; charset=utf-8')
+        self._send_security_headers()
+        self.end_headers()
+        self.wfile.write(page_html.encode('utf-8'))
+
+    def _handle_login_page(self, error: str = "", status: int = 200):
+        page_html = LOGIN_TEMPLATE.format(
+            bg=MOCHA['base'], text=MOCHA['text'],
+            surface0=MOCHA['surface0'], surface1=MOCHA['surface1'],
+            accent=MOCHA['blue'], red=MOCHA['red'],
+            error=html.escape(error, quote=True),
+        )
+
+        self.send_response(status)
         self.send_header('Content-Type', 'text/html; charset=utf-8')
         self._send_security_headers()
         self.end_headers()
@@ -337,6 +486,7 @@ class QuickFindHTTPServer:
         SearchHandler.file_index = file_index
         SearchHandler.search_engine = search_engine
         SearchHandler.auth_token = auth_token
+        SearchHandler.session_token = secrets.token_urlsafe(32) if auth_token else ""
 
     def start(self):
         """Start the HTTP server in a background thread."""

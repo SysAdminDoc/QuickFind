@@ -1,8 +1,25 @@
 """Tests for remote HTTP/HTTPS server configuration."""
 
+from io import BytesIO
 from unittest.mock import MagicMock, patch
 
-from server.http_server import QuickFindHTTPServer
+from server.http_server import QuickFindHTTPServer, SearchHandler, _SESSION_COOKIE_NAME
+
+
+def _handler(headers=None) -> SearchHandler:
+    handler = SearchHandler.__new__(SearchHandler)
+    handler.headers = headers or {}
+    handler.auth_token = "secret"
+    handler.session_token = "session"
+    handler.send_response = MagicMock()
+    handler.send_header = MagicMock()
+    handler.end_headers = MagicMock()
+    handler.send_error = MagicMock()
+    handler.wfile = BytesIO()
+    handler.rfile = BytesIO()
+    handler.search_engine = MagicMock()
+    handler.file_index = MagicMock()
+    return handler
 
 
 def test_default_server_url_uses_http_scheme():
@@ -60,3 +77,51 @@ def test_https_server_requires_certificate_file():
 
         assert server.start() is False
         httpd.server_close.assert_called_once()
+
+
+def test_query_string_tokens_are_ignored_for_auth():
+    handler = _handler()
+    handler.path = "/api/search?token=secret"
+
+    assert handler._check_auth() is False
+
+
+def test_bearer_authorization_is_accepted():
+    handler = _handler({"Authorization": "Bearer secret"})
+
+    assert handler._check_auth() is True
+
+
+def test_session_cookie_is_accepted():
+    handler = _handler({"Cookie": f"{_SESSION_COOKIE_NAME}=session"})
+
+    assert handler._check_auth() is True
+
+
+def test_successful_auth_post_sets_same_origin_session_cookie():
+    body = b"token=secret"
+    handler = _handler({
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Content-Length": str(len(body)),
+    })
+    handler.rfile = BytesIO(body)
+
+    handler._handle_auth_post()
+
+    handler.send_response.assert_called_once_with(303)
+    handler.send_header.assert_any_call("Location", "/")
+    handler.send_header.assert_any_call(
+        "Set-Cookie",
+        f"{_SESSION_COOKIE_NAME}=session; HttpOnly; Path=/; SameSite=Strict",
+    )
+
+
+def test_api_search_omits_wildcard_cors_header():
+    handler = _handler()
+    handler.search_engine.search.return_value = []
+
+    handler._handle_api_search({"q": ["readme"]})
+
+    header_calls = [call.args for call in handler.send_header.call_args_list]
+    assert ("Access-Control-Allow-Origin", "*") not in header_calls
+    assert ("Content-Type", "application/json") in header_calls

@@ -1,14 +1,14 @@
-# QuickFind v0.8.3
+# QuickFind v0.8.4
 
 Lightning-fast file search for Windows, powered by NTFS MFT + USN Journal.
 
 An open-source alternative to [Voidtools Everything](https://www.voidtools.com/), built with Python and PyQt6 for extensibility and customization.
 
-![Version](https://img.shields.io/badge/Version-v0.8.3-blueviolet)
+![Version](https://img.shields.io/badge/Version-v0.8.4-blueviolet)
 ![Python](https://img.shields.io/badge/Python-3.10+-blue)
 ![License](https://img.shields.io/badge/License-MIT-green)
 ![Platform](https://img.shields.io/badge/Platform-Windows-lightgrey)
-![Tests](https://img.shields.io/badge/Tests-187%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/Tests-192%20passing-brightgreen)
 
 ## Features
 
@@ -57,7 +57,7 @@ An open-source alternative to [Voidtools Everything](https://www.voidtools.com/)
 - **Accessibility** — `accessibleName`/`accessibleDescription` on key widgets; focus-visible states on all interactive elements
 
 ### Advanced
-- **HTTP/HTTPS server** for remote web browser access with TLS certificate support, token-based authentication, per-IP rate limiting (60 req/min), XSS protection (CSP headers + `html.escape`), and sticky-header web UI
+- **HTTP/HTTPS server** for remote web browser access with TLS certificate support, Bearer/session-cookie authentication, per-IP rate limiting (60 req/min), XSS protection (CSP headers + `html.escape`), and sticky-header web UI
 - **Windows service mode** for background indexing/monitoring with GUI status heartbeat over localhost IPC
 - **`.quickfindignore`** files — place in any directory with glob patterns to exclude files/folders from indexing (like `.gitignore`)
 - **EFU file lists** for indexing non-NTFS and network drives
@@ -65,7 +65,7 @@ An open-source alternative to [Voidtools Everything](https://www.voidtools.com/)
 - **Per-drive rescan intervals** — configure different rescan frequencies for SSD vs NAS drives
 - **Export/import settings** — save and restore configuration as validated JSON
 - **Log rotation** — `RotatingFileHandler` with 5 MB max and 3 backups
-- **187 automated tests** covering startup dependency handling, SQLite/FTS5 version gates, search parsing, archive search, content adapters/cache, service IPC, duplicate detection, MFT record parsing, privilege lifecycle, settings validation, index mode UI state, results-view cache bounds, cache helpers, remote server configuration, and ignore patterns
+- **192 automated tests** covering startup dependency handling, SQLite/FTS5 version gates, remote auth/CORS hardening, search parsing, archive search, content adapters/cache, service IPC, duplicate detection, MFT record parsing, privilege lifecycle, settings validation, index mode UI state, results-view cache bounds, cache helpers, remote server configuration, and ignore patterns
 - **PyInstaller build script** for single-file or single-folder distribution
 
 ## Requirements
@@ -250,18 +250,18 @@ QuickFind/
 ## Testing
 
 ```bash
-# Run the test suite (187 tests)
+# Run the test suite (192 tests)
 python -m pytest tests/ -v
 ```
 
-Tests cover startup dependency handling, SQLite/FTS5 version gates, search query parsing (all modifiers), archive member search, content extraction/cache, service IPC, size/date helpers, smart case sensitivity, fuzzy matching, MFT record parsing, USA fixup, USN records, cache datetime round-trip, FTS5 detection, results-view cache bounds, `.quickfindignore` pattern matching, and EFU file loading.
+Tests cover startup dependency handling, SQLite/FTS5 version gates, remote auth/CORS hardening, search query parsing (all modifiers), archive member search, content extraction/cache, service IPC, size/date helpers, smart case sensitivity, fuzzy matching, MFT record parsing, USA fixup, USN records, cache datetime round-trip, FTS5 detection, results-view cache bounds, `.quickfindignore` pattern matching, and EFU file loading.
 
 ## Security
 
 - **XSS protection**: HTTP server uses `html.escape()` for all user-derived content with `Content-Security-Policy` and `X-Content-Type-Options` headers
 - **Rate limiting**: Per-IP rate limiter (60 requests/minute) on the HTTP server with `429 Too Many Requests` response
 - **HTTPS support**: Optional TLS certificate/key configuration for encrypted remote search access
-- **Token authentication**: Optional Bearer token authentication for the HTTP/HTTPS server
+- **Token authentication**: Optional Bearer API tokens plus same-origin browser session cookies; tokens are not accepted in URLs
 - **Safe Win32 calls**: All ctypes DLL loads use `WinDLL(use_last_error=True)` with complete `argtypes` declarations
 - **Atomic config saves**: Settings, bookmarks, filters, and hidden paths use atomic write (temp file + rename) to prevent corruption on crash
 - **Privilege scoping**: `SeBackupPrivilege` enabled only when needed for NTFS MFT access

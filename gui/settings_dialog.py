@@ -309,7 +309,7 @@ class SettingsDialog(QDialog):
         http_form.addRow("Bind address:", self._http_bind)
 
         self._http_auth_token = QLineEdit()
-        self._http_auth_token.setPlaceholderText("Leave empty to disable authentication")
+        self._http_auth_token.setPlaceholderText("Leave empty to disable authentication; never sent in URLs")
         http_form.addRow("Auth token:", self._http_auth_token)
 
         self._http_use_https = QCheckBox("Enable HTTPS")
