@@ -1349,7 +1349,11 @@ class MainWindow(QMainWindow):
 
     def _import_filters_csv(self):
         from PyQt6.QtWidgets import QFileDialog
-        from core.everything_import import import_everything_filters, save_imported_filters
+        from core.everything_import import (
+            EverythingImportError,
+            import_everything_filters,
+            save_imported_filters,
+        )
 
         path, _ = QFileDialog.getOpenFileName(
             self, "Import Filters from Everything CSV",
@@ -1359,13 +1363,16 @@ class MainWindow(QMainWindow):
         if not path:
             return
 
-        filters = import_everything_filters(path)
-        if filters:
-            count = save_imported_filters(filters)
-            self._status_label.setText(f"Imported {len(filters)} filters ({count} total)")
-            self._build_filter_combo()
-        else:
-            self._status_label.setText("No filters found in CSV file")
+        try:
+            filters = import_everything_filters(path)
+            if filters:
+                count = save_imported_filters(filters)
+                self._status_label.setText(f"Imported {len(filters)} filters ({count} total)")
+                self._build_filter_combo()
+            else:
+                self._status_label.setText("No filters found in CSV file")
+        except EverythingImportError as exc:
+            self._status_label.setText(f"Filter import failed: {exc}")
 
     def _export_filters_csv(self):
         from PyQt6.QtWidgets import QFileDialog
@@ -1423,7 +1430,11 @@ class MainWindow(QMainWindow):
 
     def _import_bookmarks_csv(self):
         from PyQt6.QtWidgets import QFileDialog
-        from core.everything_import import import_everything_bookmarks, save_imported_bookmarks
+        from core.everything_import import (
+            EverythingImportError,
+            import_everything_bookmarks,
+            save_imported_bookmarks,
+        )
 
         path, _ = QFileDialog.getOpenFileName(
             self, "Import Bookmarks from Everything CSV",
@@ -1433,14 +1444,17 @@ class MainWindow(QMainWindow):
         if not path:
             return
 
-        bookmarks = import_everything_bookmarks(path)
-        if bookmarks:
-            count = save_imported_bookmarks(bookmarks)
-            self._status_label.setText(f"Imported {len(bookmarks)} bookmarks ({count} total)")
-            self._bookmark_manager._load()
-            self._bookmarks_panel._refresh()
-        else:
-            self._status_label.setText("No bookmarks found in CSV file")
+        try:
+            bookmarks = import_everything_bookmarks(path)
+            if bookmarks:
+                count = save_imported_bookmarks(bookmarks)
+                self._status_label.setText(f"Imported {len(bookmarks)} bookmarks ({count} total)")
+                self._bookmark_manager._load()
+                self._bookmarks_panel._refresh()
+            else:
+                self._status_label.setText("No bookmarks found in CSV file")
+        except EverythingImportError as exc:
+            self._status_label.setText(f"Bookmark import failed: {exc}")
 
     def _export_bookmarks_csv(self):
         from PyQt6.QtWidgets import QFileDialog

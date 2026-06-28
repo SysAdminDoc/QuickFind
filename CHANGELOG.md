@@ -2,6 +2,12 @@
 
 All notable changes to QuickFind will be documented in this file.
 
+## [v0.8.6] - 2026-06-28
+
+- Hardened Everything filter/bookmark imports with CSV header/row validation and explicit status-bar failure feedback.
+- Replaced direct imported JSON writes with validated atomic temp-and-replace saves that leave existing files intact on malformed input.
+- Added importer regression tests and expanded the passing suite to 203 tests.
+
 ## [v0.8.5] - 2026-06-28
 
 - Added cancellable background content indexing jobs with per-root and per-extension settings.

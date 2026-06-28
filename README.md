@@ -1,14 +1,14 @@
-# QuickFind v0.8.5
+# QuickFind v0.8.6
 
 Lightning-fast file search for Windows, powered by NTFS MFT + USN Journal.
 
 An open-source alternative to [Voidtools Everything](https://www.voidtools.com/), built with Python and PyQt6 for extensibility and customization.
 
-![Version](https://img.shields.io/badge/Version-v0.8.5-blueviolet)
+![Version](https://img.shields.io/badge/Version-v0.8.6-blueviolet)
 ![Python](https://img.shields.io/badge/Python-3.10+-blue)
 ![License](https://img.shields.io/badge/License-MIT-green)
 ![Platform](https://img.shields.io/badge/Platform-Windows-lightgrey)
-![Tests](https://img.shields.io/badge/Tests-197%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/Tests-203%20passing-brightgreen)
 
 ## Features
 
@@ -64,8 +64,9 @@ An open-source alternative to [Voidtools Everything](https://www.voidtools.com/)
 - **CLI tool** (`es.py`) with full search syntax, CSV/JSON output, and DB cache for instant results
 - **Per-drive rescan intervals** — configure different rescan frequencies for SSD vs NAS drives
 - **Export/import settings** — save and restore configuration as validated JSON
+- **Everything import hardening** — malformed CSV rows and invalid JSON are rejected before atomic filter/bookmark replacement
 - **Log rotation** — `RotatingFileHandler` with 5 MB max and 3 backups
-- **197 automated tests** covering startup dependency handling, SQLite/FTS5 version gates, remote auth/CORS hardening, content indexing jobs/quotas/diagnostics, search parsing, archive search, content adapters/cache, service IPC, duplicate detection, MFT record parsing, privilege lifecycle, settings validation, index mode UI state, results-view cache bounds, cache helpers, remote server configuration, and ignore patterns
+- **203 automated tests** covering startup dependency handling, SQLite/FTS5 version gates, remote auth/CORS hardening, Everything import validation, content indexing jobs/quotas/diagnostics, search parsing, archive search, content adapters/cache, service IPC, duplicate detection, MFT record parsing, privilege lifecycle, settings validation, index mode UI state, results-view cache bounds, cache helpers, remote server configuration, and ignore patterns
 - **PyInstaller build script** for single-file or single-folder distribution
 
 ## Requirements
@@ -199,7 +200,7 @@ QuickFind/
     utils.py                # Shared utilities (size parsing)
     file_list.py            # EFU file list import/export
     hidden_paths.py         # Per-filter hidden path management
-    everything_import.py    # Everything config file import
+    everything_import.py    # Validated Everything config file import
   gui/
     main_window.py          # Main window (menus, toolbar, layout, multi-tab search)
     launcher_popup.py       # Floating launcher search bar (Ctrl+Shift+F)
@@ -223,6 +224,7 @@ QuickFind/
     test_search.py          # Search parsing, modifiers, smart case, fuzzy matching
     test_archive_search.py  # ZIP/7z archive member search
     test_content_search.py  # Content extraction, cache, and preview context
+    test_everything_import.py # Everything CSV/JSON import validation
     test_service.py         # Service status socket and install wiring
     test_ntfs.py            # MFT record parsing, FILETIME conversion, USA fixup
     test_cache.py           # Datetime conversion, FTS5 detection
@@ -250,11 +252,11 @@ QuickFind/
 ## Testing
 
 ```bash
-# Run the test suite (197 tests)
+# Run the test suite (203 tests)
 python -m pytest tests/ -v
 ```
 
-Tests cover startup dependency handling, SQLite/FTS5 version gates, remote auth/CORS hardening, content indexing jobs/quotas/diagnostics, search query parsing (all modifiers), archive member search, content extraction/cache, service IPC, size/date helpers, smart case sensitivity, fuzzy matching, MFT record parsing, USA fixup, USN records, cache datetime round-trip, FTS5 detection, results-view cache bounds, `.quickfindignore` pattern matching, and EFU file loading.
+Tests cover startup dependency handling, SQLite/FTS5 version gates, remote auth/CORS hardening, Everything import validation, content indexing jobs/quotas/diagnostics, search query parsing (all modifiers), archive member search, content extraction/cache, service IPC, size/date helpers, smart case sensitivity, fuzzy matching, MFT record parsing, USA fixup, USN records, cache datetime round-trip, FTS5 detection, results-view cache bounds, `.quickfindignore` pattern matching, and EFU file loading.
 
 ## Security
 
@@ -263,7 +265,7 @@ Tests cover startup dependency handling, SQLite/FTS5 version gates, remote auth/
 - **HTTPS support**: Optional TLS certificate/key configuration for encrypted remote search access
 - **Token authentication**: Optional Bearer API tokens plus same-origin browser session cookies; tokens are not accepted in URLs
 - **Safe Win32 calls**: All ctypes DLL loads use `WinDLL(use_last_error=True)` with complete `argtypes` declarations
-- **Atomic config saves**: Settings, bookmarks, filters, and hidden paths use atomic write (temp file + rename) to prevent corruption on crash
+- **Atomic config saves**: Settings, bookmarks, filters, hidden paths, and Everything imports use validated atomic writes to prevent corruption on crash
 - **Privilege scoping**: `SeBackupPrivilege` enabled only when needed for NTFS MFT access
 
 ## License
