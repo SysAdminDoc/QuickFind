@@ -2,6 +2,12 @@
 
 All notable changes to QuickFind will be documented in this file.
 
+## [v0.8.9] - 2026-06-28
+
+- Persisted ZIP/7z archive member metadata in SQLite for faster repeated `archive:` searches.
+- Added archive cache invalidation by archive size and modified time while preserving stable virtual member paths.
+- Added archive cache reuse/invalidation tests and expanded the passing suite to 214 tests.
+
 ## [v0.8.8] - 2026-06-28
 
 - Added an Index Diagnostics dialog with cache integrity, per-drive mode/USN state, service heartbeat, content cache size, and recovery buttons.

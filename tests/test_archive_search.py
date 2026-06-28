@@ -1,11 +1,27 @@
 """Tests for opt-in archive member search."""
 
+import os
+import time
 import zipfile
 
 import py7zr
+import pytest
 
+import core.archives as archives_mod
+import core.cache as cache_mod
 from core.index import FileEntry
 from core.search import SearchEngine, SearchOptions, SortField, SortOrder
+
+
+@pytest.fixture(autouse=True)
+def isolated_archive_cache(monkeypatch, tmp_path):
+    cache_mod._close_connection()
+    cache_dir = tmp_path / "cache"
+    monkeypatch.setattr(cache_mod, "CONFIG_DIR", cache_dir)
+    monkeypatch.setattr(cache_mod, "DB_FILE", cache_dir / "index.db")
+    monkeypatch.setattr(cache_mod, "OLD_CACHE_FILE", cache_dir / "index_cache.bin")
+    yield
+    cache_mod._close_connection()
 
 
 class TempIndex:
@@ -106,3 +122,40 @@ def test_archive_search_skips_corrupt_archives(tmp_path):
     index = TempIndex([_archive_entry(archive)])
 
     assert SearchEngine(index).search("archive:") == []
+
+
+def test_archive_search_reuses_cached_members_when_unchanged(tmp_path, monkeypatch):
+    archive = tmp_path / "cached.zip"
+    with zipfile.ZipFile(archive, "w") as zf:
+        zf.writestr("docs/report.txt", "hello")
+
+    index = TempIndex([_archive_entry(archive)])
+    assert [entry.name for entry in SearchEngine(index).search("archive:report")] == ["report.txt"]
+
+    def fail_if_reopened(_archive_path):
+        raise AssertionError("archive should be served from cache")
+
+    monkeypatch.setattr(archives_mod, "_iter_zip_members", fail_if_reopened)
+
+    results = SearchEngine(index).search("archive:report")
+
+    assert [entry.name for entry in results] == ["report.txt"]
+
+
+def test_archive_search_invalidates_cache_when_archive_changes(tmp_path):
+    archive = tmp_path / "changing.zip"
+    with zipfile.ZipFile(archive, "w") as zf:
+        zf.writestr("old.txt", "old")
+
+    index = TempIndex([_archive_entry(archive)])
+    assert [entry.name for entry in SearchEngine(index).search("archive:old")] == ["old.txt"]
+
+    with zipfile.ZipFile(archive, "w") as zf:
+        zf.writestr("new.txt", "new content")
+    future = time.time() + 5
+    os.utime(archive, (future, future))
+
+    results = SearchEngine(index).search("archive:new")
+
+    assert [entry.name for entry in results] == ["new.txt"]
+    assert SearchEngine(index).search("archive:old") == []

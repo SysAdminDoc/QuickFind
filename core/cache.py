@@ -35,7 +35,7 @@ CONFIG_DIR = Path.home() / '.quickfind'
 DB_FILE = CONFIG_DIR / 'index.db'
 OLD_CACHE_FILE = CONFIG_DIR / 'index_cache.bin'
 
-DB_VERSION = 4
+DB_VERSION = 5
 
 # Thread-local connections for safe multi-threaded access
 import threading
@@ -189,6 +189,27 @@ def _init_schema(conn: sqlite3.Connection):
         );
         CREATE INDEX IF NOT EXISTS idx_content_cache_freshness
             ON content_cache(path, size, modified_ms);
+
+        CREATE TABLE IF NOT EXISTS archive_cache (
+            archive_path TEXT PRIMARY KEY,
+            size INTEGER NOT NULL,
+            modified_ms INTEGER NOT NULL,
+            member_count INTEGER NOT NULL,
+            indexed_ms INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS archive_members (
+            archive_path TEXT NOT NULL,
+            member_path TEXT NOT NULL,
+            name TEXT NOT NULL,
+            is_dir INTEGER NOT NULL,
+            size INTEGER NOT NULL,
+            modified_ms INTEGER DEFAULT 0,
+            created_ms INTEGER DEFAULT 0,
+            PRIMARY KEY (archive_path, member_path)
+        );
+        CREATE INDEX IF NOT EXISTS idx_archive_members_name
+            ON archive_members(name COLLATE NOCASE);
     """)
 
     # FTS5 table for fast substring search
@@ -541,6 +562,77 @@ def get_content_cache_stats() -> dict[str, int]:
 
 def get_content_cache_size_bytes() -> int:
     return get_content_cache_stats()["text_bytes"]
+
+
+def get_archive_member_cache(archive_path: str, size: int, modified_ms: int) -> Optional[list[dict]]:
+    """Return cached archive members when the archive fingerprint still matches."""
+    try:
+        conn = _get_connection()
+        _init_schema(conn)
+        meta = conn.execute(
+            "SELECT size, modified_ms, member_count FROM archive_cache WHERE archive_path=?",
+            (archive_path,),
+        ).fetchone()
+        if not meta:
+            return None
+        cached_size, cached_modified_ms, _member_count = meta
+        if int(cached_size) != int(size) or int(cached_modified_ms) != int(modified_ms):
+            return None
+        rows = conn.execute(
+            "SELECT member_path, name, is_dir, size, modified_ms, created_ms "
+            "FROM archive_members WHERE archive_path=? ORDER BY member_path",
+            (archive_path,),
+        ).fetchall()
+        return [
+            {
+                "member_path": member_path,
+                "name": name,
+                "is_dir": bool(is_dir),
+                "size": int(member_size or 0),
+                "modified_ms": int(member_modified_ms or 0),
+                "created_ms": int(member_created_ms or 0),
+            }
+            for member_path, name, is_dir, member_size, member_modified_ms, member_created_ms in rows
+        ]
+    except Exception as e:
+        logger.debug(f"get_archive_member_cache failed: {e}")
+        return None
+
+
+def upsert_archive_member_cache(archive_path: str, size: int, modified_ms: int,
+                                members: list[dict]) -> None:
+    """Replace cached member metadata for an archive fingerprint."""
+    try:
+        conn = _get_connection()
+        _init_schema(conn)
+        now_ms = int(time.time() * 1000)
+        with conn:
+            conn.execute("DELETE FROM archive_members WHERE archive_path=?", (archive_path,))
+            conn.execute(
+                "INSERT OR REPLACE INTO archive_cache "
+                "(archive_path, size, modified_ms, member_count, indexed_ms) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (archive_path, int(size), int(modified_ms), len(members), now_ms),
+            )
+            conn.executemany(
+                "INSERT INTO archive_members "
+                "(archive_path, member_path, name, is_dir, size, modified_ms, created_ms) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                [
+                    (
+                        archive_path,
+                        str(member["member_path"]),
+                        str(member["name"]),
+                        1 if member.get("is_dir") else 0,
+                        int(member.get("size") or 0),
+                        int(member.get("modified_ms") or 0),
+                        int(member.get("created_ms") or 0),
+                    )
+                    for member in members
+                ],
+            )
+    except Exception as e:
+        logger.debug(f"upsert_archive_member_cache failed: {e}")
 
 
 def cache_diagnostics(run_integrity_check: bool = True) -> dict:

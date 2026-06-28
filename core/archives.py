@@ -2,6 +2,7 @@
 
 import hashlib
 import logging
+import os
 import zipfile
 from datetime import datetime
 
@@ -29,18 +30,53 @@ def iter_archive_entries(archive_entry: FileEntry, index: FileIndex):
         return
 
     archive_path = archive_entry.get_path(index)
+    fingerprint = _archive_fingerprint(archive_path)
+    if fingerprint is None:
+        return
+    archive_size, archive_modified_ms = fingerprint
+
     try:
-        if archive_entry.extension == 'zip':
-            yield from _iter_zip_entries(archive_entry, archive_path)
-        elif archive_entry.extension == '7z':
-            yield from _iter_7z_entries(archive_entry, archive_path)
+        members = _cached_or_read_members(
+            archive_entry,
+            archive_path,
+            archive_size,
+            archive_modified_ms,
+        )
+        for member in members:
+            yield _make_virtual_entry(
+                archive_entry=archive_entry,
+                archive_path=archive_path,
+                member_path=member["member_path"],
+                is_dir=bool(member["is_dir"]),
+                size=int(member["size"]),
+                modified=_ms_to_dt(int(member.get("modified_ms") or 0)),
+                created=_ms_to_dt(int(member.get("created_ms") or 0)),
+            )
     except (OSError, PermissionError, zipfile.BadZipFile) as exc:
         logger.debug(f"Skipping unreadable archive {archive_path}: {exc}")
     except Exception as exc:
         logger.debug(f"Skipping archive {archive_path}: {exc}")
 
 
-def _iter_zip_entries(archive_entry: FileEntry, archive_path: str):
+def _cached_or_read_members(archive_entry: FileEntry, archive_path: str,
+                            archive_size: int, archive_modified_ms: int) -> list[dict]:
+    from core.cache import get_archive_member_cache, upsert_archive_member_cache
+
+    cached = get_archive_member_cache(archive_path, archive_size, archive_modified_ms)
+    if cached is not None:
+        return cached
+
+    if archive_entry.extension == 'zip':
+        members = list(_iter_zip_members(archive_path))
+    elif archive_entry.extension == '7z':
+        members = list(_iter_7z_members(archive_path))
+    else:
+        members = []
+    upsert_archive_member_cache(archive_path, archive_size, archive_modified_ms, members)
+    return members
+
+
+def _iter_zip_members(archive_path: str):
     with zipfile.ZipFile(archive_path, 'r') as archive:
         for info in archive.infolist():
             member_path = _normalize_member_path(info.filename)
@@ -48,9 +84,7 @@ def _iter_zip_entries(archive_entry: FileEntry, archive_path: str):
                 continue
             is_dir = info.is_dir()
             modified = _safe_zip_datetime(info.date_time)
-            yield _make_virtual_entry(
-                archive_entry=archive_entry,
-                archive_path=archive_path,
+            yield _member_metadata(
                 member_path=member_path,
                 is_dir=is_dir,
                 size=0 if is_dir else info.file_size,
@@ -59,7 +93,7 @@ def _iter_zip_entries(archive_entry: FileEntry, archive_path: str):
             )
 
 
-def _iter_7z_entries(archive_entry: FileEntry, archive_path: str):
+def _iter_7z_members(archive_path: str):
     if py7zr is None:
         logger.debug("py7zr is not installed; skipping 7z archive search")
         return
@@ -71,15 +105,26 @@ def _iter_7z_entries(archive_entry: FileEntry, archive_path: str):
                 continue
             is_dir = bool(getattr(info, 'is_directory', False))
             created = _normalize_datetime(getattr(info, 'creationtime', None))
-            yield _make_virtual_entry(
-                archive_entry=archive_entry,
-                archive_path=archive_path,
+            yield _member_metadata(
                 member_path=member_path,
                 is_dir=is_dir,
                 size=0 if is_dir else int(getattr(info, 'uncompressed', 0) or 0),
                 modified=created,
                 created=created,
             )
+
+
+def _member_metadata(member_path: str, is_dir: bool, size: int,
+                     modified: datetime | None,
+                     created: datetime | None) -> dict:
+    return {
+        "member_path": member_path,
+        "name": _member_name(member_path),
+        "is_dir": is_dir,
+        "size": size,
+        "modified_ms": _dt_to_ms(modified),
+        "created_ms": _dt_to_ms(created),
+    }
 
 
 def _make_virtual_entry(archive_entry: FileEntry, archive_path: str,
@@ -123,6 +168,32 @@ def _normalize_datetime(value) -> datetime | None:
     if value.tzinfo is not None:
         return value.astimezone().replace(tzinfo=None)
     return value
+
+
+def _archive_fingerprint(archive_path: str) -> tuple[int, int] | None:
+    try:
+        st = os.stat(archive_path)
+    except (OSError, PermissionError):
+        return None
+    return st.st_size, int(st.st_mtime * 1000)
+
+
+def _dt_to_ms(value: datetime | None) -> int:
+    if value is None:
+        return 0
+    try:
+        return int(value.timestamp() * 1000)
+    except (OSError, OverflowError, ValueError):
+        return 0
+
+
+def _ms_to_dt(value: int) -> datetime | None:
+    if value <= 0:
+        return None
+    try:
+        return datetime.fromtimestamp(value / 1000.0)
+    except (OSError, OverflowError, ValueError):
+        return None
 
 
 def _virtual_frn(archive_path: str, member_path: str) -> int:
