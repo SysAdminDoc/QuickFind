@@ -2,6 +2,13 @@
 
 All notable changes to QuickFind will be documented in this file.
 
+## [v0.8.7] - 2026-06-28
+
+- Locked the tested top-level runtime, build, and test dependencies in `requirements.txt`.
+- Added build/runtime matrix reporting to `build.py` for Python, SQLite, PyQt6, PyInstaller, pywin32, and content/archive adapters.
+- Removed build-time PyInstaller auto-install and documented the supported runtime matrix in README.
+- Added build metadata tests and expanded the passing suite to 205 tests.
+
 ## [v0.8.6] - 2026-06-28
 
 - Hardened Everything filter/bookmark imports with CSV header/row validation and explicit status-bar failure feedback.
