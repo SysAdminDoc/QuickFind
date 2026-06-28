@@ -646,7 +646,7 @@ class SearchEngine:
             if cancel_check and cancel_check():
                 break
 
-            if limit and len(results) >= limit:
+            if limit and not parsed.dupe_mode and len(results) >= limit:
                 break
 
             if self._matches(entry, parsed, term_matchers, exclude_matchers, or_matchers, filter_exclude_paths):
@@ -654,9 +654,25 @@ class SearchEngine:
 
         if cancel_check and cancel_check():
             return results
+
+        if parsed.dupe_mode:
+            results = self._filter_duplicate_results(results)
+
         results = self._sort_results(results, parsed.options, cancel_check)
+        if parsed.dupe_mode and limit:
+            results = results[:limit]
 
         return results
+
+    def _filter_duplicate_results(self, entries: list[FileEntry]) -> list[FileEntry]:
+        duplicates = self.find_duplicates(entries)
+        if not duplicates:
+            return []
+        duplicate_names = set(duplicates)
+        return [
+            entry for entry in entries
+            if not entry.is_dir and entry.name.lower() in duplicate_names
+        ]
 
     def _compile_term_matchers(self, parsed: ParsedQuery) -> list:
         matchers = []

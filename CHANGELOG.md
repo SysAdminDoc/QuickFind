@@ -2,6 +2,12 @@
 
 All notable changes to QuickFind will be documented in this file.
 
+## [v0.7.7] - 2026-06-27
+
+- Implemented the `dupe:` search modifier for duplicate filename detection in in-memory searches.
+- `dupe:` now respects normal query terms, extension filters, and applies max-result limits after duplicate grouping.
+- Added duplicate-search tests and expanded the passing suite to 161 tests.
+
 ## [v0.7.6] - 2026-06-27
 
 - Added settings sanitization for invalid ports, numeric ranges, blank bind addresses, missing TLS files, and missing EFU file lists.

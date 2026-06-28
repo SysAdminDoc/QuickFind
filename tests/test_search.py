@@ -9,8 +9,9 @@ from datetime import datetime, timedelta
 from core.utils import parse_size as _parse_size
 from core.search import (
     _parse_date, _fuzzy_match, parse_query, SearchOptions, SearchFilter,
-    ParsedQuery, SortField, SortOrder, ATTRIB_MAP,
+    ParsedQuery, SearchEngine, SortField, SortOrder, ATTRIB_MAP,
 )
+from core.index import FileEntry
 
 
 class TestParseSize:
@@ -405,3 +406,77 @@ class TestSearchOptions:
         assert opts.max_results == 0
         assert opts.sort_by == SortField.DATE_MODIFIED
         assert opts.sort_order == SortOrder.DESCENDING
+
+
+class FakeIndex:
+    def __init__(self, entries):
+        self.all_entries = entries
+
+    def resolve_path(self, drive: str, frn: int) -> str:
+        return f"{drive}:\\fake\\{frn}"
+
+    def resolve_parent_path(self, drive: str, parent_frn: int) -> str:
+        return f"{drive}:\\fake"
+
+
+def _entry(name: str, frn: int, attributes: int = 0) -> FileEntry:
+    return FileEntry(frn=frn, parent_frn=5, name=name, drive="C", attributes=attributes)
+
+
+class TestDupeSearch:
+    def test_dupe_modifier_returns_duplicate_filenames(self):
+        entries = [
+            _entry("report.txt", 1),
+            _entry("report.txt", 2),
+            _entry("unique.txt", 3),
+        ]
+        engine = SearchEngine(FakeIndex(entries))
+
+        results = engine.search("dupe:")
+
+        assert [entry.frn for entry in results] == [1, 2]
+
+    def test_dupe_modifier_respects_terms_before_grouping(self):
+        entries = [
+            _entry("report.txt", 1),
+            _entry("report.txt", 2),
+            _entry("budget.txt", 3),
+            _entry("budget.txt", 4),
+        ]
+        engine = SearchEngine(FakeIndex(entries))
+
+        results = engine.search("dupe: report")
+
+        assert [entry.frn for entry in results] == [1, 2]
+
+    def test_dupe_modifier_respects_extension_filter(self):
+        entries = [
+            _entry("report.txt", 1),
+            _entry("report.txt", 2),
+            _entry("report.md", 3),
+            _entry("report.md", 4),
+        ]
+        engine = SearchEngine(FakeIndex(entries))
+
+        results = engine.search("dupe: ext:txt")
+
+        assert [entry.frn for entry in results] == [1, 2]
+
+    def test_dupe_modifier_applies_limit_after_duplicate_filtering(self):
+        entries = [
+            _entry("alpha.txt", 1),
+            _entry("alpha.txt", 2),
+            _entry("beta.txt", 3),
+            _entry("beta.txt", 4),
+        ]
+        engine = SearchEngine(FakeIndex(entries))
+        options = SearchOptions(
+            max_results=1,
+            sort_by=SortField.NAME,
+            sort_order=SortOrder.ASCENDING,
+        )
+
+        results = engine.search("dupe:", base_options=options)
+
+        assert len(results) == 1
+        assert results[0].name == "alpha.txt"

@@ -1,14 +1,14 @@
-# QuickFind v0.7.6
+# QuickFind v0.7.7
 
 Lightning-fast file search for Windows, powered by NTFS MFT + USN Journal.
 
 An open-source alternative to [Voidtools Everything](https://www.voidtools.com/), built with Python and PyQt6 for extensibility and customization.
 
-![Version](https://img.shields.io/badge/Version-v0.7.6-blueviolet)
+![Version](https://img.shields.io/badge/Version-v0.7.7-blueviolet)
 ![Python](https://img.shields.io/badge/Python-3.10+-blue)
 ![License](https://img.shields.io/badge/License-MIT-green)
 ![Platform](https://img.shields.io/badge/Platform-Windows-lightgrey)
-![Tests](https://img.shields.io/badge/Tests-157%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/Tests-161%20passing-brightgreen)
 
 ## Features
 
@@ -62,7 +62,7 @@ An open-source alternative to [Voidtools Everything](https://www.voidtools.com/)
 - **Per-drive rescan intervals** — configure different rescan frequencies for SSD vs NAS drives
 - **Export/import settings** — save and restore configuration as validated JSON
 - **Log rotation** — `RotatingFileHandler` with 5 MB max and 3 backups
-- **157 automated tests** covering search parsing, MFT record parsing, privilege lifecycle, settings validation, index mode UI state, cache helpers, remote server configuration, and ignore patterns
+- **161 automated tests** covering search parsing, duplicate detection, MFT record parsing, privilege lifecycle, settings validation, index mode UI state, cache helpers, remote server configuration, and ignore patterns
 - **PyInstaller build script** for single-file or single-folder distribution
 
 ## Requirements
@@ -220,7 +220,7 @@ QuickFind/
 ## Testing
 
 ```bash
-# Run the test suite (157 tests)
+# Run the test suite (161 tests)
 python -m pytest tests/ -v
 ```
 
