@@ -16,6 +16,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, pyqtSignal
 
 from gui.theme import MOCHA
+from gui.settings_validation import sanitize_settings_data
 
 logger = logging.getLogger('QuickFind.Settings')
 
@@ -74,9 +75,18 @@ class Settings:
     # EFU file lists
     efu_files: list[str] = field(default_factory=list)
 
+    def sanitize(self) -> list[str]:
+        data, warnings = sanitize_settings_data(asdict(self), asdict(Settings()))
+        for k, v in data.items():
+            if hasattr(self, k):
+                setattr(self, k, v)
+        return warnings
+
     def save(self):
         CONFIG_DIR.mkdir(exist_ok=True)
         try:
+            for warning in self.sanitize():
+                logger.warning(warning)
             tmp = SETTINGS_FILE.with_suffix('.tmp')
             with open(tmp, 'w') as f:
                 json.dump(asdict(self), f, indent=2)
@@ -95,6 +105,8 @@ class Settings:
             for k, v in data.items():
                 if hasattr(s, k):
                     setattr(s, k, v)
+            for warning in s.sanitize():
+                logger.warning(warning)
             return s
         except Exception as e:
             logger.error(f"Failed to load settings: {e}")
@@ -114,6 +126,8 @@ class Settings:
         for k, v in data.items():
             if hasattr(s, k):
                 setattr(s, k, v)
+        for warning in s.sanitize():
+            logger.warning(warning)
         return s
 
 
@@ -375,10 +389,11 @@ class SettingsDialog(QDialog):
             visible = s.column_visibility.get(col_name, DEFAULT_COLUMN_VISIBILITY.get(col_name, True))
             cb.setChecked(visible)
 
+        self._efu_list.clear()
         for path in s.efu_files:
             self._efu_list.addItem(path)
 
-    def _apply(self):
+    def _apply(self) -> bool:
         s = self._settings
         s.index_on_startup = self._index_startup.isChecked()
         s.monitor_usn = self._monitor_usn.isChecked()
@@ -423,11 +438,22 @@ class SettingsDialog(QDialog):
         for i in range(self._efu_list.count()):
             s.efu_files.append(self._efu_list.item(i).text())
 
+        warnings = s.sanitize()
+        if warnings:
+            self._load_values()
+            QMessageBox.warning(
+                self,
+                "Settings Adjusted",
+                "Some settings were invalid and have been reset:\n\n" + "\n".join(warnings),
+            )
+            return False
+
         self.settings_changed.emit(s)
+        return True
 
     def _apply_and_accept(self):
-        self._apply()
-        self.accept()
+        if self._apply():
+            self.accept()
 
     def _add_efu(self):
         path, _ = QFileDialog.getOpenFileName(
@@ -457,7 +483,8 @@ class SettingsDialog(QDialog):
         )
         if path:
             try:
-                self._apply()
+                if not self._apply():
+                    return
                 self._settings.export_to_file(path)
             except Exception as e:
                 QMessageBox.critical(self, "Export Failed", str(e))

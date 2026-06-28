@@ -2,6 +2,12 @@
 
 All notable changes to QuickFind will be documented in this file.
 
+## [v0.7.6] - 2026-06-27
+
+- Added settings sanitization for invalid ports, numeric ranges, blank bind addresses, missing TLS files, and missing EFU file lists.
+- Dialog apply/export now warns and keeps invalid settings from silently reaching startup/server code.
+- Added settings validation tests and expanded the passing suite to 157 tests.
+
 ## [v0.7.5] - 2026-06-27
 
 - Added a persistent status-bar badge when QuickFind falls back to non-admin `os.scandir` indexing.
