@@ -2,6 +2,12 @@
 
 All notable changes to QuickFind will be documented in this file.
 
+## [v0.8.1] - 2026-06-28
+
+- Added Windows service mode commands for installing, starting, stopping, removing, and running the background index service.
+- Added a localhost JSON status socket so the GUI can report service indexing state and entry count.
+- Added service IPC/install tests and expanded the passing suite to 179 tests.
+
 ## [v0.8.0] - 2026-06-28
 
 - Replaced synchronous text-only `content:` reads with a content adapter pipeline for TXT, PDF, DOCX, and PPTX extraction.

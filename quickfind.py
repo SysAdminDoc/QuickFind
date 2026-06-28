@@ -6,7 +6,6 @@ import os
 from pathlib import Path
 
 
-# codex-branding:start
 def _branding_icon_path() -> Path:
     candidates = []
     if getattr(sys, "frozen", False):
@@ -21,7 +20,6 @@ def _branding_icon_path() -> Path:
         if candidate.exists():
             return candidate
     return Path("icon.png")
-# codex-branding:end
 
 
 def _bootstrap():
@@ -81,6 +79,32 @@ _root_logger.addHandler(_console_handler)
 logger = logging.getLogger('QuickFind')
 
 
+def _handle_service_command(argv: list[str]) -> bool:
+    service_commands = {
+        "--install-service": "install_service",
+        "--remove-service": "remove_service",
+        "--start-service": "start_service",
+        "--stop-service": "stop_service",
+        "--run-service": "run_service_dispatcher",
+        "--service-foreground": "run_foreground_service",
+    }
+    command = next((arg for arg in argv[1:] if arg in service_commands), None)
+    if command is None:
+        return False
+
+    admin_commands = {
+        "--install-service", "--remove-service", "--start-service", "--stop-service",
+    }
+    if command in admin_commands and not is_admin():
+        logger.info("Service command requires admin rights - attempting elevation...")
+        if try_elevate():
+            return True
+
+    from service import windows_service
+    handler = getattr(windows_service, service_commands[command])
+    sys.exit(handler())
+
+
 def excepthook(exc_type, exc_value, exc_tb):
     """Global exception handler - log and show messagebox."""
     msg = ''.join(traceback.format_exception(exc_type, exc_value, exc_tb))
@@ -120,6 +144,9 @@ def try_elevate() -> bool:
 
 
 def main():
+    if _handle_service_command(sys.argv):
+        return
+
     admin = is_admin()
     if not admin:
         logger.info("Not running as admin - attempting elevation for MFT access...")

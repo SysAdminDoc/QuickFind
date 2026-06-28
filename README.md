@@ -1,14 +1,14 @@
-# QuickFind v0.8.0
+# QuickFind v0.8.1
 
 Lightning-fast file search for Windows, powered by NTFS MFT + USN Journal.
 
 An open-source alternative to [Voidtools Everything](https://www.voidtools.com/), built with Python and PyQt6 for extensibility and customization.
 
-![Version](https://img.shields.io/badge/Version-v0.8.0-blueviolet)
+![Version](https://img.shields.io/badge/Version-v0.8.1-blueviolet)
 ![Python](https://img.shields.io/badge/Python-3.10+-blue)
 ![License](https://img.shields.io/badge/License-MIT-green)
 ![Platform](https://img.shields.io/badge/Platform-Windows-lightgrey)
-![Tests](https://img.shields.io/badge/Tests-175%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/Tests-179%20passing-brightgreen)
 
 ## Features
 
@@ -58,13 +58,14 @@ An open-source alternative to [Voidtools Everything](https://www.voidtools.com/)
 
 ### Advanced
 - **HTTP/HTTPS server** for remote web browser access with TLS certificate support, token-based authentication, per-IP rate limiting (60 req/min), XSS protection (CSP headers + `html.escape`), and sticky-header web UI
+- **Windows service mode** for background indexing/monitoring with GUI status heartbeat over localhost IPC
 - **`.quickfindignore`** files — place in any directory with glob patterns to exclude files/folders from indexing (like `.gitignore`)
 - **EFU file lists** for indexing non-NTFS and network drives
 - **CLI tool** (`es.py`) with full search syntax, CSV/JSON output, and DB cache for instant results
 - **Per-drive rescan intervals** — configure different rescan frequencies for SSD vs NAS drives
 - **Export/import settings** — save and restore configuration as validated JSON
 - **Log rotation** — `RotatingFileHandler` with 5 MB max and 3 backups
-- **175 automated tests** covering search parsing, archive search, content adapters/cache, duplicate detection, MFT record parsing, privilege lifecycle, settings validation, index mode UI state, results-view cache bounds, cache helpers, remote server configuration, and ignore patterns
+- **179 automated tests** covering search parsing, archive search, content adapters/cache, service IPC, duplicate detection, MFT record parsing, privilege lifecycle, settings validation, index mode UI state, results-view cache bounds, cache helpers, remote server configuration, and ignore patterns
 - **PyInstaller build script** for single-file or single-folder distribution
 
 ## Requirements
@@ -107,6 +108,18 @@ python cli/es.py -f -s dm "report"
 
 # Search specific drives
 python cli/es.py --drives C,D "*.docx"
+```
+
+## Service Mode
+
+```bash
+# Install the background index service
+python quickfind.py --install-service
+
+# Start/stop/remove the service
+python quickfind.py --start-service
+python quickfind.py --stop-service
+python quickfind.py --remove-service
 ```
 
 ## Build
@@ -197,12 +210,16 @@ QuickFind/
     theme.py                # Catppuccin Mocha theme system
   server/
     http_server.py          # Remote web search server + token auth + rate limiting
+  service/
+    windows_service.py      # pywin32 background index service
+    ipc.py                  # localhost JSON status socket
   cli/
     es.py                   # Command-line search tool + DB cache
   tests/
     test_search.py          # Search parsing, modifiers, smart case, fuzzy matching
     test_archive_search.py  # ZIP/7z archive member search
     test_content_search.py  # Content extraction, cache, and preview context
+    test_service.py         # Service status socket and install wiring
     test_ntfs.py            # MFT record parsing, FILETIME conversion, USA fixup
     test_cache.py           # Datetime conversion, FTS5 detection
     test_index.py           # .quickfindignore pattern matching
@@ -223,16 +240,17 @@ QuickFind/
 8. **Search**: Parses query modifiers, compiles matchers (regex/wildcard/substring/fuzzy/content), and filters the in-memory index — falls back to SQLite FTS5 for simple queries
 9. **Content Cache**: TXT/PDF/DOCX/PPTX adapters extract text into an on-disk SQLite FTS5 cache for faster repeated `content:` searches
 10. **DB Cache**: SQLite FTS5 database persists the index for instant CLI searches and fast startup recovery
-11. **Usage Tracking**: Files opened via QuickFind have their open counts tracked in SQLite for relevance-based ranking
+11. **Service Mode**: Optional Windows service keeps the index warm in the background and exposes localhost JSON status for the GUI
+12. **Usage Tracking**: Files opened via QuickFind have their open counts tracked in SQLite for relevance-based ranking
 
 ## Testing
 
 ```bash
-# Run the test suite (175 tests)
+# Run the test suite (179 tests)
 python -m pytest tests/ -v
 ```
 
-Tests cover search query parsing (all modifiers), archive member search, content extraction/cache, size/date helpers, smart case sensitivity, fuzzy matching, MFT record parsing, USA fixup, USN records, cache datetime round-trip, FTS5 detection, results-view cache bounds, `.quickfindignore` pattern matching, and EFU file loading.
+Tests cover search query parsing (all modifiers), archive member search, content extraction/cache, service IPC, size/date helpers, smart case sensitivity, fuzzy matching, MFT record parsing, USA fixup, USN records, cache datetime round-trip, FTS5 detection, results-view cache bounds, `.quickfindignore` pattern matching, and EFU file loading.
 
 ## Security
 

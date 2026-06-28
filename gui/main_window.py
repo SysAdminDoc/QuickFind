@@ -310,6 +310,11 @@ class MainWindow(QMainWindow):
         self._db_stats_label.setStyleSheet(f"color: {MOCHA['overlay0']}; font-size: 11px; padding: 0 8px;")
         self._status_bar.addPermanentWidget(self._db_stats_label)
 
+        self._service_status_label = QLabel("")
+        self._service_status_label.setAccessibleName("Service status")
+        self._service_status_label.setStyleSheet(f"color: {MOCHA['blue']}; font-size: 11px; padding: 0 8px;")
+        self._status_bar.addPermanentWidget(self._service_status_label)
+
         self._perf_label = QLabel("")
         self._perf_label.setStyleSheet(f"color: {MOCHA['overlay0']}; font-size: 11px; padding: 0 8px;")
         self._status_bar.addPermanentWidget(self._perf_label)
@@ -982,6 +987,7 @@ class MainWindow(QMainWindow):
     def _refresh_status_bar(self):
         """Update the live status bar with DB stats."""
         from core.cache import db_count, db_size_bytes
+        from service.ipc import query_service_status
 
         self._refresh_index_mode_indicator()
 
@@ -999,6 +1005,18 @@ class MainWindow(QMainWindow):
                 self._db_stats_label.setText(f"DB: {entry_count:,} entries ({size_str})")
             else:
                 self._db_stats_label.setText("")
+
+            service_status = query_service_status()
+            if service_status and service_status.get("ok"):
+                service_state = service_status.get("state", "running")
+                service_entries = int(service_status.get("entries") or 0)
+                self._service_status_label.setText(
+                    f"Service: {service_state} ({service_entries:,})"
+                )
+                self._service_status_label.setToolTip("QuickFind background index service")
+            else:
+                self._service_status_label.setText("")
+                self._service_status_label.setToolTip("")
 
             if self._file_index.stats.last_update:
                 self._last_update_label.setText(

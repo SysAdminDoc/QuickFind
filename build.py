@@ -76,6 +76,8 @@ def build(onefile=False):
         'gui.main_window', 'gui.results_view', 'gui.settings_dialog',
         'gui.theme', 'gui.tray', 'cli.es', 'server.http_server', 'py7zr',
         'pdfplumber', 'docx', 'pptx',
+        'service.ipc', 'service.windows_service',
+        'win32serviceutil', 'win32service', 'win32event', 'servicemanager',
     ]
     for h in hidden:
         cmd.extend(['--hidden-import', h])

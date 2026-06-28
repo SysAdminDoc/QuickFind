@@ -1,5 +1,6 @@
 PyQt6
 pdfplumber
 py7zr
+pywin32
 python-docx
 python-pptx
