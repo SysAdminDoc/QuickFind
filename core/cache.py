@@ -19,10 +19,15 @@ import logging
 import time
 from pathlib import Path
 from datetime import datetime
-from typing import Optional
+from typing import Callable, Optional
 
 from core.index import FileEntry, FileIndex, NTFS_ROOT_FRN
 from core.ntfs import FILE_ATTRIBUTE_DIRECTORY
+from core.sqlite_compat import (
+    MIN_SAFE_FTS5_SQLITE_VERSION_TEXT,
+    fts5_gate_status,
+    is_fts5_sqlite_version_safe,
+)
 
 logger = logging.getLogger('QuickFind.Cache')
 
@@ -69,10 +74,13 @@ def _close_connection():
         _local.conn = None
 
 
-def _has_fts5() -> bool:
+def _has_fts5(sqlite_version: str = sqlite3.sqlite_version,
+              connect: Callable[..., sqlite3.Connection] = sqlite3.connect) -> bool:
     """Check if FTS5 is available in this SQLite build."""
+    if not is_fts5_sqlite_version_safe(sqlite_version):
+        return False
     try:
-        conn = sqlite3.connect(":memory:")
+        conn = connect(":memory:")
         conn.execute("CREATE VIRTUAL TABLE _test USING fts5(x)")
         conn.execute("DROP TABLE _test")
         conn.close()
@@ -81,10 +89,13 @@ def _has_fts5() -> bool:
         return False
 
 
-def _has_trigram() -> bool:
+def _has_trigram(sqlite_version: str = sqlite3.sqlite_version,
+                 connect: Callable[..., sqlite3.Connection] = sqlite3.connect) -> bool:
     """Check if the FTS5 trigram tokenizer is available."""
+    if not is_fts5_sqlite_version_safe(sqlite_version):
+        return False
     try:
-        conn = sqlite3.connect(":memory:")
+        conn = connect(":memory:")
         conn.execute("CREATE VIRTUAL TABLE _test USING fts5(x, tokenize='trigram')")
         conn.execute("DROP TABLE _test")
         conn.close()
@@ -94,10 +105,18 @@ def _has_trigram() -> bool:
 
 
 # Detect capabilities at import time
-_FTS5_AVAILABLE = _has_fts5()
-_TRIGRAM_AVAILABLE = _has_trigram() if _FTS5_AVAILABLE else False
+_SQLITE_VERSION = sqlite3.sqlite_version
+_FTS5_VERSION_SAFE = is_fts5_sqlite_version_safe(_SQLITE_VERSION)
+_FTS5_AVAILABLE = _has_fts5(_SQLITE_VERSION)
+_TRIGRAM_AVAILABLE = _has_trigram(_SQLITE_VERSION) if _FTS5_AVAILABLE else False
 
-if _FTS5_AVAILABLE:
+logger.info("SQLite runtime version: %s", _SQLITE_VERSION)
+if not _FTS5_VERSION_SAFE:
+    logger.warning(
+        "%s; falling back to LIKE queries for entry and content search",
+        fts5_gate_status(_SQLITE_VERSION),
+    )
+elif _FTS5_AVAILABLE:
     if _TRIGRAM_AVAILABLE:
         logger.info("SQLite FTS5 with trigram tokenizer available")
     else:
@@ -643,7 +662,8 @@ def save_cache(index: FileIndex, usn_positions: dict[str, tuple[int, int]]):
         _rebuild_fts(conn)
 
         elapsed = (time.perf_counter() - start) * 1000
-        logger.info(f"Cache saved: {total:,} entries in {elapsed:.0f}ms (SQLite + FTS5)")
+        search_mode = "SQLite + FTS5" if _FTS5_AVAILABLE else "SQLite + LIKE"
+        logger.info(f"Cache saved: {total:,} entries in {elapsed:.0f}ms ({search_mode})")
 
         if OLD_CACHE_FILE.exists():
             try:

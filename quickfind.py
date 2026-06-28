@@ -72,6 +72,7 @@ def _load_qt_modules(import_module=importlib.import_module):
 QApplication, QMessageBox, Qt, QTimer, QIcon, QFont = _load_qt_modules()
 
 from core.version import APP_NAME, VERSION
+from core.sqlite_compat import fts5_gate_status
 
 # Crash logging
 LOG_DIR = Path.home() / '.quickfind'
@@ -102,6 +103,7 @@ _console_handler.setFormatter(logging.Formatter(
 _root_logger.addHandler(_console_handler)
 
 logger = logging.getLogger('QuickFind')
+logger.info("SQLite runtime: %s", fts5_gate_status())
 
 
 def _handle_service_command(argv: list[str]) -> bool:

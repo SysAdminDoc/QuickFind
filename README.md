@@ -1,14 +1,14 @@
-# QuickFind v0.8.2
+# QuickFind v0.8.3
 
 Lightning-fast file search for Windows, powered by NTFS MFT + USN Journal.
 
 An open-source alternative to [Voidtools Everything](https://www.voidtools.com/), built with Python and PyQt6 for extensibility and customization.
 
-![Version](https://img.shields.io/badge/Version-v0.8.2-blueviolet)
+![Version](https://img.shields.io/badge/Version-v0.8.3-blueviolet)
 ![Python](https://img.shields.io/badge/Python-3.10+-blue)
 ![License](https://img.shields.io/badge/License-MIT-green)
 ![Platform](https://img.shields.io/badge/Platform-Windows-lightgrey)
-![Tests](https://img.shields.io/badge/Tests-183%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/Tests-187%20passing-brightgreen)
 
 ## Features
 
@@ -18,7 +18,7 @@ An open-source alternative to [Voidtools Everything](https://www.voidtools.com/)
 - **USN Journal V2/V3/V4** support — V3/V4 with 128-bit file IDs for ReFS compatibility
 - **Real-time updates** via USN Change Journal monitoring (NTFS) and configurable periodic rescan (FAT/exFAT/ReFS)
 - **Non-admin fallback** — gracefully degrades to `os.scandir` when UAC is declined, with a persistent status-bar indicator
-- **SQLite FTS5** full-text search cache with WAL mode and memory-mapped I/O
+- **SQLite FTS5** full-text search cache with WAL mode and memory-mapped I/O, gated to patched SQLite runtimes with LIKE fallback
 - **DB corruption recovery** with automatic integrity checks and rebuild
 - **Sub-second search** across millions of files with compiled pattern matching
 - **Incremental availability** — search is available as soon as the first drive finishes indexing
@@ -65,7 +65,7 @@ An open-source alternative to [Voidtools Everything](https://www.voidtools.com/)
 - **Per-drive rescan intervals** — configure different rescan frequencies for SSD vs NAS drives
 - **Export/import settings** — save and restore configuration as validated JSON
 - **Log rotation** — `RotatingFileHandler` with 5 MB max and 3 backups
-- **183 automated tests** covering startup dependency handling, search parsing, archive search, content adapters/cache, service IPC, duplicate detection, MFT record parsing, privilege lifecycle, settings validation, index mode UI state, results-view cache bounds, cache helpers, remote server configuration, and ignore patterns
+- **187 automated tests** covering startup dependency handling, SQLite/FTS5 version gates, search parsing, archive search, content adapters/cache, service IPC, duplicate detection, MFT record parsing, privilege lifecycle, settings validation, index mode UI state, results-view cache bounds, cache helpers, remote server configuration, and ignore patterns
 - **PyInstaller build script** for single-file or single-folder distribution
 
 ## Requirements
@@ -89,6 +89,8 @@ python quickfind.py
 ```
 
 QuickFind never installs dependencies at startup. Source runs require the dependencies above to be installed first; frozen builds must bundle them through `build.py`.
+
+SQLite FTS5 is enabled only on SQLite 3.53.2 or newer. Older runtimes keep working through LIKE-based entry and content search fallback.
 
 ## CLI Usage
 
@@ -248,11 +250,11 @@ QuickFind/
 ## Testing
 
 ```bash
-# Run the test suite (183 tests)
+# Run the test suite (187 tests)
 python -m pytest tests/ -v
 ```
 
-Tests cover startup dependency handling, search query parsing (all modifiers), archive member search, content extraction/cache, service IPC, size/date helpers, smart case sensitivity, fuzzy matching, MFT record parsing, USA fixup, USN records, cache datetime round-trip, FTS5 detection, results-view cache bounds, `.quickfindignore` pattern matching, and EFU file loading.
+Tests cover startup dependency handling, SQLite/FTS5 version gates, search query parsing (all modifiers), archive member search, content extraction/cache, service IPC, size/date helpers, smart case sensitivity, fuzzy matching, MFT record parsing, USA fixup, USN records, cache datetime round-trip, FTS5 detection, results-view cache bounds, `.quickfindignore` pattern matching, and EFU file loading.
 
 ## Security
 

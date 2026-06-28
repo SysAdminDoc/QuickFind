@@ -2,6 +2,12 @@
 
 All notable changes to QuickFind will be documented in this file.
 
+## [v0.8.3] - 2026-06-28
+
+- Added a SQLite/FTS5 runtime gate that disables FTS5 on SQLite versions below the patched 3.53.2 minimum.
+- Logged SQLite runtime gate status during app startup and PyInstaller builds.
+- Added SQLite compatibility tests and expanded the passing suite to 187 tests.
+
 ## [v0.8.2] - 2026-06-28
 
 - Removed the runtime PyQt6 auto-install path from app startup.

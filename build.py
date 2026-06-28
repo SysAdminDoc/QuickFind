@@ -12,9 +12,11 @@ Usage:
 import subprocess
 import sys
 import shutil
+import sqlite3
 from pathlib import Path
 
 from core.version import APP_NAME, VERSION
+from core.sqlite_compat import fts5_gate_status
 
 ROOT = Path(__file__).parent
 DIST = ROOT / 'dist'
@@ -90,6 +92,7 @@ def build(onefile=False):
     cmd.append(str(ROOT / ENTRY))
 
     print(f"[*] Building {APP_NAME} v{VERSION} ({'onefile' if onefile else 'onedir'})...")
+    print(f"[*] SQLite runtime: {fts5_gate_status(sqlite3.sqlite_version)}")
     print(f"    Command: {' '.join(cmd)}")
 
     result = subprocess.run(cmd, cwd=str(ROOT))
