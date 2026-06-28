@@ -1,14 +1,14 @@
-# QuickFind v0.8.1
+# QuickFind v0.8.2
 
 Lightning-fast file search for Windows, powered by NTFS MFT + USN Journal.
 
 An open-source alternative to [Voidtools Everything](https://www.voidtools.com/), built with Python and PyQt6 for extensibility and customization.
 
-![Version](https://img.shields.io/badge/Version-v0.8.1-blueviolet)
+![Version](https://img.shields.io/badge/Version-v0.8.2-blueviolet)
 ![Python](https://img.shields.io/badge/Python-3.10+-blue)
 ![License](https://img.shields.io/badge/License-MIT-green)
 ![Platform](https://img.shields.io/badge/Platform-Windows-lightgrey)
-![Tests](https://img.shields.io/badge/Tests-179%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/Tests-183%20passing-brightgreen)
 
 ## Features
 
@@ -65,7 +65,7 @@ An open-source alternative to [Voidtools Everything](https://www.voidtools.com/)
 - **Per-drive rescan intervals** — configure different rescan frequencies for SSD vs NAS drives
 - **Export/import settings** — save and restore configuration as validated JSON
 - **Log rotation** — `RotatingFileHandler` with 5 MB max and 3 backups
-- **179 automated tests** covering search parsing, archive search, content adapters/cache, service IPC, duplicate detection, MFT record parsing, privilege lifecycle, settings validation, index mode UI state, results-view cache bounds, cache helpers, remote server configuration, and ignore patterns
+- **183 automated tests** covering startup dependency handling, search parsing, archive search, content adapters/cache, service IPC, duplicate detection, MFT record parsing, privilege lifecycle, settings validation, index mode UI state, results-view cache bounds, cache helpers, remote server configuration, and ignore patterns
 - **PyInstaller build script** for single-file or single-folder distribution
 
 ## Requirements
@@ -87,6 +87,8 @@ pip install -r requirements.txt
 # Run (attempts admin elevation, falls back gracefully)
 python quickfind.py
 ```
+
+QuickFind never installs dependencies at startup. Source runs require the dependencies above to be installed first; frozen builds must bundle them through `build.py`.
 
 ## CLI Usage
 
@@ -246,11 +248,11 @@ QuickFind/
 ## Testing
 
 ```bash
-# Run the test suite (179 tests)
+# Run the test suite (183 tests)
 python -m pytest tests/ -v
 ```
 
-Tests cover search query parsing (all modifiers), archive member search, content extraction/cache, service IPC, size/date helpers, smart case sensitivity, fuzzy matching, MFT record parsing, USA fixup, USN records, cache datetime round-trip, FTS5 detection, results-view cache bounds, `.quickfindignore` pattern matching, and EFU file loading.
+Tests cover startup dependency handling, search query parsing (all modifiers), archive member search, content extraction/cache, service IPC, size/date helpers, smart case sensitivity, fuzzy matching, MFT record parsing, USA fixup, USN records, cache datetime round-trip, FTS5 detection, results-view cache bounds, `.quickfindignore` pattern matching, and EFU file loading.
 
 ## Security
 

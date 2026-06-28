@@ -2,6 +2,12 @@
 
 All notable changes to QuickFind will be documented in this file.
 
+## [v0.8.2] - 2026-06-28
+
+- Removed the runtime PyQt6 auto-install path from app startup.
+- Added explicit source-run and frozen-build dependency errors instead of invoking pip from the application.
+- Added startup dependency tests and expanded the passing suite to 183 tests.
+
 ## [v0.8.1] - 2026-06-28
 
 - Added Windows service mode commands for installing, starting, stopping, removing, and running the background index service.

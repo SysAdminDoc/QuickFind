@@ -3,6 +3,7 @@
 
 import sys
 import os
+import importlib
 from pathlib import Path
 
 
@@ -22,29 +23,53 @@ def _branding_icon_path() -> Path:
     return Path("icon.png")
 
 
-def _bootstrap():
-    """Auto-install all dependencies before any imports."""
-    required = ['PyQt6']
-    import subprocess
-    for pkg in required:
-        try:
-            __import__(pkg.replace('-', '_').split('[')[0])
-        except ImportError:
-            subprocess.check_call([
-                sys.executable, '-m', 'pip', 'install', pkg, '-q'
-            ])
-
-_bootstrap()
-
 import ctypes
 import logging
 import logging.handlers
 import traceback
 from datetime import datetime
 
-from PyQt6.QtWidgets import QApplication, QMessageBox
-from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QIcon, QFont
+
+def _missing_dependency_message(module_name: str) -> str:
+    if getattr(sys, "frozen", False):
+        return (
+            f"QuickFind is missing bundled dependency {module_name}. "
+            "Rebuild the executable from an environment where requirements.txt is installed."
+        )
+
+    return (
+        f"QuickFind requires {module_name}. Install dependencies before running from source:\n"
+        "  python -m pip install -r requirements.txt"
+    )
+
+
+def _exit_missing_dependency(module_name: str, error: BaseException) -> None:
+    print(_missing_dependency_message(module_name), file=sys.stderr)
+    raise SystemExit(1) from error
+
+
+def _load_qt_modules(import_module=importlib.import_module):
+    try:
+        widgets = import_module("PyQt6.QtWidgets")
+        core = import_module("PyQt6.QtCore")
+        gui = import_module("PyQt6.QtGui")
+    except ModuleNotFoundError as exc:
+        missing = exc.name or "PyQt6"
+        if missing == "PyQt6" or missing.startswith("PyQt6."):
+            _exit_missing_dependency(missing, exc)
+        raise
+
+    return (
+        widgets.QApplication,
+        widgets.QMessageBox,
+        core.Qt,
+        core.QTimer,
+        gui.QIcon,
+        gui.QFont,
+    )
+
+
+QApplication, QMessageBox, Qt, QTimer, QIcon, QFont = _load_qt_modules()
 
 from core.version import APP_NAME, VERSION
 
