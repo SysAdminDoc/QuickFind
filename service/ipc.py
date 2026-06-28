@@ -4,6 +4,7 @@ import json
 import socket
 import socketserver
 import threading
+from datetime import datetime
 from typing import Callable, Optional
 
 
@@ -87,3 +88,36 @@ def query_service_status(timeout: float = 0.25,
         return json.loads(b"".join(chunks).decode("utf-8"))
     except (OSError, json.JSONDecodeError):
         return None
+
+
+def service_health(timeout: float = 0.25,
+                   host: str = SERVICE_HOST,
+                   port: int = SERVICE_PORT,
+                   query_func: Callable[..., Optional[dict]] = query_service_status) -> dict:
+    """Return a normalized heartbeat record for diagnostics UI."""
+    checked_at = datetime.now().isoformat(timespec="seconds")
+    status = query_func(timeout=timeout, host=host, port=port)
+    if not status or not status.get("ok"):
+        return {
+            "available": False,
+            "state": "unreachable",
+            "entries": 0,
+            "files": 0,
+            "folders": 0,
+            "last_update": "",
+            "started_at": "",
+            "checked_at": checked_at,
+            "error": status.get("error", "") if isinstance(status, dict) else "",
+        }
+    return {
+        "available": True,
+        "state": str(status.get("state", "running")),
+        "entries": int(status.get("entries") or 0),
+        "files": int(status.get("files") or 0),
+        "folders": int(status.get("folders") or 0),
+        "admin_mode": bool(status.get("admin_mode", False)),
+        "last_update": str(status.get("last_update", "")),
+        "started_at": str(status.get("started_at", "")),
+        "checked_at": checked_at,
+        "error": "",
+    }

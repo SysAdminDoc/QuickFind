@@ -7,7 +7,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pytest
 import core.index as index_mod
-from core.index import FileIndex
+from core.index import FileEntry, FileIndex, NTFS_ROOT_FRN
+from core.ntfs import FILE_ATTRIBUTE_DIRECTORY
 
 
 class TestIgnorePatterns:
@@ -61,3 +62,35 @@ class TestIndexMode:
         index.index_all_drives(drives=[], force_walk=True)
 
         assert index.is_admin_mode is False
+
+    def test_index_diagnostics_reports_drive_modes_and_usn(self):
+        index = FileIndex()
+        file_entry = FileEntry(10, NTFS_ROOT_FRN, "file.txt", "C")
+        folder_entry = FileEntry(20, NTFS_ROOT_FRN, "Docs", "E", FILE_ATTRIBUTE_DIRECTORY)
+        index._entries = {
+            "C": {
+                NTFS_ROOT_FRN: FileEntry(NTFS_ROOT_FRN, 0, "", "C", FILE_ATTRIBUTE_DIRECTORY),
+                10: file_entry,
+            },
+            "E": {
+                NTFS_ROOT_FRN: FileEntry(NTFS_ROOT_FRN, 0, "", "E", FILE_ATTRIBUTE_DIRECTORY),
+                20: folder_entry,
+            },
+        }
+        index._all_entries = [file_entry, folder_entry]
+        index._stats.total_files = 1
+        index._stats.total_folders = 1
+        index._volumes["C"] = type("Volume", (), {"journal_id": 7, "current_usn": 99})()
+        index._walked_drives.add("E")
+        index.set_external_source("EFU file list: sample.efu")
+
+        diagnostics = index.index_diagnostics()
+        drives = {row["drive"]: row for row in diagnostics["drives"]}
+
+        assert diagnostics["source"] == "EFU file list: sample.efu"
+        assert diagnostics["total_entries"] == 2
+        assert drives["C"]["mode"] == "MFT + USN"
+        assert drives["C"]["journal_id"] == 7
+        assert drives["C"]["next_usn"] == 99
+        assert drives["E"]["mode"] == "os.scandir"
+        assert drives["E"]["folders"] == 1

@@ -543,6 +543,59 @@ def get_content_cache_size_bytes() -> int:
     return get_content_cache_stats()["text_bytes"]
 
 
+def cache_diagnostics(run_integrity_check: bool = True) -> dict:
+    """Return cache health details for diagnostics UI."""
+    exists = DB_FILE.exists()
+    diagnostics = {
+        "db_file": str(DB_FILE),
+        "db_exists": exists,
+        "db_size_bytes": db_size_bytes(),
+        "entry_count": 0,
+        "integrity_ok": None,
+        "db_version": "",
+        "last_saved": "",
+        "sqlite_version": _SQLITE_VERSION,
+        "fts5_status": fts5_gate_status(_SQLITE_VERSION),
+        "drives": [],
+        "content": get_content_cache_stats(),
+    }
+    if not exists:
+        return diagnostics
+
+    if run_integrity_check:
+        diagnostics["integrity_ok"] = check_db_integrity()
+        if diagnostics["integrity_ok"] is False:
+            return diagnostics
+
+    try:
+        conn = _get_connection()
+        _init_schema(conn)
+        diagnostics["entry_count"] = db_count()
+
+        meta = {
+            key: value
+            for key, value in conn.execute("SELECT key, value FROM meta").fetchall()
+        }
+        diagnostics["db_version"] = meta.get("version", "")
+        diagnostics["last_saved"] = meta.get("last_saved", "")
+
+        drive_rows = conn.execute(
+            "SELECT letter, flags, journal_id, next_usn FROM drives ORDER BY letter"
+        ).fetchall()
+        diagnostics["drives"] = [
+            {
+                "drive": letter,
+                "mode": "os.scandir" if flags & DRIVE_FLAG_WALKED else "MFT + USN",
+                "journal_id": int(journal_id or 0),
+                "next_usn": int(next_usn or 0),
+            }
+            for letter, flags, journal_id, next_usn in drive_rows
+        ]
+    except Exception as e:
+        logger.debug(f"cache_diagnostics failed: {e}")
+    return diagnostics
+
+
 def _content_fts_query(search_text: str) -> str:
     escaped = search_text.replace('"', '""')
     return f'"{escaped}"'

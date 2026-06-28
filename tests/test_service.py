@@ -4,7 +4,7 @@ import socket
 import types
 from datetime import datetime
 
-from service.ipc import ServiceStatusServer, query_service_status
+from service.ipc import ServiceStatusServer, query_service_status, service_health
 from service import windows_service
 
 
@@ -29,6 +29,39 @@ def test_service_status_socket_roundtrip():
     assert status["ok"] is True
     assert status["state"] == "monitoring"
     assert status["entries"] == 42
+
+
+def test_service_health_normalizes_reachable_status():
+    def fake_query(**_kwargs):
+        return {
+            "ok": True,
+            "state": "monitoring",
+            "entries": 42,
+            "files": 30,
+            "folders": 12,
+            "admin_mode": True,
+            "last_update": "2026-06-28T12:00:00",
+            "started_at": "2026-06-28T11:00:00",
+        }
+
+    health = service_health(query_func=fake_query)
+
+    assert health["available"] is True
+    assert health["state"] == "monitoring"
+    assert health["entries"] == 42
+    assert health["admin_mode"] is True
+    assert health["checked_at"]
+
+
+def test_service_health_reports_unreachable_status():
+    def fake_query(**_kwargs):
+        return None
+
+    health = service_health(query_func=fake_query)
+
+    assert health["available"] is False
+    assert health["state"] == "unreachable"
+    assert health["entries"] == 0
 
 
 def test_build_service_status_payload():

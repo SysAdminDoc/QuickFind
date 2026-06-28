@@ -2,6 +2,13 @@
 
 All notable changes to QuickFind will be documented in this file.
 
+## [v0.8.8] - 2026-06-28
+
+- Added an Index Diagnostics dialog with cache integrity, per-drive mode/USN state, service heartbeat, content cache size, and recovery buttons.
+- Added structured index, cache, and service diagnostic summaries for UI and tests.
+- Tracked index source transitions for cache load, USN catchup, full scans, fallback scans, and EFU imports.
+- Added diagnostics regression tests and expanded the passing suite to 212 tests.
+
 ## [v0.8.7] - 2026-06-28
 
 - Locked the tested top-level runtime, build, and test dependencies in `requirements.txt`.

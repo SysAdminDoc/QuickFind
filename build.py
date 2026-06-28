@@ -117,6 +117,7 @@ def build(onefile=False):
         'core.content', 'core.content.adapters', 'core.content.indexer',
         'core.sqlite_compat',
         'gui.main_window', 'gui.results_view', 'gui.settings_dialog',
+        'gui.diagnostics_dialog',
         'gui.theme', 'gui.tray', 'cli.es', 'server.http_server', 'py7zr',
         'pdfplumber', 'docx', 'pptx',
         'service.ipc', 'service.windows_service',

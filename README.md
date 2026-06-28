@@ -1,14 +1,14 @@
-# QuickFind v0.8.7
+# QuickFind v0.8.8
 
 Lightning-fast file search for Windows, powered by NTFS MFT + USN Journal.
 
 An open-source alternative to [Voidtools Everything](https://www.voidtools.com/), built with Python and PyQt6 for extensibility and customization.
 
-![Version](https://img.shields.io/badge/Version-v0.8.7-blueviolet)
+![Version](https://img.shields.io/badge/Version-v0.8.8-blueviolet)
 ![Python](https://img.shields.io/badge/Python-3.10+-blue)
 ![License](https://img.shields.io/badge/License-MIT-green)
 ![Platform](https://img.shields.io/badge/Platform-Windows-lightgrey)
-![Tests](https://img.shields.io/badge/Tests-205%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/Tests-212%20passing-brightgreen)
 
 ## Features
 
@@ -53,6 +53,7 @@ An open-source alternative to [Voidtools Everything](https://www.voidtools.com/)
 - **Bookmarks** — save/restore search + filter state
 - **Context menu** — Open, Open Path, Copy Name/Path, Terminal Here (CMD/PowerShell/WT), Delete to Recycle Bin, Properties
 - **System tray** with minimize-to-tray and close-to-tray
+- **Index diagnostics** from the Tools menu with cache integrity, per-drive mode/USN state, service heartbeat, content cache size, and recovery buttons
 - **Dark title bar** via DwmSetWindowAttribute on Windows 10/11
 - **Accessibility** — `accessibleName`/`accessibleDescription` on key widgets; focus-visible states on all interactive elements
 
@@ -66,7 +67,7 @@ An open-source alternative to [Voidtools Everything](https://www.voidtools.com/)
 - **Export/import settings** — save and restore configuration as validated JSON
 - **Everything import hardening** — malformed CSV rows and invalid JSON are rejected before atomic filter/bookmark replacement
 - **Log rotation** — `RotatingFileHandler` with 5 MB max and 3 backups
-- **205 automated tests** covering startup dependency handling, build/runtime matrix reporting, SQLite/FTS5 version gates, remote auth/CORS hardening, Everything import validation, content indexing jobs/quotas/diagnostics, search parsing, archive search, content adapters/cache, service IPC, duplicate detection, MFT record parsing, privilege lifecycle, settings validation, index mode UI state, results-view cache bounds, cache helpers, remote server configuration, and ignore patterns
+- **212 automated tests** covering startup dependency handling, build/runtime matrix reporting, SQLite/FTS5 version gates, remote auth/CORS hardening, Everything import validation, index/cache/service diagnostics, content indexing jobs/quotas/diagnostics, search parsing, archive search, content adapters/cache, service IPC, duplicate detection, MFT record parsing, privilege lifecycle, settings validation, index mode UI state, results-view cache bounds, cache helpers, remote server configuration, and ignore patterns
 - **PyInstaller build script** for single-file or single-folder distribution
 
 ## Requirements
@@ -77,7 +78,7 @@ An open-source alternative to [Voidtools Everything](https://www.voidtools.com/)
 
 ## Supported Runtime Matrix
 
-| Component | Supported | Tested in v0.8.7 |
+| Component | Supported | Tested in v0.8.8 |
 |-----------|-----------|------------------|
 | OS | Windows 10/11 | Windows 10.0.26100 |
 | Python | 3.10+ | 3.11.9 |
@@ -225,6 +226,7 @@ QuickFind/
     context_menu.py         # Right-click menu with shell integration
     tray.py                 # System tray + global hotkey + app icon
     settings_dialog.py      # Settings dialog with tabs + export/import
+    diagnostics_dialog.py   # Index/cache/service diagnostics and recovery actions
     hidden_paths_dialog.py  # Hidden paths management dialog
     theme.py                # Catppuccin Mocha theme system
   server/
@@ -266,11 +268,11 @@ QuickFind/
 ## Testing
 
 ```bash
-# Run the test suite (205 tests)
+# Run the test suite (212 tests)
 python -m pytest tests/ -v
 ```
 
-Tests cover startup dependency handling, build/runtime matrix reporting, SQLite/FTS5 version gates, remote auth/CORS hardening, Everything import validation, content indexing jobs/quotas/diagnostics, search query parsing (all modifiers), archive member search, content extraction/cache, service IPC, size/date helpers, smart case sensitivity, fuzzy matching, MFT record parsing, USA fixup, USN records, cache datetime round-trip, FTS5 detection, results-view cache bounds, `.quickfindignore` pattern matching, and EFU file loading.
+Tests cover startup dependency handling, build/runtime matrix reporting, SQLite/FTS5 version gates, remote auth/CORS hardening, Everything import validation, index/cache/service diagnostics, content indexing jobs/quotas/diagnostics, search query parsing (all modifiers), archive member search, content extraction/cache, service IPC, size/date helpers, smart case sensitivity, fuzzy matching, MFT record parsing, USA fixup, USN records, cache datetime round-trip, FTS5 detection, results-view cache bounds, `.quickfindignore` pattern matching, and EFU file loading.
 
 ## Security
 

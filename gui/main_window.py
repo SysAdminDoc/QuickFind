@@ -674,6 +674,11 @@ class MainWindow(QMainWindow):
 
         tools_menu.addSeparator()
 
+        diagnostics = tools_menu.addAction("Index Diagnostics...")
+        diagnostics.triggered.connect(self._show_diagnostics)
+
+        tools_menu.addSeparator()
+
         manage_hidden = tools_menu.addAction("Manage &Hidden Paths...")
         manage_hidden.triggered.connect(self._show_manage_hidden_paths)
 
@@ -1327,6 +1332,7 @@ class MainWindow(QMainWindow):
                 if drive not in self._file_index._entries:
                     self._file_index._entries[drive] = {}
                 self._file_index._entries[drive][entry.frn] = entry
+            self._file_index.set_external_source(f"EFU file list: {os.path.basename(path)}")
             self._file_index._rebuild_flat_list()
             self._trigger_search()
 
@@ -1569,6 +1575,48 @@ class MainWindow(QMainWindow):
         dialog = HiddenPathsDialog(self._hidden_paths_manager, filter_name, self)
         dialog.exec()
         self._trigger_search()
+
+    def _show_diagnostics(self):
+        from gui.diagnostics_dialog import DiagnosticsDialog
+
+        dialog = DiagnosticsDialog(
+            self._file_index,
+            {
+                "rebuild": self._diagnostics_rebuild_index,
+                "save_cache": self._diagnostics_save_cache,
+                "start_service": lambda: self._diagnostics_service_action("start"),
+                "stop_service": lambda: self._diagnostics_service_action("stop"),
+            },
+            self,
+        )
+        dialog.exec()
+
+    def _diagnostics_rebuild_index(self) -> str:
+        self._start_indexing()
+        self._status_label.setText("Diagnostics requested index rebuild")
+        return "Index rebuild started."
+
+    def _diagnostics_save_cache(self) -> str:
+        self._file_index.save_to_cache()
+        self._refresh_status_bar()
+        self._status_label.setText("Index cache saved")
+        return "Index cache saved."
+
+    def _diagnostics_service_action(self, action: str) -> str:
+        from service import windows_service
+
+        if action == "start":
+            windows_service.start_service()
+            message = "Service start requested."
+        elif action == "stop":
+            windows_service.stop_service()
+            message = "Service stop requested."
+        else:
+            raise ValueError(f"Unknown service action: {action}")
+
+        self._refresh_status_bar()
+        self._status_label.setText(message)
+        return message
 
     # ── Settings ───────────────────────────────────────
 

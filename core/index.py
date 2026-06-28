@@ -150,6 +150,7 @@ class FileIndex(QObject):
         self._cancel_flag = False
         self._next_synthetic_frn = self._SYNTHETIC_FRN_BASE
         self._admin_mode: bool = True  # Assume admin; set False if MFT access fails
+        self._last_index_source: str = "not indexed"
 
         # Filtering options (set from settings before indexing)
         self._exclude_hidden: bool = False
@@ -172,6 +173,72 @@ class FileIndex(QObject):
     @property
     def is_admin_mode(self) -> bool:
         return self._admin_mode
+
+    @property
+    def last_index_source(self) -> str:
+        return self._last_index_source
+
+    def set_external_source(self, source: str) -> None:
+        self._last_index_source = source or "external source"
+
+    def index_diagnostics(self) -> dict:
+        """Return structured index state for UI diagnostics."""
+        monitor_running = bool(self._monitor_thread and self._monitor_thread.isRunning())
+        rescan_running = bool(self._rescan_thread and self._rescan_thread.isRunning())
+        pending_usn = bool(getattr(self, '_pending_usn_positions', None))
+        return {
+            "source": self._last_index_source,
+            "admin_mode": self._admin_mode,
+            "total_entries": len(self._all_entries),
+            "total_files": self._stats.total_files,
+            "total_folders": self._stats.total_folders,
+            "volumes_indexed": list(self._stats.volumes_indexed),
+            "index_time_ms": self._stats.index_time_ms,
+            "entries_per_sec": self._stats.entries_per_sec,
+            "last_update": self._stats.last_update.isoformat(timespec="seconds") if self._stats.last_update else "",
+            "monitor_running": monitor_running,
+            "rescan_running": rescan_running,
+            "pending_usn_catchup": pending_usn,
+            "drives": self.drive_diagnostics(),
+        }
+
+    def drive_diagnostics(self) -> list[dict]:
+        """Return per-drive index mode, counts, and USN position details."""
+        rows = []
+        with self._lock:
+            drive_letters = sorted(self._entries)
+            for drive in drive_letters:
+                entries = self._entries.get(drive, {})
+                files = 0
+                folders = 0
+                for frn, entry in entries.items():
+                    if frn == NTFS_ROOT_FRN:
+                        continue
+                    if entry.is_dir:
+                        folders += 1
+                    else:
+                        files += 1
+
+                volume = self._volumes.get(drive)
+                if drive in self._walked_drives:
+                    mode = "os.scandir fallback" if not self._admin_mode else "os.scandir"
+                elif volume is not None:
+                    mode = "MFT + USN"
+                else:
+                    mode = "cache"
+
+                rows.append({
+                    "drive": drive,
+                    "mode": mode,
+                    "entries": files + folders,
+                    "files": files,
+                    "folders": folders,
+                    "journal_id": getattr(volume, "journal_id", 0) if volume else 0,
+                    "next_usn": getattr(volume, "current_usn", 0) if volume else 0,
+                    "monitoring": bool(volume is not None and self._monitor_thread and self._monitor_thread.isRunning()),
+                    "rescanning": bool(drive in self._walked_drives and self._rescan_thread and self._rescan_thread.isRunning()),
+                })
+        return rows
 
     def get_entry(self, drive: str, frn: int) -> Optional[FileEntry]:
         """Get a specific entry by drive and FRN."""
@@ -291,6 +358,7 @@ class FileIndex(QObject):
 
         elapsed = (time.perf_counter() - start_time) * 1000
         total = total_files + total_folders
+        self._last_index_source = "SQLite cache"
         self._stats.total_files = total_files
         self._stats.total_folders = total_folders
         self._stats.volumes_indexed = drives
@@ -402,6 +470,7 @@ class FileIndex(QObject):
             self._stats.last_update = datetime.now()
             self.index_updated.emit(total_changes)
 
+        self._last_index_source = "SQLite cache + USN catchup"
         logger.info(f"USN catchup: {total_changes} changes applied in {elapsed:.0f}ms")
 
         # Cleanup
@@ -710,6 +779,15 @@ class FileIndex(QObject):
                         total_folders += 1
                     else:
                         total_files += 1
+
+        if force_walk:
+            self._last_index_source = "Full os.scandir scan"
+        elif mft_failed_drives:
+            self._last_index_source = "Full scan with os.scandir fallback"
+        elif non_ntfs_drives:
+            self._last_index_source = "Full scan (MFT + os.scandir)"
+        else:
+            self._last_index_source = "Full MFT scan"
 
         # Final rebuild to ensure consistency
         self._rebuild_flat_list()
