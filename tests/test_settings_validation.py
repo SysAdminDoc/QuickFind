@@ -29,6 +29,7 @@ DEFAULTS = {
     "exclude_attribute_mask": 0,
     "network_share_roots": [],
     "efu_refresh_interval_minutes": 0,
+    "theme_name": "mocha",
 }
 
 
@@ -145,6 +146,16 @@ def test_invalid_index_case_mode_resets_to_default():
 
     assert sanitized["index_case_mode"] == "smart"
     assert any("index_case_mode reset" in warning for warning in warnings)
+
+
+def test_invalid_theme_name_resets_to_default():
+    sanitized, warnings = sanitize_settings_data(
+        {"theme_name": "solarized"},
+        DEFAULTS,
+    )
+
+    assert sanitized["theme_name"] == "mocha"
+    assert any("theme_name reset" in warning for warning in warnings)
 
 
 def test_exclude_rule_settings_are_validated():

@@ -200,11 +200,14 @@ def main():
     app.setApplicationVersion(VERSION)
 
     # Import here after bootstrap
-    from gui.theme import apply_theme
+    from gui.settings_dialog import Settings
+    from gui.theme import apply_theme, set_active_theme
+    startup_settings = Settings.load()
+    set_active_theme(startup_settings.theme_name)
+    apply_theme(app)
+
     from gui.main_window import MainWindow
     from gui.tray import get_app_icon, generate_ico_file
-
-    apply_theme(app)
 
     # Generate icon on first run
     generate_ico_file()

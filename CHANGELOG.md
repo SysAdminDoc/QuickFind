@@ -2,6 +2,12 @@
 
 All notable changes to QuickFind will be documented in this file.
 
+## [v0.8.39] - 2026-06-29
+
+- Added selectable theme packs for Catppuccin Mocha, Macchiato, Frappe, and Latte.
+- Persisted the selected theme in settings and applied it during startup and direct main-window construction.
+- Added theme switching and validation coverage, expanding the passing suite to 320 tests.
+
 ## [v0.8.38] - 2026-06-29
 
 - Added a programmatic search modifier plugin API with registration, aliases, parser callbacks, and per-entry predicates.

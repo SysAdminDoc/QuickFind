@@ -29,6 +29,7 @@ STRING_FIELDS = {
 }
 
 INDEX_CASE_MODES = {"smart", "insensitive", "sensitive"}
+THEME_NAMES = {"mocha", "macchiato", "frappe", "latte"}
 
 STRING_LIST_FIELDS = {
     "exclude_globs",
@@ -115,6 +116,11 @@ def sanitize_settings_data(
     if not isinstance(index_case_mode, str) or index_case_mode not in INDEX_CASE_MODES:
         sanitized["index_case_mode"] = defaults.get("index_case_mode", "smart")
         warnings.append("index_case_mode reset because it must be smart, insensitive, or sensitive.")
+
+    theme_name = sanitized.get("theme_name", defaults.get("theme_name", "mocha"))
+    if not isinstance(theme_name, str) or theme_name not in THEME_NAMES:
+        sanitized["theme_name"] = defaults.get("theme_name", "mocha")
+        warnings.append("theme_name reset because it must be a known theme pack.")
 
     if not sanitized["http_bind"]:
         sanitized["http_bind"] = defaults["http_bind"]

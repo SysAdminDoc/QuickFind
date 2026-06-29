@@ -38,7 +38,7 @@ from core.workspaces import (
     workspace_roots_text,
 )
 
-from gui.theme import MOCHA, ACCENT
+from gui.theme import MOCHA, ACCENT, apply_theme, set_active_theme
 from gui.results_view import ResultsView
 from gui.preview_pane import PreviewPane, QuickPreviewPopover
 from gui.diff_dialog import DiffCompareDialog
@@ -185,6 +185,7 @@ class MainWindow(QMainWindow):
 
         # Core components
         self._settings = Settings.load()
+        set_active_theme(self._settings.theme_name)
         self._file_index = FileIndex()
         self._search_engine = SearchEngine(self._file_index)
         self._bookmark_manager = BookmarkManager()
@@ -875,6 +876,10 @@ class MainWindow(QMainWindow):
     def _apply_settings(self):
         """Apply current settings to the UI."""
         s = self._settings
+        set_active_theme(s.theme_name)
+        app = QApplication.instance()
+        if app:
+            apply_theme(app)
         self._preview_pane.setVisible(s.show_preview_pane)
         self._preview_action.setChecked(s.show_preview_pane)
         self._filter_combo.setVisible(s.show_filter_bar)
