@@ -21,6 +21,7 @@ from typing import Optional
 
 from core.index import FileIndex
 from core.search import SearchEngine, SearchOptions
+from core.version import VERSION
 from gui.theme import MOCHA
 
 logger = logging.getLogger('QuickFind.HTTPServer')
@@ -244,6 +245,71 @@ button {{
 </html>"""
 
 
+API_DOCS_TEMPLATE = """<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>QuickFind API</title>
+<style>
+* {{ margin: 0; padding: 0; box-sizing: border-box; }}
+body {{
+    background: {bg};
+    color: {text};
+    font-family: 'Segoe UI', -apple-system, system-ui, sans-serif;
+    line-height: 1.5;
+    min-height: 100vh;
+    padding: 28px;
+}}
+main {{ max-width: 880px; margin: 0 auto; display: grid; gap: 20px; }}
+h1 {{ color: {accent}; font-size: 24px; font-weight: 650; }}
+h2 {{ color: {text}; font-size: 17px; margin-bottom: 8px; }}
+p, li {{ color: {subtext0}; font-size: 14px; }}
+a {{ color: {accent}; }}
+section {{
+    border: 1px solid {surface0};
+    border-radius: 8px;
+    padding: 16px;
+    background: rgba(49,50,68,0.45);
+}}
+code, pre {{
+    background: {surface0};
+    border: 1px solid {surface1};
+    border-radius: 6px;
+    color: {text};
+    font-family: Consolas, 'Cascadia Code', monospace;
+}}
+code {{ padding: 1px 5px; }}
+pre {{ overflow-x: auto; padding: 12px; font-size: 12px; }}
+ul {{ display: grid; gap: 6px; padding-left: 18px; }}
+</style>
+</head>
+<body>
+<main>
+    <h1>QuickFind REST API</h1>
+    <section>
+        <h2>Authentication</h2>
+        <p>When an auth token is configured, use one of: <code>Authorization: Bearer &lt;token&gt;</code>, HTTP Basic auth with the token as the password, or the browser session cookie created by <code>POST /auth</code>.</p>
+    </section>
+    <section>
+        <h2>Search</h2>
+        <p><code>GET /api/search</code> searches the active index and returns structured results plus the HTML cards used by the web UI.</p>
+        <ul>
+            <li><code>q</code>: search query using QuickFind syntax.</li>
+            <li><code>type</code>: <code>all</code>, <code>files</code>, or <code>folders</code>.</li>
+            <li><code>max</code>: result cap from 1 to 10000; defaults to 1000.</li>
+        </ul>
+        <pre>curl -H "Authorization: Bearer &lt;token&gt;" "{base_url}/api/search?q=report&type=files&max=25"</pre>
+    </section>
+    <section>
+        <h2>OpenAPI</h2>
+        <p>The machine-readable OpenAPI 3.1 export is available at <a href="/openapi.json">/openapi.json</a>.</p>
+    </section>
+</main>
+</body>
+</html>"""
+
+
 def _format_size(size):
     if size <= 0: return ""
     if size < 1024: return f"{size} B"
@@ -259,6 +325,192 @@ def _query_with_remote_filters(query: str, type_filter: str) -> str:
     if type_filter == "folders":
         return f"folder: {clean_query}".strip()
     return clean_query
+
+
+def _coerce_remote_max_results(value: str | int | None, default: int = 1000) -> int:
+    try:
+        parsed = int(value) if value is not None else default
+    except (TypeError, ValueError):
+        parsed = default
+    return max(1, min(parsed, 10000))
+
+
+def _openapi_spec() -> dict:
+    return {
+        "openapi": "3.1.0",
+        "info": {
+            "title": "QuickFind Remote API",
+            "version": VERSION,
+            "description": "Read-only search API for the active QuickFind index.",
+        },
+        "servers": [{"url": "/"}],
+        "paths": {
+            "/api/search": {
+                "get": {
+                    "summary": "Search indexed files and folders",
+                    "description": (
+                        "Returns structured result metadata plus the HTML cards used "
+                        "by the built-in read-only web UI."
+                    ),
+                    "security": [
+                        {"bearerAuth": []},
+                        {"basicAuth": []},
+                        {"sessionCookie": []},
+                        {},
+                    ],
+                    "parameters": [
+                        {
+                            "name": "q",
+                            "in": "query",
+                            "schema": {"type": "string", "default": ""},
+                            "description": "QuickFind search query.",
+                        },
+                        {
+                            "name": "type",
+                            "in": "query",
+                            "schema": {
+                                "type": "string",
+                                "enum": ["all", "files", "folders"],
+                                "default": "all",
+                            },
+                            "description": "Optional file/folder filter.",
+                        },
+                        {
+                            "name": "max",
+                            "in": "query",
+                            "schema": {
+                                "type": "integer",
+                                "minimum": 1,
+                                "maximum": 10000,
+                                "default": 1000,
+                            },
+                            "description": "Maximum number of results to return.",
+                        },
+                    ],
+                    "responses": {
+                        "200": {
+                            "description": "Search results.",
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "required": ["count", "results", "cards", "rows"],
+                                        "properties": {
+                                            "count": {"type": "integer", "minimum": 0},
+                                            "results": {
+                                                "type": "array",
+                                                "items": {"$ref": "#/components/schemas/SearchResult"},
+                                            },
+                                            "cards": {
+                                                "type": "string",
+                                                "description": "Escaped HTML result cards for the built-in UI.",
+                                            },
+                                            "rows": {
+                                                "type": "string",
+                                                "deprecated": True,
+                                                "description": "Backward-compatible alias for cards.",
+                                            },
+                                        },
+                                    }
+                                }
+                            },
+                        },
+                        "401": {"$ref": "#/components/responses/Unauthorized"},
+                        "429": {"$ref": "#/components/responses/TooManyRequests"},
+                    },
+                }
+            },
+            "/openapi.json": {
+                "get": {
+                    "summary": "Export the OpenAPI document",
+                    "security": [
+                        {"bearerAuth": []},
+                        {"basicAuth": []},
+                        {"sessionCookie": []},
+                        {},
+                    ],
+                    "responses": {
+                        "200": {
+                            "description": "OpenAPI 3.1 document.",
+                            "content": {"application/json": {"schema": {"type": "object"}}},
+                        },
+                        "401": {"$ref": "#/components/responses/Unauthorized"},
+                        "429": {"$ref": "#/components/responses/TooManyRequests"},
+                    },
+                }
+            },
+            "/api/docs": {
+                "get": {
+                    "summary": "Serve the human-readable API documentation",
+                    "security": [
+                        {"bearerAuth": []},
+                        {"basicAuth": []},
+                        {"sessionCookie": []},
+                        {},
+                    ],
+                    "responses": {
+                        "200": {"description": "HTML API documentation."},
+                        "401": {"$ref": "#/components/responses/Unauthorized"},
+                        "429": {"$ref": "#/components/responses/TooManyRequests"},
+                    },
+                }
+            },
+        },
+        "components": {
+            "securitySchemes": {
+                "bearerAuth": {"type": "http", "scheme": "bearer"},
+                "basicAuth": {"type": "http", "scheme": "basic"},
+                "sessionCookie": {
+                    "type": "apiKey",
+                    "in": "cookie",
+                    "name": _SESSION_COOKIE_NAME,
+                },
+            },
+            "responses": {
+                "Unauthorized": {
+                    "description": "Authentication failed or is required.",
+                    "content": {
+                        "application/json": {
+                            "schema": {"$ref": "#/components/schemas/Error"}
+                        }
+                    },
+                },
+                "TooManyRequests": {
+                    "description": "Rate limit exceeded.",
+                    "content": {
+                        "application/json": {
+                            "schema": {"$ref": "#/components/schemas/Error"}
+                        }
+                    },
+                },
+            },
+            "schemas": {
+                "Error": {
+                    "type": "object",
+                    "required": ["error"],
+                    "properties": {"error": {"type": "string"}},
+                },
+                "SearchResult": {
+                    "type": "object",
+                    "required": ["name", "path", "parent_path", "type", "kind", "is_dir"],
+                    "properties": {
+                        "name": {"type": "string"},
+                        "path": {"type": "string", "description": "Full resolved path."},
+                        "parent_path": {"type": "string"},
+                        "drive": {"type": "string"},
+                        "type": {"type": "string", "enum": ["file", "folder"]},
+                        "kind": {"type": "string"},
+                        "extension": {"type": "string"},
+                        "is_dir": {"type": "boolean"},
+                        "size_bytes": {"type": ["integer", "null"], "minimum": 0},
+                        "size": {"type": "string"},
+                        "date_modified": {"type": ["string", "null"], "format": "date-time"},
+                        "date_modified_display": {"type": "string"},
+                    },
+                },
+            },
+        },
+    }
 
 
 class _RateLimiter:
@@ -380,6 +632,10 @@ class SearchHandler(BaseHTTPRequestHandler):
 
         if parsed.path == '/api/search':
             self._handle_api_search(params)
+        elif parsed.path == '/openapi.json':
+            self._handle_openapi_spec()
+        elif parsed.path in ('/api/docs', '/docs'):
+            self._handle_api_docs()
         elif parsed.path == '/' or parsed.path == '':
             self._handle_page(params)
         else:
@@ -441,20 +697,19 @@ class SearchHandler(BaseHTTPRequestHandler):
         """JSON API for AJAX search."""
         query = params.get('q', [''])[0]
         type_filter = params.get('type', ['all'])[0]
-        try:
-            max_results = int(params.get('max', ['1000'])[0])
-        except (ValueError, IndexError):
-            max_results = 1000
+        max_results = _coerce_remote_max_results(params.get('max', ['1000'])[0])
 
         search_query = _query_with_remote_filters(query, type_filter)
         results = self.search_engine.search(
-            search_query, max_results=min(max_results, 10000)
+            search_query, max_results=max_results
         )
 
-        cards_html = self._build_result_cards(results)
+        result_items = self._build_result_payloads(results)
+        cards_html = self._build_result_cards_from_payloads(result_items)
 
         response = json.dumps({
             'count': len(results),
+            'results': result_items,
             'cards': cards_html,
             'rows': cards_html,
         })
@@ -469,17 +724,16 @@ class SearchHandler(BaseHTTPRequestHandler):
         """Serve the main search page."""
         query = params.get('q', [''])[0]
         type_filter = params.get('type', ['all'])[0]
-        try:
-            max_results = int(params.get('max', ['1000'])[0])
-        except (ValueError, IndexError):
-            max_results = 1000
+        max_results = _coerce_remote_max_results(params.get('max', ['1000'])[0])
 
         search_query = _query_with_remote_filters(query, type_filter)
         results = self.search_engine.search(
             search_query,
-            max_results=min(max_results, 10000),
+            max_results=max_results,
         ) if search_query else []
-        cards_html = self._build_result_cards(results)
+        cards_html = self._build_result_cards_from_payloads(
+            self._build_result_payloads(results)
+        )
 
         page_html = HTML_TEMPLATE.format(
             bg=MOCHA['base'], text=MOCHA['text'], mantle=MOCHA['mantle'],
@@ -490,9 +744,34 @@ class SearchHandler(BaseHTTPRequestHandler):
             type_all='selected' if type_filter not in ('files', 'folders') else '',
             type_files='selected' if type_filter == 'files' else '',
             type_folders='selected' if type_filter == 'folders' else '',
-            max_results=max(1, min(max_results, 10000)),
+            max_results=max_results,
             count=len(results),
             cards=cards_html,
+        )
+
+        self.send_response(200)
+        self.send_header('Content-Type', 'text/html; charset=utf-8')
+        self._send_security_headers()
+        self.end_headers()
+        self.wfile.write(page_html.encode('utf-8'))
+
+    def _handle_openapi_spec(self):
+        response = json.dumps(_openapi_spec(), indent=2)
+        self.send_response(200)
+        self.send_header('Content-Type', 'application/json')
+        self._send_security_headers()
+        self.end_headers()
+        self.wfile.write(response.encode('utf-8'))
+
+    def _handle_api_docs(self):
+        host = self.headers.get('Host', '127.0.0.1:8080')
+        server_socket = getattr(getattr(self, 'server', None), 'socket', None)
+        scheme = 'https' if isinstance(server_socket, ssl.SSLSocket) else 'http'
+        page_html = API_DOCS_TEMPLATE.format(
+            bg=MOCHA['base'], text=MOCHA['text'],
+            surface0=MOCHA['surface0'], surface1=MOCHA['surface1'],
+            subtext0=MOCHA['subtext0'], accent=MOCHA['blue'],
+            base_url=f"{scheme}://{html.escape(host, quote=True)}",
         )
 
         self.send_response(200)
@@ -515,31 +794,58 @@ class SearchHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(page_html.encode('utf-8'))
 
-    def _build_result_cards(self, results):
-        """Build read-only result cards from search results."""
-        if not results:
+    def _build_result_payloads(self, results):
+        """Build structured JSON-safe result payloads from search results."""
+        payloads = []
+        for entry in results[:1000]:
+            parent_path = self.file_index.resolve_parent_path(entry.drive, entry.parent_frn)
+            full_path = entry.get_path(self.file_index)
+
+            size_bytes = None
+            size_label = ""
+            if not entry.is_dir:
+                try:
+                    if os.path.exists(full_path):
+                        size_bytes = os.path.getsize(full_path)
+                        size_label = _format_size(size_bytes)
+                    else:
+                        size_bytes = 0
+                except OSError:
+                    size_bytes = None
+
+            date_modified = entry.date_modified.isoformat(timespec='seconds') if entry.date_modified else None
+            date_modified_display = entry.date_modified.strftime('%Y-%m-%d %H:%M') if entry.date_modified else ''
+            kind = "Folder" if entry.is_dir else (entry.extension.upper() + " file" if entry.extension else "File")
+
+            payloads.append({
+                "name": entry.name,
+                "path": full_path,
+                "parent_path": parent_path,
+                "drive": entry.drive,
+                "type": "folder" if entry.is_dir else "file",
+                "kind": kind,
+                "extension": entry.extension,
+                "is_dir": bool(entry.is_dir),
+                "size_bytes": size_bytes,
+                "size": size_label,
+                "date_modified": date_modified,
+                "date_modified_display": date_modified_display,
+            })
+        return payloads
+
+    def _build_result_cards_from_payloads(self, payloads):
+        """Build read-only result cards from structured result payloads."""
+        if not payloads:
             return '<div class="empty">Type a query to search your files</div>'
 
         cards = []
-        for entry in results[:1000]:
-            path = self.file_index.resolve_parent_path(entry.drive, entry.parent_frn)
-            full_path = entry.get_path(self.file_index)
-
-            size = ""
-            if not entry.is_dir:
-                try:
-                    s = os.path.getsize(full_path) if os.path.exists(full_path) else 0
-                    size = _format_size(s)
-                except OSError:
-                    pass
-
-            dm = entry.date_modified.strftime('%Y-%m-%d %H:%M') if entry.date_modified else ''
-            kind = "Folder" if entry.is_dir else (entry.extension.upper() + " file" if entry.extension else "File")
-
-            name_escaped = html.escape(entry.name, quote=True)
-            path_escaped = html.escape(path, quote=True)
-            full_path_escaped = html.escape(full_path, quote=True)
-            kind_escaped = html.escape(kind, quote=True)
+        for item in payloads:
+            name_escaped = html.escape(item["name"], quote=True)
+            path_escaped = html.escape(item["parent_path"], quote=True)
+            full_path_escaped = html.escape(item["path"], quote=True)
+            kind_escaped = html.escape(item["kind"], quote=True)
+            size = item["size"]
+            dm = item["date_modified_display"]
             size_badge = f'<span class="badge">{html.escape(size)}</span>' if size else ''
             date_badge = f'<span class="badge">{html.escape(dm)}</span>' if dm else ''
 
@@ -553,6 +859,12 @@ class SearchHandler(BaseHTTPRequestHandler):
             )
 
         return '\n'.join(cards)
+
+    def _build_result_cards(self, results):
+        """Build read-only result cards from search results."""
+        return self._build_result_cards_from_payloads(
+            self._build_result_payloads(results)
+        )
 
 
 class QuickFindHTTPServer:

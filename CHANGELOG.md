@@ -2,6 +2,12 @@
 
 All notable changes to QuickFind will be documented in this file.
 
+## [v0.8.34] - 2026-06-29
+
+- Added authenticated `/api/docs` and `/openapi.json` endpoints for the remote search server.
+- Extended `/api/search` with structured JSON result metadata while preserving the web UI card payload.
+- Added OpenAPI, docs-page, and API bounds coverage, expanding the passing suite to 300 tests.
+
 ## [v0.8.33] - 2026-06-29
 
 - Reworked the remote read-only web UI from a table into responsive result cards.

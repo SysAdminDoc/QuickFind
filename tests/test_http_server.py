@@ -1,12 +1,14 @@
 """Tests for remote HTTP/HTTPS server configuration."""
 
 import base64
+import json
 from io import BytesIO
 from unittest.mock import MagicMock, patch
 
 from core.index import FileEntry
 from core.ntfs import FILE_ATTRIBUTE_DIRECTORY
 from server.http_server import QuickFindHTTPServer, SearchHandler, _SESSION_COOKIE_NAME
+from server.http_server import _coerce_remote_max_results, _openapi_spec
 from server.http_server import _query_with_remote_filters
 
 
@@ -151,6 +153,13 @@ def test_remote_type_filter_rewrites_query_for_existing_search_engine():
     assert _query_with_remote_filters("report", "all") == "report"
 
 
+def test_remote_max_results_are_clamped_for_documented_api_bounds():
+    assert _coerce_remote_max_results("25") == 25
+    assert _coerce_remote_max_results("0") == 1
+    assert _coerce_remote_max_results("20000") == 10000
+    assert _coerce_remote_max_results("not-a-number") == 1000
+
+
 def test_result_cards_escape_paths_and_include_badges():
     handler = _handler()
     entry = FileEntry(10, 5, "alpha <report>.txt", "C")
@@ -176,9 +185,35 @@ def test_api_search_returns_card_payload_and_applies_filters():
 
     handler.search_engine.search.assert_called_once_with("folder: docs", max_results=25)
     body = handler.wfile.getvalue().decode("utf-8")
+    payload = json.loads(body)
+    assert payload["results"][0]["type"] == "folder"
+    assert payload["results"][0]["path"] == "C:\\Docs"
     assert '"cards"' in body
     assert '"rows"' in body
     assert "result-card" in body
+
+
+def test_openapi_export_documents_search_response_and_auth():
+    spec = _openapi_spec()
+
+    assert spec["openapi"] == "3.1.0"
+    assert "/api/search" in spec["paths"]
+    assert "/openapi.json" in spec["paths"]
+    assert "results" in spec["paths"]["/api/search"]["get"]["responses"]["200"]["content"]["application/json"]["schema"]["properties"]
+    assert "bearerAuth" in spec["components"]["securitySchemes"]
+    assert "basicAuth" in spec["components"]["securitySchemes"]
+    assert "sessionCookie" in spec["components"]["securitySchemes"]
+
+
+def test_api_docs_page_links_openapi_export():
+    handler = _handler({"Host": "quickfind.local:8080"})
+
+    handler._handle_api_docs()
+
+    body = handler.wfile.getvalue().decode("utf-8")
+    assert "QuickFind REST API" in body
+    assert "/openapi.json" in body
+    assert "quickfind.local:8080/api/search" in body
 
 
 def test_unauthorized_response_includes_basic_challenge():
