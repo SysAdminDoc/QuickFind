@@ -4,6 +4,8 @@ import re
 from pathlib import Path
 from typing import Any, Mapping
 
+from core.network_shares import normalize_network_root
+
 
 INT_RANGES = {
     "http_port": (1, 65535),
@@ -30,6 +32,7 @@ INDEX_CASE_MODES = {"smart", "insensitive", "sensitive"}
 STRING_LIST_FIELDS = {
     "exclude_globs",
     "exclude_regexes",
+    "network_share_roots",
 }
 
 
@@ -98,6 +101,14 @@ def sanitize_settings_data(
             continue
         valid_regexes.append(pattern)
     sanitized["exclude_regexes"] = valid_regexes
+
+    network_roots = []
+    for root in sanitized["network_share_roots"]:
+        try:
+            network_roots.append(normalize_network_root(root))
+        except ValueError as exc:
+            warnings.append(f"Ignored invalid network_share_roots entry {root!r}: {exc}")
+    sanitized["network_share_roots"] = network_roots
 
     index_case_mode = sanitized.get("index_case_mode", defaults.get("index_case_mode", "smart"))
     if not isinstance(index_case_mode, str) or index_case_mode not in INDEX_CASE_MODES:

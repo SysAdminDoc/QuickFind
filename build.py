@@ -114,7 +114,7 @@ def build(onefile=False):
     # Hidden imports for dynamic modules
     hidden = [
         'core.ntfs', 'core.index', 'core.cache', 'core.search', 'core.archives',
-        'core.dialog_switch',
+        'core.dialog_switch', 'core.network_shares',
         'core.content', 'core.content.adapters', 'core.content.indexer',
         'core.sqlite_compat',
         'gui.main_window', 'gui.results_view', 'gui.settings_dialog',
@@ -123,7 +123,7 @@ def build(onefile=False):
         'pdfplumber', 'docx', 'pptx',
         'service.ipc', 'service.windows_service',
         'win32serviceutil', 'win32service', 'win32event', 'servicemanager',
-        'win32gui', 'win32con',
+        'win32gui', 'win32con', 'win32cred', 'win32wnet', 'win32netcon',
     ]
     for h in hidden:
         cmd.extend(['--hidden-import', h])

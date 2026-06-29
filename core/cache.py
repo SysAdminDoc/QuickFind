@@ -987,7 +987,7 @@ def load_cache(index: FileIndex) -> Optional[dict[str, tuple[int, int]]]:
                     entry._stat_loaded = True
 
                 drive_entries[frn] = entry
-                if name:
+                if name and not index._should_exclude(entry):
                     all_entries.append(entry)
                 if frn > max_synthetic_frn:
                     max_synthetic_frn = frn

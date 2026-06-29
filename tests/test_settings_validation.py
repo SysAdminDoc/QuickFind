@@ -27,6 +27,7 @@ DEFAULTS = {
     "exclude_globs": [],
     "exclude_regexes": [],
     "exclude_attribute_mask": 0,
+    "network_share_roots": [],
 }
 
 
@@ -169,3 +170,19 @@ def test_exclude_attribute_text_round_trips_codes_and_numeric_masks():
     assert mask == FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_REPARSE_POINT | 0x20
     assert split_rule_text(" *.tmp ;\ncache*;;") == ["*.tmp", "cache*"]
     assert attribute_mask_to_text(FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_REPARSE_POINT) == "H;L"
+
+
+def test_network_share_roots_are_normalized_without_online_check():
+    sanitized, warnings = sanitize_settings_data(
+        {
+            "network_share_roots": [
+                "//server/share/folder/",
+                "C:\\not-a-share",
+                "\\\\server-only",
+            ]
+        },
+        DEFAULTS,
+    )
+
+    assert sanitized["network_share_roots"] == ["\\\\server\\share\\folder"]
+    assert any("invalid network_share_roots entry" in warning for warning in warnings)

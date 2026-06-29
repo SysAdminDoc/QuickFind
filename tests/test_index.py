@@ -7,6 +7,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import core.index as index_mod
 from core.index import FileEntry, FileIndex, NTFS_ROOT_FRN
+from core.network_shares import network_source_key
 from core.ntfs import (
     DRIVE_FIXED, FILE_ATTRIBUTE_ARCHIVE, FILE_ATTRIBUTE_DIRECTORY,
     FILE_ATTRIBUTE_HIDDEN, FILE_ATTRIBUTE_REPARSE_POINT, DriveInfo,
@@ -183,6 +184,30 @@ class TestExcludeRules:
         assert count == 0
         assert "build" not in names
         assert "child.txt" not in names
+
+    def test_index_network_roots_walks_unc_source(self, monkeypatch):
+        root = "\\\\server\\share"
+        folder = "\\\\server\\share\\Folder"
+        child = "\\\\server\\share\\Folder\\child.txt"
+        tree = {
+            root: [FakeDirEntry("Folder", folder, FILE_ATTRIBUTE_DIRECTORY, True, True)],
+            folder: [FakeDirEntry("child.txt", child, FILE_ATTRIBUTE_ARCHIVE, False, False, size=4)],
+        }
+        install_fake_walk(monkeypatch, tree, {root: (2, 1), folder: (2, 2)})
+        monkeypatch.setattr(index_mod, "connect_network_share", lambda _root: False)
+
+        index = FileIndex()
+        indexed = index.index_network_roots([root])
+        source = network_source_key(root)
+        paths = {
+            entry._path
+            for entry in index._entries[source].values()
+            if entry.name
+        }
+
+        assert indexed == [source]
+        assert source not in index._walked_drives
+        assert child in paths
 
 
 class TestIndexMode:

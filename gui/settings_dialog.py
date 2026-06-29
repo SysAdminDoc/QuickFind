@@ -32,6 +32,11 @@ from core.ntfs import (
     FILE_ATTRIBUTE_SYSTEM,
     FILE_ATTRIBUTE_TEMPORARY,
 )
+from core.network_shares import (
+    delete_network_credential,
+    normalize_network_root,
+    save_network_credential,
+)
 from gui.theme import MOCHA
 from gui.settings_validation import sanitize_settings_data
 
@@ -152,6 +157,7 @@ class Settings:
     http_use_https: bool = False
     https_cert_file: str = ""
     https_key_file: str = ""
+    network_share_roots: list[str] = field(default_factory=list)
 
     # EFU file lists
     efu_files: list[str] = field(default_factory=list)
@@ -374,6 +380,33 @@ class SettingsDialog(QDialog):
         self._drives_list = QListWidget()
         drives_layout.addWidget(self._drives_list)
 
+        share_group = QGroupBox("Network Shares")
+        share_layout = QVBoxLayout(share_group)
+        share_form = QFormLayout()
+        self._network_root = QLineEdit()
+        self._network_root.setPlaceholderText("\\\\server\\share or \\\\server\\share\\folder")
+        share_form.addRow("UNC root:", self._network_root)
+        self._network_username = QLineEdit()
+        share_form.addRow("Username:", self._network_username)
+        self._network_password = QLineEdit()
+        self._network_password.setEchoMode(QLineEdit.EchoMode.Password)
+        share_form.addRow("Password:", self._network_password)
+        share_layout.addLayout(share_form)
+
+        self._network_list = QListWidget()
+        share_layout.addWidget(self._network_list)
+
+        share_buttons = QHBoxLayout()
+        add_share = QPushButton("Add/Update Share")
+        add_share.clicked.connect(self._add_network_share)
+        remove_share = QPushButton("Remove Share")
+        remove_share.clicked.connect(self._remove_network_share)
+        share_buttons.addWidget(add_share)
+        share_buttons.addWidget(remove_share)
+        share_buttons.addStretch()
+        share_layout.addLayout(share_buttons)
+        drives_layout.addWidget(share_group)
+
         # Populate with all supported drives
         from core.ntfs import get_all_drives
         for d in get_all_drives():
@@ -562,6 +595,11 @@ class SettingsDialog(QDialog):
         self._efu_list.clear()
         for path in s.efu_files:
             self._efu_list.addItem(path)
+        self._network_list.clear()
+        for root in s.network_share_roots:
+            item = QListWidgetItem(root)
+            item.setData(Qt.ItemDataRole.UserRole, root)
+            self._network_list.addItem(item)
         self._content_index_enabled.setChecked(s.content_index_enabled)
         self._content_index_roots.setText(";".join(s.content_index_roots))
         self._content_index_extensions.setText(";".join(s.content_index_extensions))
@@ -619,6 +657,13 @@ class SettingsDialog(QDialog):
                     drives.append(letter)
         s.index_drives = drives
 
+        # Network shares
+        s.network_share_roots = []
+        for i in range(self._network_list.count()):
+            root = self._network_list.item(i).data(Qt.ItemDataRole.UserRole)
+            if root:
+                s.network_share_roots.append(root)
+
         # EFU files
         s.efu_files = []
         for i in range(self._efu_list.count()):
@@ -665,6 +710,51 @@ class SettingsDialog(QDialog):
         row = self._efu_list.currentRow()
         if row >= 0:
             self._efu_list.takeItem(row)
+
+    def _add_network_share(self):
+        try:
+            root = normalize_network_root(self._network_root.text())
+        except ValueError as exc:
+            QMessageBox.warning(self, "Invalid Network Share", str(exc))
+            return
+
+        username = self._network_username.text().strip()
+        password = self._network_password.text()
+        if username or password:
+            if not username or not password:
+                QMessageBox.warning(
+                    self,
+                    "Incomplete Network Credential",
+                    "Both username and password are required to store SMB credentials.",
+                )
+                return
+            try:
+                save_network_credential(root, username, password)
+            except Exception as exc:
+                QMessageBox.warning(self, "Credential Save Failed", str(exc))
+                return
+
+        for i in range(self._network_list.count()):
+            item = self._network_list.item(i)
+            if item.data(Qt.ItemDataRole.UserRole) == root:
+                item.setText(root)
+                self._network_password.clear()
+                return
+
+        item = QListWidgetItem(root)
+        item.setData(Qt.ItemDataRole.UserRole, root)
+        self._network_list.addItem(item)
+        self._network_password.clear()
+
+    def _remove_network_share(self):
+        row = self._network_list.currentRow()
+        if row < 0:
+            return
+        item = self._network_list.item(row)
+        root = item.data(Qt.ItemDataRole.UserRole)
+        if root:
+            delete_network_credential(root)
+        self._network_list.takeItem(row)
 
     def _browse_file(self, target: QLineEdit, title: str):
         path, _ = QFileDialog.getOpenFileName(

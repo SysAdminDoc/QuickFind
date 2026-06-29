@@ -2,6 +2,12 @@
 
 All notable changes to QuickFind will be documented in this file.
 
+## [v0.8.17] - 2026-06-29
+
+- Added SMB/UNC network-share indexing with stable synthetic index sources.
+- Added optional Windows Credential Manager storage for SMB credentials without writing passwords to settings JSON.
+- Added UNC/settings/indexing coverage and expanded the passing suite to 252 tests.
+
 ## [v0.8.16] - 2026-06-29
 
 - Added persisted global exclude rules for glob, regex, and NTFS attribute-mask filters.

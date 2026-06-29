@@ -981,6 +981,7 @@ class MainWindow(QMainWindow):
             drives,
             use_cache=True,
             startup_delay_seconds=self._settings.drive_startup_delay_seconds,
+            network_roots=self._settings.network_share_roots,
         )
         self._index_worker.cache_loaded.connect(self._on_cache_loaded)
         self._index_worker.finished.connect(self._on_index_worker_done)
@@ -997,6 +998,7 @@ class MainWindow(QMainWindow):
             drives,
             use_cache=False,
             startup_delay_seconds=self._settings.drive_startup_delay_seconds,
+            network_roots=self._settings.network_share_roots,
         )
         self._index_worker.finished.connect(self._on_index_worker_done)
         self._index_worker.start()
@@ -1703,6 +1705,9 @@ class MainWindow(QMainWindow):
             or old_settings.exclude_regexes != new_settings.exclude_regexes
             or old_settings.exclude_attribute_mask != new_settings.exclude_attribute_mask
         )
+        network_roots_changed = (
+            old_settings.network_share_roots != new_settings.network_share_roots
+        )
         self._settings = new_settings
         self._settings.save()
         self._apply_settings()
@@ -1714,8 +1719,8 @@ class MainWindow(QMainWindow):
             )
         self._file_index._rebuild_flat_list()
         self._trigger_search()
-        if reparse_follow_changed or exclude_rules_changed:
-            self._status_label.setText("Re-indexing to apply traversal/exclude settings...")
+        if reparse_follow_changed or exclude_rules_changed or network_roots_changed:
+            self._status_label.setText("Re-indexing to apply indexing settings...")
             self._start_indexing()
 
     # ── Window management ──────────────────────────────

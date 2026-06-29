@@ -33,6 +33,11 @@ from core.ntfs import (
     USN_REASON_CLOSE, USN_REASON_BASIC_INFO_CHANGE,
     USN_REASON_DATA_OVERWRITE, USN_REASON_DATA_EXTEND, USN_REASON_DATA_TRUNCATION
 )
+from core.network_shares import (
+    connect_network_share,
+    network_source_key,
+    normalize_network_root,
+)
 
 logger = logging.getLogger('QuickFind.Index')
 
@@ -175,6 +180,8 @@ class FileIndex(QObject):
         self._volumes: dict[str, NTFSVolume] = {}
         # Drives indexed via os.scandir (FAT/exFAT/ReFS or non-admin fallback)
         self._walked_drives: set[str] = set()
+        # Network share source key -> UNC root path
+        self._network_roots: dict[str, str] = {}
         # Runtime online/offline/stale state for indexed or cached drives
         self._drive_states: dict[str, DriveState] = {}
         # All entries flat list for search (rebuilt after indexing)
@@ -819,6 +826,31 @@ class FileIndex(QObject):
         visited.add(identity)
         return True
 
+    def index_network_roots(self, roots: Optional[list[str]], rebuild: bool = True) -> list[str]:
+        """Index configured SMB/UNC roots through read-only directory walking."""
+        indexed_sources: list[str] = []
+        for raw_root in roots or []:
+            try:
+                root = normalize_network_root(raw_root)
+            except ValueError as exc:
+                logger.warning("Skipping invalid network root %r: %s", raw_root, exc)
+                continue
+
+            source_key = network_source_key(root)
+            self._network_roots[source_key] = root
+            try:
+                connect_network_share(root)
+            except Exception as exc:
+                logger.warning("Could not connect stored credential for %s: %s", root, exc)
+
+            self._walk_network_root(source_key, root)
+            indexed_sources.append(source_key)
+
+        if rebuild:
+            self._rebuild_flat_list()
+            self._recount_stats()
+        return indexed_sources
+
     def _walk_drive(self, drive_letter: str):
         """
         Index a non-NTFS drive (FAT32, exFAT, ReFS) or fallback drive via recursive os.scandir.
@@ -952,8 +984,123 @@ class FileIndex(QObject):
         self.indexing_progress.emit(drive_letter, total)
         return total
 
+    def _walk_network_root(self, source_key: str, root_path: str) -> int:
+        """Index a UNC root using recursive os.scandir without drive metadata."""
+        logger.info("Walking network root %s at %s via os.scandir...", source_key, root_path)
+        if not os.path.exists(root_path):
+            logger.warning("Skipping unavailable network root %s: %s", source_key, root_path)
+            return len(self._entries.get(source_key, {}))
+
+        drive_entries: dict[int, FileEntry] = {}
+        root_frn = NTFS_ROOT_FRN
+        drive_entries[root_frn] = FileEntry(
+            frn=root_frn, parent_frn=0, name="",
+            drive=source_key, attributes=FILE_ATTRIBUTE_DIRECTORY,
+        )
+
+        dir_frn_map: dict[str, int] = {root_path: root_frn}
+        visited_dirs = set()
+        self._reserve_directory_for_walk(root_path, visited_dirs)
+        total = 0
+        callback_interval = 10000
+
+        stack = [root_path]
+        while stack:
+            if self._cancel_flag:
+                break
+
+            current_dir = stack.pop()
+            parent_frn = dir_frn_map.pop(current_dir, root_frn)
+
+            try:
+                ignore_patterns = self._load_ignore_patterns(current_dir)
+                with os.scandir(current_dir) as it:
+                    for de in it:
+                        if self._cancel_flag:
+                            break
+                        try:
+                            name = de.name
+                            if ignore_patterns and self._matches_ignore(name, ignore_patterns):
+                                continue
+                            st = de.stat(follow_symlinks=False)
+                            raw_attrs = getattr(st, "st_file_attributes", 0)
+                            reparse_tag = getattr(st, "st_reparse_tag", 0)
+                            is_reparse = bool(raw_attrs & FILE_ATTRIBUTE_REPARSE_POINT)
+                            try:
+                                is_reparse = is_reparse or de.is_symlink()
+                            except OSError:
+                                pass
+                            is_dir = bool(raw_attrs & FILE_ATTRIBUTE_DIRECTORY) if raw_attrs else de.is_dir(follow_symlinks=False)
+                            if is_reparse and self._follow_reparse_points:
+                                try:
+                                    is_dir = is_dir or de.is_dir(follow_symlinks=True)
+                                except OSError:
+                                    pass
+
+                            self._next_synthetic_frn += 1
+                            frn = self._next_synthetic_frn
+
+                            attrs = raw_attrs or (FILE_ATTRIBUTE_DIRECTORY if is_dir else FILE_ATTRIBUTE_ARCHIVE)
+                            if is_dir:
+                                attrs |= FILE_ATTRIBUTE_DIRECTORY
+                            elif not attrs:
+                                attrs = FILE_ATTRIBUTE_ARCHIVE
+
+                            entry = FileEntry(
+                                frn=frn,
+                                parent_frn=parent_frn,
+                                name=name,
+                                drive=source_key,
+                                attributes=attrs,
+                                size=st.st_size if not is_dir else 0,
+                                date_modified=datetime.fromtimestamp(st.st_mtime),
+                                date_created=datetime.fromtimestamp(st.st_ctime),
+                                reparse_tag=reparse_tag,
+                                has_extended_attributes=bool(raw_attrs & FILE_ATTRIBUTE_EA),
+                            )
+                            entry._stat_loaded = True
+                            entry._path = de.path
+
+                            excluded = self._should_exclude(entry)
+                            if excluded:
+                                if is_dir:
+                                    logger.debug("Skipped excluded network directory: %s", de.path)
+                                continue
+
+                            drive_entries[frn] = entry
+                            total += 1
+
+                            if is_dir:
+                                full_path = de.path
+                                should_descend = (
+                                    not is_reparse or self._follow_reparse_points
+                                )
+                                if should_descend and self._reserve_directory_for_walk(full_path, visited_dirs):
+                                    dir_frn_map[full_path] = frn
+                                    stack.append(full_path)
+                                elif is_reparse:
+                                    logger.debug("Skipped reparse network directory: %s", full_path)
+
+                            if total % callback_interval == 0:
+                                self.indexing_progress.emit(source_key, total)
+
+                        except (OSError, PermissionError):
+                            continue
+            except (OSError, PermissionError):
+                continue
+
+        dir_frn_map.clear()
+
+        with self._lock:
+            self._entries[source_key] = drive_entries
+
+        logger.info("Network root walk complete on %s: %s entries", source_key, f"{total:,}")
+        self.indexing_progress.emit(source_key, total)
+        return total
+
     def index_all_drives(self, drives: Optional[list[str]] = None,
-                         force_walk: bool = False):
+                         force_walk: bool = False,
+                         network_roots: Optional[list[str]] = None):
         """
         Index all supported drives (NTFS via MFT in parallel, FAT/exFAT/ReFS via os.scandir).
         If force_walk=True or MFT access fails, falls back to os.scandir for all drives.
@@ -1085,15 +1232,20 @@ class FileIndex(QObject):
         else:
             self._last_index_source = "Full MFT scan"
 
+        if network_roots and not self._cancel_flag:
+            self.index_network_roots(network_roots, rebuild=False)
+            self._last_index_source += " + network shares"
+
         # Final rebuild to ensure consistency
         self._rebuild_flat_list()
+        self._recount_stats()
 
         elapsed = (time.perf_counter() - start_time) * 1000
+        total_files = self._stats.total_files
+        total_folders = self._stats.total_folders
         total = total_files + total_folders
 
-        self._stats.total_files = total_files
-        self._stats.total_folders = total_folders
-        self._stats.volumes_indexed = drives
+        self._stats.volumes_indexed = sorted(self._entries)
         self._stats.index_time_ms = int(elapsed)
         self._stats.last_update = datetime.now()
         self._stats.entries_per_sec = (total / (elapsed / 1000.0)) if elapsed > 0 else 0
@@ -1495,12 +1647,14 @@ class IndexWorker(QThread):
 
     def __init__(self, index: FileIndex, drives: Optional[list[str]] = None,
                  use_cache: bool = True,
-                 startup_delay_seconds: int = 0):
+                 startup_delay_seconds: int = 0,
+                 network_roots: Optional[list[str]] = None):
         super().__init__()
         self._index = index
         self._drives = drives
         self._use_cache = use_cache
         self._startup_delay_seconds = max(0, int(startup_delay_seconds or 0))
+        self._network_roots = network_roots or []
 
     def _wait_for_startup_delay(self):
         if self._startup_delay_seconds <= 0:
@@ -1523,9 +1677,11 @@ class IndexWorker(QThread):
                 self.cache_loaded.emit()
                 # USN catchup happens after UI has displayed cached results
                 self._index.usn_catchup()
+                if self._network_roots:
+                    self._index.index_network_roots(self._network_roots)
                 self.finished.emit()
                 return
             logger.info("No cache found, performing full MFT scan")
 
-        self._index.index_all_drives(self._drives)
+        self._index.index_all_drives(self._drives, network_roots=self._network_roots)
         self.finished.emit()
