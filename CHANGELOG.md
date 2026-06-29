@@ -2,6 +2,12 @@
 
 All notable changes to QuickFind will be documented in this file.
 
+## [v0.8.25] - 2026-06-29
+
+- Added `broken:link` and `broken:shortcut` search predicates for broken reparse points and `.lnk` files with missing targets.
+- Added Windows Shell shortcut target resolution with safe fallback when COM resolution is unavailable.
+- Added broken target parser/search coverage and expanded the passing suite to 276 tests.
+
 ## [v0.8.24] - 2026-06-29
 
 - Added `duplicate:hash` / `dupe:hash` search mode for SHA-256 content duplicate detection after normal filters.

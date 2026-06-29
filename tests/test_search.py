@@ -13,6 +13,8 @@ from core.search import (
     CASE_MODE_INSENSITIVE, CASE_MODE_SENSITIVE,
 )
 from core.index import FileEntry
+from core.ntfs import FILE_ATTRIBUTE_REPARSE_POINT
+import core.search as search_module
 
 
 class TestParseSize:
@@ -231,6 +233,13 @@ class TestParseQuery:
         parsed = parse_query("duplicate:hash")
         assert parsed.dupe_mode is True
         assert parsed.dupe_hash_mode is True
+
+    def test_broken_modifiers(self):
+        link = parse_query("broken:link")
+        shortcut = parse_query("broken:shortcut")
+
+        assert link.broken_link_mode is True
+        assert shortcut.broken_shortcut_mode is True
 
     def test_archive_modifier(self):
         parsed = parse_query("archive:report")
@@ -640,3 +649,44 @@ class TestBooleanExpressionSearch:
         )
 
         assert [entry.name for entry in results] == ["alpha-report.txt"]
+
+
+class TestBrokenTargetSearch:
+    def test_broken_link_modifier_returns_reparse_points_with_missing_targets(self, monkeypatch):
+        broken = _entry("broken-link", 1, FILE_ATTRIBUTE_REPARSE_POINT)
+        healthy = _entry("healthy-link", 2, FILE_ATTRIBUTE_REPARSE_POINT)
+        broken._path = "C:\\links\\broken-link"
+        healthy._path = "C:\\links\\healthy-link"
+        engine = SearchEngine(FakeIndex([broken, healthy]))
+
+        monkeypatch.setattr(search_module.os.path, "lexists", lambda path: True)
+        monkeypatch.setattr(search_module.os.path, "exists", lambda path: path != broken._path)
+
+        results = engine.search("broken:link")
+
+        assert [entry.name for entry in results] == ["broken-link"]
+
+    def test_broken_shortcut_modifier_returns_lnk_files_with_missing_targets(self, monkeypatch):
+        broken = _entry("missing-target.lnk", 1)
+        healthy = _entry("healthy-target.lnk", 2)
+        plain = _entry("notes.txt", 3)
+        broken._path = "C:\\shortcuts\\missing-target.lnk"
+        healthy._path = "C:\\shortcuts\\healthy-target.lnk"
+        plain._path = "C:\\shortcuts\\notes.txt"
+        engine = SearchEngine(FakeIndex([broken, healthy, plain]))
+
+        def shortcut_target(_self, path):
+            if path == broken._path:
+                return "C:\\missing\\target.txt"
+            return "C:\\live\\target.txt"
+
+        monkeypatch.setattr(SearchEngine, "_shortcut_target_path", shortcut_target)
+        monkeypatch.setattr(
+            search_module.os.path,
+            "exists",
+            lambda path: path != "C:\\missing\\target.txt",
+        )
+
+        results = engine.search("broken:shortcut")
+
+        assert [entry.name for entry in results] == ["missing-target.lnk"]

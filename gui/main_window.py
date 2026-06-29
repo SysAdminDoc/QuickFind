@@ -71,6 +71,8 @@ SYNTAX_HELP = """Search Syntax:
   attrib:H        Attribute filter (R,H,S,D,A)
   dupe:name       Find duplicates by name/size
   duplicate:hash  Find duplicate files by SHA-256 content
+  broken:link     Find broken reparse links
+  broken:shortcut Find .lnk files with missing targets
   regex:pattern   Regex search
   content:text    Content search (slow)
   @slot           Expand a saved bookmark query slot

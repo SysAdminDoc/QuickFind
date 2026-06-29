@@ -1,14 +1,14 @@
-# QuickFind v0.8.24
+# QuickFind v0.8.25
 
 Lightning-fast file search for Windows, powered by NTFS MFT + USN Journal.
 
 An open-source alternative to [Voidtools Everything](https://www.voidtools.com/), built with Python and PyQt6 for extensibility and customization.
 
-![Version](https://img.shields.io/badge/Version-v0.8.24-blueviolet)
+![Version](https://img.shields.io/badge/Version-v0.8.25-blueviolet)
 ![Python](https://img.shields.io/badge/Python-3.10+-blue)
 ![License](https://img.shields.io/badge/License-MIT-green)
 ![Platform](https://img.shields.io/badge/Platform-Windows-lightgrey)
-![Tests](https://img.shields.io/badge/Tests-273%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/Tests-276%20passing-brightgreen)
 
 ## Features
 
@@ -43,7 +43,7 @@ An open-source alternative to [Voidtools Everything](https://www.voidtools.com/)
 - **Content search** — `content:keyword` searches cached TXT/PDF/DOCX/PPTX/EML/source-code extracted text through adapters, with optional Tesseract OCR fallback for image-only PDFs, cancellable background indexing, ranked snippets, root/type filters, quotas, and adapter diagnostics
 - **Archive search** — `archive:` searches cached ZIP/7z member metadata without extracting files, invalidating when archives change
 - **Usage-based ranking** — frequently opened files rank higher with Relevance sort
-- **18 search modifiers**: `case:`, `path:`, `file:`, `folder:`, `wholeword:`, `ext:`, `size:`, `dm:`, `dc:`, `len:`, `attrib:`, `content:`, `parent:`, `dupe:`, `duplicate:`, `archive:`, `fuzzy:`, `regex:`
+- **19 search modifiers**: `case:`, `path:`, `file:`, `folder:`, `wholeword:`, `ext:`, `size:`, `dm:`, `dc:`, `len:`, `attrib:`, `content:`, `parent:`, `dupe:`, `duplicate:`, `broken:`, `archive:`, `fuzzy:`, `regex:`
 - **Search syntax help** panel accessible from Help menu
 
 ### GUI
@@ -75,7 +75,7 @@ An open-source alternative to [Voidtools Everything](https://www.voidtools.com/)
 - **Open/Save dialog Quick Switch** — optional Windows integration that sends selected folders to the active common file dialog
 - **Everything import hardening** — malformed CSV rows and invalid JSON are rejected before atomic filter/bookmark replacement
 - **Log rotation** — `RotatingFileHandler` with 5 MB max and 3 backups
-- **273 automated tests** covering startup dependency handling, build/runtime matrix reporting, SQLite/FTS5 version gates, saved query slot expansion, nested boolean query parsing, hash duplicate detection, remote auth/CORS hardening, SMB/UNC network-share indexing, EFU refresh scheduling, EML/source-code content extraction, optional PDF OCR fallback, preview matched-line highlighting, Everything import validation, index/cache/service diagnostics, removable-drive stale state, dialog Quick Switch helpers, link/junction traversal loop guards, global exclude rules, reparse/EA metadata persistence, case-mode matching policy, content indexing jobs/quotas/diagnostics, content search ranking/snippets, search parsing, archive metadata caching, content adapters/cache, service IPC, duplicate detection, MFT record parsing, privilege lifecycle, settings validation, index mode UI state, results-view cache bounds, cache helpers, remote server configuration, and ignore patterns
+- **276 automated tests** covering startup dependency handling, build/runtime matrix reporting, SQLite/FTS5 version gates, saved query slot expansion, nested boolean query parsing, hash duplicate detection, broken link/shortcut finders, remote auth/CORS hardening, SMB/UNC network-share indexing, EFU refresh scheduling, EML/source-code content extraction, optional PDF OCR fallback, preview matched-line highlighting, Everything import validation, index/cache/service diagnostics, removable-drive stale state, dialog Quick Switch helpers, link/junction traversal loop guards, global exclude rules, reparse/EA metadata persistence, case-mode matching policy, content indexing jobs/quotas/diagnostics, content search ranking/snippets, search parsing, archive metadata caching, content adapters/cache, service IPC, duplicate detection, MFT record parsing, privilege lifecycle, settings validation, index mode UI state, results-view cache bounds, cache helpers, remote server configuration, and ignore patterns
 - **PyInstaller build script** for single-file or single-folder distribution
 
 ## Requirements
@@ -86,7 +86,7 @@ An open-source alternative to [Voidtools Everything](https://www.voidtools.com/)
 
 ## Supported Runtime Matrix
 
-| Component | Supported | Tested in v0.8.24 |
+| Component | Supported | Tested in v0.8.25 |
 |-----------|-----------|------------------|
 | OS | Windows 10/11 | Windows 10.0.26100 |
 | Python | 3.10+ | 3.11.9 |
@@ -194,6 +194,7 @@ Build output prints the tested runtime matrix before invoking PyInstaller. If Py
 | `parent:node_modules` | Parent directory filter |
 | `dupe:` | Find duplicate filenames |
 | `duplicate:hash` | Find duplicate files by SHA-256 content hash |
+| `broken:link` / `broken:shortcut` | Find broken reparse links or `.lnk` targets |
 | `archive:report` | Find files named report inside ZIP/7z archives |
 
 **Smart case:** Queries with uppercase letters automatically use case-sensitive matching. All-lowercase queries match case-insensitively. Override with `case:` or `nocase:`.
@@ -282,11 +283,11 @@ QuickFind/
 ## Testing
 
 ```bash
-# Run the test suite (273 tests)
+# Run the test suite (276 tests)
 python -m pytest tests/ -v
 ```
 
-Tests cover startup dependency handling, build/runtime matrix reporting, SQLite/FTS5 version gates, saved query slot expansion, nested boolean query parsing, hash duplicate detection, remote auth/CORS hardening, SMB/UNC network-share indexing, EFU refresh scheduling, EML/source-code content extraction, optional PDF OCR fallback, preview matched-line highlighting, Everything import validation, index/cache/service diagnostics, removable-drive stale state, dialog Quick Switch helpers, link/junction traversal loop guards, global exclude-rule settings, reparse/EA metadata persistence, case-mode matching policy, content indexing jobs/quotas/diagnostics, search query parsing (all modifiers), archive metadata caching, content extraction/cache, service IPC, size/date helpers, smart case sensitivity, fuzzy matching, MFT record parsing, USA fixup, USN records, cache datetime round-trip, FTS5 detection, results-view cache bounds, `.quickfindignore` pattern matching, and EFU file loading.
+Tests cover startup dependency handling, build/runtime matrix reporting, SQLite/FTS5 version gates, saved query slot expansion, nested boolean query parsing, hash duplicate detection, broken link/shortcut finders, remote auth/CORS hardening, SMB/UNC network-share indexing, EFU refresh scheduling, EML/source-code content extraction, optional PDF OCR fallback, preview matched-line highlighting, Everything import validation, index/cache/service diagnostics, removable-drive stale state, dialog Quick Switch helpers, link/junction traversal loop guards, global exclude-rule settings, reparse/EA metadata persistence, case-mode matching policy, content indexing jobs/quotas/diagnostics, search query parsing (all modifiers), archive metadata caching, content extraction/cache, service IPC, size/date helpers, smart case sensitivity, fuzzy matching, MFT record parsing, USA fixup, USN records, cache datetime round-trip, FTS5 detection, results-view cache bounds, `.quickfindignore` pattern matching, and EFU file loading.
 
 ## Security
 

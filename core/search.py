@@ -4,7 +4,8 @@ Routes simple queries through SQLite for speed, falls back to in-memory for comp
 
 Supports: plain text, regex:, wildcards:, case:, path:, file:, folder:,
 wholeword:, wholefilename:, content:, size:, dm: (date modified),
-dc: (date created), ext:, attrib:, len:, parent:, dupe:, archive:, @slot
+dc: (date created), ext:, attrib:, len:, parent:, dupe:, broken:,
+archive:, @slot
 """
 
 import re
@@ -20,6 +21,7 @@ from typing import Optional, Callable, Mapping
 from core.archives import is_supported_archive, iter_archive_entries
 from core.index import FileEntry, FileIndex
 from core.query_slots import expand_query_slots
+from core.ntfs import FILE_ATTRIBUTE_REPARSE_POINT
 from core.utils import parse_size as _parse_size
 
 logger = logging.getLogger('QuickFind.Search')
@@ -231,6 +233,8 @@ class ParsedQuery:
     content_search: str = ""
     dupe_mode: bool = False
     dupe_hash_mode: bool = False
+    broken_link_mode: bool = False
+    broken_shortcut_mode: bool = False
     archive_mode: bool = False
     boolean_expression: Optional[BooleanExpression] = None
     or_groups: list[list[str]] = field(default_factory=list)
@@ -586,6 +590,16 @@ def parse_query(raw_query: str, base_options: Optional[SearchOptions] = None,
                 parsed.dupe_mode = True
                 parsed.dupe_hash_mode = val.lower() == 'hash'
                 i += 1; continue
+            elif mod_lower == 'broken':
+                broken_kind = val.lower()
+                if broken_kind in ('link', 'links'):
+                    parsed.broken_link_mode = True
+                elif broken_kind in ('shortcut', 'shortcuts'):
+                    parsed.broken_shortcut_mode = True
+                elif not broken_kind:
+                    parsed.broken_link_mode = True
+                    parsed.broken_shortcut_mode = True
+                i += 1; continue
             elif mod_lower == 'archive':
                 parsed.archive_mode = True
                 if val:
@@ -695,6 +709,8 @@ class SearchEngine:
         if parsed.content_search:
             return False
         if parsed.dupe_mode:
+            return False
+        if parsed.broken_link_mode or parsed.broken_shortcut_mode:
             return False
         if parsed.archive_mode:
             return False
@@ -1059,6 +1075,47 @@ class SearchEngine:
         except (OSError, PermissionError):
             return None
 
+    def _is_broken_link(self, entry: FileEntry) -> bool:
+        try:
+            path = entry.get_path(self._index)
+            is_reparse = bool(entry.attributes & FILE_ATTRIBUTE_REPARSE_POINT)
+            if not is_reparse and not os.path.islink(path):
+                return False
+            if os.path.lexists(path) and not os.path.exists(path):
+                return True
+            if os.path.islink(path):
+                target = os.readlink(path)
+                if not os.path.isabs(target):
+                    target = os.path.join(os.path.dirname(path), target)
+                return not os.path.exists(target)
+            return False
+        except (OSError, PermissionError, ValueError):
+            return False
+
+    def _is_broken_shortcut(self, entry: FileEntry) -> bool:
+        if entry.is_dir or entry.extension != 'lnk':
+            return False
+        try:
+            target = self._shortcut_target_path(entry.get_path(self._index))
+            return bool(target) and not os.path.exists(os.path.expandvars(target))
+        except (OSError, PermissionError, ValueError):
+            return False
+
+    def _shortcut_target_path(self, path: str) -> str:
+        try:
+            import pythoncom
+            from win32com.client import Dispatch
+
+            pythoncom.CoInitialize()
+            try:
+                shortcut = Dispatch("WScript.Shell").CreateShortcut(path)
+                return str(shortcut.TargetPath or "")
+            finally:
+                pythoncom.CoUninitialize()
+        except Exception as exc:
+            logger.debug(f"Shortcut target resolution failed for {path}: {exc}")
+            return ""
+
     def _compile_term_matchers(self, parsed: ParsedQuery) -> list:
         matchers = []
         for term in parsed.terms:
@@ -1219,6 +1276,11 @@ class SearchEngine:
             parent_path = os.path.dirname(entry.get_path(self._index))
             if parsed.parent_filter.lower() not in parent_path.lower():
                 return False
+
+        if parsed.broken_link_mode and not self._is_broken_link(entry):
+            return False
+        if parsed.broken_shortcut_mode and not self._is_broken_shortcut(entry):
+            return False
 
         if boolean_matcher is not None:
             if not boolean_matcher(target):
