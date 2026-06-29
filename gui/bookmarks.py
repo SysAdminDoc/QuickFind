@@ -4,7 +4,7 @@ Bookmarks manager - save/restore search + filter + sort + view state.
 
 import json
 import logging
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, field
 from pathlib import Path
 from typing import Optional
 from datetime import datetime
@@ -18,6 +18,7 @@ from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QAction, QIcon
 
 from core.query_slots import normalize_query_slot_name, query_slots_from_bookmarks
+from core.workspaces import parse_workspace_roots, workspace_roots_text
 from gui.theme import MOCHA, ACCENT
 
 logger = logging.getLogger('QuickFind.Bookmarks')
@@ -37,6 +38,7 @@ class Bookmark:
     sort_ascending: bool = True
     match_case: bool = False
     use_regex: bool = False
+    workspace_roots: list[str] = field(default_factory=list)
     folder: str = ""
     created: str = ""
 
@@ -54,6 +56,7 @@ class Bookmark:
             sort_ascending=d.get('sort_ascending', True),
             match_case=d.get('match_case', False),
             use_regex=d.get('use_regex', False),
+            workspace_roots=parse_workspace_roots(d.get('workspace_roots', [])),
             folder=d.get('folder', ''),
             created=d.get('created', ''),
         )
@@ -143,6 +146,10 @@ class BookmarkDialog(QDialog):
         self._query_edit = QLineEdit(self._bookmark.query)
         form.addRow("Search:", self._query_edit)
 
+        self._roots_edit = QLineEdit(workspace_roots_text(self._bookmark.workspace_roots))
+        self._roots_edit.setPlaceholderText("Optional roots separated with semicolons")
+        form.addRow("Workspace roots:", self._roots_edit)
+
         slot = self._bookmark.slot or normalize_query_slot_name(self._bookmark.name)
         self._slot_edit = QLineEdit(slot)
         self._slot_edit.setPlaceholderText("Optional @slot name")
@@ -164,6 +171,7 @@ class BookmarkDialog(QDialog):
     def get_bookmark(self) -> Bookmark:
         self._bookmark.name = self._name_edit.text() or "Untitled"
         self._bookmark.query = self._query_edit.text()
+        self._bookmark.workspace_roots = parse_workspace_roots(self._roots_edit.text())
         self._bookmark.slot = normalize_query_slot_name(self._slot_edit.text())
         self._bookmark.folder = self._folder_edit.text()
         return self._bookmark
@@ -278,7 +286,8 @@ class BookmarksPanel(QWidget):
             self._refresh()
 
     def add_current_search(self, query: str, filter_name: str = "Everything",
-                           match_case: bool = False, use_regex: bool = False):
+                           match_case: bool = False, use_regex: bool = False,
+                           workspace_roots: Optional[list[str]] = None):
         """Add current search as a bookmark."""
         bm = Bookmark(
             name=query[:50] if query else "Untitled",
@@ -286,6 +295,7 @@ class BookmarksPanel(QWidget):
             filter_name=filter_name,
             match_case=match_case,
             use_regex=use_regex,
+            workspace_roots=parse_workspace_roots(workspace_roots or []),
         )
         dialog = BookmarkDialog(bm, self._manager.get_folders(), self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
@@ -302,6 +312,10 @@ class BookmarksPanel(QWidget):
 
 def _bookmark_tooltip(bookmark: Bookmark) -> str:
     slot = bookmark.slot or normalize_query_slot_name(bookmark.name)
+    lines = []
     if slot:
-        return f"@{slot}\nSearch: {bookmark.query}"
-    return f"Search: {bookmark.query}"
+        lines.append(f"@{slot}")
+    lines.append(f"Search: {bookmark.query}")
+    if bookmark.workspace_roots:
+        lines.append(f"Workspace: {workspace_roots_text(bookmark.workspace_roots)}")
+    return "\n".join(lines)

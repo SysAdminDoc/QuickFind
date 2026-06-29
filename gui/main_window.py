@@ -32,6 +32,11 @@ from core.query_slots import expand_query_slots
 from core.file_list import efu_source_key, load_efu
 from core.ntfs import FILE_ATTRIBUTE_DIRECTORY
 from core.version import VERSION, APP_TITLE
+from core.workspaces import (
+    filter_entries_by_workspace,
+    parse_workspace_roots,
+    workspace_roots_text,
+)
 
 from gui.theme import MOCHA, ACCENT
 from gui.results_view import ResultsView
@@ -90,13 +95,16 @@ class SearchWorker(QThread):
     results_ready = pyqtSignal(list)
 
     def __init__(self, engine: SearchEngine, query: str,
-                 active_filter=None, options=None, query_slots=None):
+                 active_filter=None, options=None, query_slots=None,
+                 workspace_roots=None, file_index=None):
         super().__init__()
         self._engine = engine
         self._query = query
         self._filter = active_filter
         self._options = options
         self._query_slots = query_slots or {}
+        self._workspace_roots = parse_workspace_roots(workspace_roots)
+        self._file_index = file_index
         self._cancelled = False
 
     def cancel(self):
@@ -110,6 +118,13 @@ class SearchWorker(QThread):
             cancel_check=lambda: self._cancelled,
             query_slots=self._query_slots,
         )
+        if not self._cancelled and self._workspace_roots:
+            results = filter_entries_by_workspace(
+                results,
+                self._file_index,
+                self._workspace_roots,
+                cancel_check=lambda: self._cancelled,
+            )
         if not self._cancelled:
             self.results_ready.emit(results)
 
@@ -157,6 +172,7 @@ class SearchTab:
         self.use_regex = False
         self.match_path = False
         self.match_whole_word = False
+        self.workspace_roots: list[str] = []
         self.search_worker: Optional[SearchWorker] = None
 
 
@@ -257,6 +273,20 @@ class MainWindow(QMainWindow):
         self._filter_combo.setAccessibleDescription("Select file type filter")
         self._build_filter_combo()
         search_layout.addWidget(self._filter_combo)
+
+        self._workspace_roots_input = QLineEdit()
+        self._workspace_roots_input.setFixedHeight(24)
+        self._workspace_roots_input.setFixedWidth(220)
+        self._workspace_roots_input.setClearButtonEnabled(True)
+        self._workspace_roots_input.setPlaceholderText("Roots")
+        self._workspace_roots_input.setAccessibleName("Workspace roots")
+        self._workspace_roots_input.setAccessibleDescription(
+            "Limit search results to semicolon-separated folder roots."
+        )
+        self._workspace_roots_input.setToolTip(
+            "Workspace roots separated with semicolons, for example C:\\src;D:\\docs"
+        )
+        search_layout.addWidget(self._workspace_roots_input)
 
         # Search input (fills remaining space) with autocomplete
         self._search_input = QLineEdit()
@@ -460,6 +490,9 @@ class MainWindow(QMainWindow):
         self._filter_combo.blockSignals(True)
         self._filter_combo.setCurrentIndex(tab.filter_index)
         self._filter_combo.blockSignals(False)
+        self._workspace_roots_input.blockSignals(True)
+        self._workspace_roots_input.setText(workspace_roots_text(tab.workspace_roots))
+        self._workspace_roots_input.blockSignals(False)
         self._restore_tab_search_options(tab)
         # Update result count (guard: label may not exist yet during init)
         if hasattr(self, '_result_count_label'):
@@ -491,6 +524,12 @@ class MainWindow(QMainWindow):
     def _on_search_option_changed(self):
         self._save_tab_search_options()
         self._trigger_search()
+
+    def _on_workspace_roots_changed(self, text: str):
+        tab = self._current_tab()
+        if tab:
+            tab.workspace_roots = parse_workspace_roots(text)
+        self._search_timer.start()
 
     def _show_tab_switcher(self):
         if not self._tabs:
@@ -811,6 +850,7 @@ class MainWindow(QMainWindow):
         """Connect all signals."""
         # Search
         self._search_input.textChanged.connect(self._on_search_text_changed)
+        self._workspace_roots_input.textChanged.connect(self._on_workspace_roots_changed)
         self._filter_combo.currentIndexChanged.connect(self._on_filter_changed)
 
         # Index
@@ -1001,7 +1041,13 @@ class MainWindow(QMainWindow):
         tab.results_view.set_highlight(expanded_query)
 
         worker = SearchWorker(
-            self._search_engine, query, active_filter, options, query_slots
+            self._search_engine,
+            query,
+            active_filter,
+            options,
+            query_slots,
+            workspace_roots=tab.workspace_roots,
+            file_index=self._file_index,
         )
         worker.results_ready.connect(
             lambda results, source_tab=tab: self._on_search_results(results, source_tab)
@@ -1524,13 +1570,34 @@ class MainWindow(QMainWindow):
         self._bookmarks_panel.add_current_search(
             query, filter_name,
             self._match_case_action.isChecked(),
-            self._regex_action.isChecked()
+            self._regex_action.isChecked(),
+            self._current_tab().workspace_roots if self._current_tab() else [],
         )
 
     def _on_bookmark_activated(self, bookmark: Bookmark):
+        tab = self._current_tab()
+        if tab:
+            tab.workspace_roots = list(bookmark.workspace_roots)
+
+        self._search_input.blockSignals(True)
         self._search_input.setText(bookmark.query)
-        self._match_case_action.setChecked(bookmark.match_case)
-        self._regex_action.setChecked(bookmark.use_regex)
+        self._search_input.blockSignals(False)
+
+        self._workspace_roots_input.blockSignals(True)
+        self._workspace_roots_input.setText(workspace_roots_text(bookmark.workspace_roots))
+        self._workspace_roots_input.blockSignals(False)
+
+        for action, checked in (
+            (self._match_case_action, bookmark.match_case),
+            (self._regex_action, bookmark.use_regex),
+        ):
+            action.blockSignals(True)
+            action.setChecked(checked)
+            action.blockSignals(False)
+        if tab:
+            tab.query = bookmark.query
+            tab.match_case = bookmark.match_case
+            tab.use_regex = bookmark.use_regex
         self._trigger_search()
 
     # ── File operations ────────────────────────────────

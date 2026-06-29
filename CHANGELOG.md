@@ -2,6 +2,12 @@
 
 All notable changes to QuickFind will be documented in this file.
 
+## [v0.8.28] - 2026-06-29
+
+- Added bookmark workspaces with semicolon-separated root sets that constrain searches across multiple roots.
+- Made workspace roots independent per search tab and restored them when activating saved bookmarks.
+- Added workspace root parsing/filtering and bookmark persistence coverage, expanding the passing suite to 283 tests.
+
 ## [v0.8.27] - 2026-06-29
 
 - Made search tabs keep independent query, filter, and match-option state.
