@@ -9,8 +9,10 @@ from datetime import datetime, timedelta
 from core.utils import parse_size as _parse_size
 from core.search import (
     _parse_date, _fuzzy_match, parse_query, SearchOptions, SearchFilter,
-    ParsedQuery, SearchEngine, SortField, SortOrder, ATTRIB_MAP,
+    ParsedQuery, SearchEngine, SearchModifierPlugin, SortField, SortOrder, ATTRIB_MAP,
     CASE_MODE_INSENSITIVE, CASE_MODE_SENSITIVE,
+    clear_modifier_plugins, register_modifier_plugin, registered_modifier_plugins,
+    unregister_modifier_plugin,
 )
 from core.index import FileEntry
 from core.ntfs import FILE_ATTRIBUTE_REPARSE_POINT
@@ -332,6 +334,51 @@ class TestParseQuery:
         assert parsed.date_mod_after is not None
         assert parsed.terms == ["error"]
 
+    def test_custom_modifier_plugin_can_add_terms(self):
+        clear_modifier_plugins()
+        try:
+            register_modifier_plugin(SearchModifierPlugin(
+                names=("tag",),
+                parse=lambda value, parsed: [f"{value}.txt"],
+            ))
+
+            parsed = parse_query("tag:report")
+
+            assert parsed.terms == ["report.txt"]
+            assert parsed.custom_modifiers == {"tag": ["report"]}
+        finally:
+            clear_modifier_plugins()
+
+    def test_custom_modifier_plugin_aliases_share_canonical_name(self):
+        clear_modifier_plugins()
+        try:
+            register_modifier_plugin(SearchModifierPlugin(names=("owner", "ownedby")))
+
+            parsed = parse_query("ownedby:alice")
+
+            assert parsed.custom_modifiers == {"owner": ["alice"]}
+        finally:
+            clear_modifier_plugins()
+
+    def test_custom_modifier_plugin_cannot_replace_builtins(self):
+        clear_modifier_plugins()
+        with pytest.raises(ValueError):
+            register_modifier_plugin(SearchModifierPlugin(names=("ext",)))
+
+    def test_custom_modifier_plugin_registry_lists_unique_plugins(self):
+        clear_modifier_plugins()
+        try:
+            plugin = register_modifier_plugin(SearchModifierPlugin(
+                names=("owner", "ownedby"),
+                description="Owner filter",
+            ))
+
+            assert registered_modifier_plugins() == (plugin,)
+            unregister_modifier_plugin("ownedby")
+            assert registered_modifier_plugins() == ()
+        finally:
+            clear_modifier_plugins()
+
 
 class TestSmartCase:
     def test_lowercase_is_insensitive(self):
@@ -607,6 +654,34 @@ class TestQuerySlotSearch:
         )
 
         assert [entry.name for entry in results] == ["app.log"]
+
+
+class TestModifierPluginSearch:
+    def teardown_method(self):
+        clear_modifier_plugins()
+
+    def test_custom_modifier_plugin_filters_entries(self):
+        entries = [
+            _entry("report-alpha.txt", 1),
+            _entry("notes-beta.txt", 2),
+        ]
+        engine = SearchEngine(FakeIndex(entries))
+        register_modifier_plugin(SearchModifierPlugin(
+            names=("prefix",),
+            match=lambda entry, _index, value, _parsed: entry.name.startswith(value),
+        ))
+
+        results = engine.search("prefix:report")
+
+        assert [entry.name for entry in results] == ["report-alpha.txt"]
+
+    def test_custom_modifier_plugin_forces_memory_search(self):
+        entries = [_entry("report.txt", 1)]
+        engine = SearchEngine(FakeIndex(entries))
+        register_modifier_plugin(SearchModifierPlugin(names=("flag",)))
+        parsed = parse_query("flag:on report")
+
+        assert engine._can_use_db(parsed) is False
 
 
 class TestBooleanExpressionSearch:

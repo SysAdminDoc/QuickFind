@@ -2,6 +2,12 @@
 
 All notable changes to QuickFind will be documented in this file.
 
+## [v0.8.38] - 2026-06-29
+
+- Added a programmatic search modifier plugin API with registration, aliases, parser callbacks, and per-entry predicates.
+- Routed custom modifier queries through in-memory search so plugin predicates cannot be incorrectly delegated to SQLite.
+- Added plugin registry, parser, and search predicate coverage, expanding the passing suite to 316 tests.
+
 ## [v0.8.37] - 2026-06-29
 
 - Added a floating quick-preview popover for the selected result, using Space from details, columns, or thumbnail result views.

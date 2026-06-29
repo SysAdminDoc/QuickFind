@@ -32,6 +32,14 @@ CASE_MODE_INSENSITIVE = "insensitive"
 CASE_MODE_SENSITIVE = "sensitive"
 CASE_MODES = {CASE_MODE_SMART, CASE_MODE_INSENSITIVE, CASE_MODE_SENSITIVE}
 CONTENT_HASH_CHUNK_SIZE = 1024 * 1024
+BUILTIN_MODIFIERS = {
+    'archive', 'attrib', 'attributes', 'broken', 'case', 'content',
+    'datemodified', 'datecreated', 'dc', 'dir', 'dm', 'dupe', 'duplicate',
+    'ext', 'file', 'folder', 'fuzzy', 'git', 'len', 'matchcase',
+    'nocase', 'nofuzzy', 'nomatchcase', 'nopath', 'noregex',
+    'nowholefilename', 'nowholeword', 'nowildcards', 'parent', 'path',
+    'regex', 'size', 'wholefilename', 'wholeword', 'wfn', 'wildcards', 'ww',
+}
 
 
 def _fuzzy_match(text: str, pattern: str) -> bool:
@@ -171,6 +179,79 @@ BUILTIN_FILTERS = {
 
 
 @dataclass(frozen=True)
+class SearchModifierPlugin:
+    """Programmatic extension point for custom search modifiers."""
+    names: tuple[str, ...]
+    parse: Optional[Callable[[str, 'ParsedQuery'], object]] = None
+    match: Optional[Callable[[FileEntry, FileIndex, str, 'ParsedQuery'], bool]] = None
+    description: str = ""
+
+    @property
+    def canonical_name(self) -> str:
+        return self.names[0].lower()
+
+
+_MODIFIER_PLUGINS: dict[str, SearchModifierPlugin] = {}
+
+
+def _normalize_plugin_names(names: tuple[str, ...]) -> tuple[str, ...]:
+    normalized = tuple(dict.fromkeys(name.strip().lower() for name in names if name.strip()))
+    if not normalized:
+        raise ValueError("Search modifier plugins require at least one name")
+    for name in normalized:
+        if ':' in name or any(ch.isspace() for ch in name):
+            raise ValueError(f"Invalid search modifier plugin name: {name!r}")
+        if name in BUILTIN_MODIFIERS:
+            raise ValueError(f"Search modifier plugin conflicts with built-in modifier: {name}")
+    return normalized
+
+
+def register_modifier_plugin(plugin: SearchModifierPlugin) -> SearchModifierPlugin:
+    """Register a custom modifier parser/predicate."""
+    names = _normalize_plugin_names(plugin.names)
+    normalized = SearchModifierPlugin(
+        names=names,
+        parse=plugin.parse,
+        match=plugin.match,
+        description=plugin.description,
+    )
+    for name in names:
+        existing = _MODIFIER_PLUGINS.get(name)
+        if existing is not None and existing is not normalized:
+            raise ValueError(f"Search modifier plugin already registered: {name}")
+    for name in names:
+        _MODIFIER_PLUGINS[name] = normalized
+    return normalized
+
+
+def unregister_modifier_plugin(name: str) -> None:
+    """Remove a registered custom modifier plugin by any alias."""
+    plugin = _MODIFIER_PLUGINS.get(name.strip().lower())
+    if plugin is None:
+        return
+    for alias in plugin.names:
+        _MODIFIER_PLUGINS.pop(alias, None)
+
+
+def registered_modifier_plugins() -> tuple[SearchModifierPlugin, ...]:
+    """Return registered custom modifier plugins without alias duplicates."""
+    seen: set[int] = set()
+    plugins: list[SearchModifierPlugin] = []
+    for plugin in _MODIFIER_PLUGINS.values():
+        ident = id(plugin)
+        if ident in seen:
+            continue
+        seen.add(ident)
+        plugins.append(plugin)
+    return tuple(plugins)
+
+
+def clear_modifier_plugins() -> None:
+    """Clear custom modifier plugins. Intended for tests and controlled reloads."""
+    _MODIFIER_PLUGINS.clear()
+
+
+@dataclass(frozen=True)
 class BooleanExpression:
     """Boolean term expression for parenthesized search syntax."""
     op: str
@@ -238,6 +319,7 @@ class ParsedQuery:
     broken_shortcut_mode: bool = False
     git_dirty_mode: bool = False
     archive_mode: bool = False
+    custom_modifiers: dict[str, list[str]] = field(default_factory=dict)
     boolean_expression: Optional[BooleanExpression] = None
     or_groups: list[list[str]] = field(default_factory=list)
     exclude_terms: list[str] = field(default_factory=list)
@@ -407,6 +489,18 @@ def _legacy_or_group(expression: BooleanExpression) -> list[str]:
             terms.extend(child_terms)
         return terms
     return []
+
+
+def _terms_from_plugin_parse_result(result: object) -> list[str]:
+    if result is None:
+        return []
+    if isinstance(result, str):
+        return [result] if result else []
+    try:
+        return [str(term) for term in result if str(term)]
+    except TypeError:
+        text = str(result)
+        return [text] if text else []
 
 
 def parse_query(raw_query: str, base_options: Optional[SearchOptions] = None,
@@ -610,6 +704,24 @@ def parse_query(raw_query: str, base_options: Optional[SearchOptions] = None,
                 if val:
                     remaining_terms.append(val)
                 i += 1; continue
+            plugin = _MODIFIER_PLUGINS.get(mod_lower)
+            if plugin:
+                parsed.custom_modifiers.setdefault(plugin.canonical_name, []).append(val)
+                try:
+                    if plugin.parse:
+                        remaining_terms.extend(
+                            _terms_from_plugin_parse_result(plugin.parse(val, parsed))
+                        )
+                except Exception as exc:
+                    logger.warning(
+                        "Search modifier plugin %s failed to parse %r: %s",
+                        plugin.canonical_name, token, exc,
+                    )
+                    parsed.custom_modifiers[plugin.canonical_name].pop()
+                    if not parsed.custom_modifiers[plugin.canonical_name]:
+                        parsed.custom_modifiers.pop(plugin.canonical_name, None)
+                    remaining_terms.append(token)
+                i += 1; continue
             remaining_terms.append(token)
             i += 1; continue
 
@@ -722,6 +834,8 @@ class SearchEngine:
         if parsed.git_dirty_mode:
             return False
         if parsed.archive_mode:
+            return False
+        if parsed.custom_modifiers:
             return False
         if parsed.boolean_expression:
             return False
@@ -1349,6 +1463,22 @@ class SearchEngine:
             return False
         if parsed.git_dirty_mode and not self._is_in_dirty_git_repo(entry):
             return False
+
+        if parsed.custom_modifiers:
+            for plugin_name, values in parsed.custom_modifiers.items():
+                plugin = _MODIFIER_PLUGINS.get(plugin_name)
+                if plugin is None or plugin.match is None:
+                    continue
+                for value in values:
+                    try:
+                        if not plugin.match(entry, self._index, value, parsed):
+                            return False
+                    except Exception as exc:
+                        logger.debug(
+                            "Search modifier plugin %s failed to match %s: %s",
+                            plugin_name, entry.name, exc,
+                        )
+                        return False
 
         if boolean_matcher is not None:
             if not boolean_matcher(target):
