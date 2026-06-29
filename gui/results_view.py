@@ -16,7 +16,7 @@ from typing import Optional
 from PyQt6.QtWidgets import (
     QTableView, QAbstractItemView, QHeaderView, QWidget,
     QListView, QStackedWidget, QVBoxLayout, QHBoxLayout, QStyledItemDelegate,
-    QStyle, QApplication, QFileIconProvider, QMenu, QLineEdit
+    QStyle, QApplication, QFileIconProvider, QMenu, QLineEdit, QLabel
 )
 from PyQt6.QtCore import (
     Qt, QAbstractTableModel, QModelIndex, QSize, QSortFilterProxyModel,
@@ -61,6 +61,7 @@ COLUMN_ATTRIB = 6
 # Number of rows to load at a time for virtualization
 FETCH_BATCH_SIZE = 5000
 MAX_FILE_ICON_CACHE_SIZE = 256
+MAX_PATH_COLUMNS = 8
 
 
 def format_size(size: int) -> str:
@@ -128,6 +129,32 @@ def entry_metadata_lines(entry: FileEntry) -> list[str]:
     if entry.has_extended_attributes:
         lines.append("Extended attributes: present")
     return lines
+
+
+def path_segments(path: str) -> list[str]:
+    """Split a Windows path into Finder-style root/folder/item segments."""
+    normalized = (path or "").replace("/", "\\").rstrip("\\")
+    if not normalized:
+        return []
+
+    if normalized.startswith("\\\\"):
+        parts = [part for part in normalized.split("\\") if part]
+        if len(parts) >= 2:
+            return [f"\\\\{parts[0]}\\{parts[1]}", *parts[2:]]
+        return [normalized]
+
+    drive, rest = os.path.splitdrive(normalized)
+    parts = [part for part in rest.strip("\\").split("\\") if part]
+    if drive:
+        return [drive, *parts]
+    return parts or [normalized]
+
+
+def compact_path_segments(segments: list[str],
+                          max_columns: int = MAX_PATH_COLUMNS) -> list[str]:
+    if len(segments) <= max_columns:
+        return segments
+    return segments[:max_columns - 1] + [f"...\\{segments[-1]}"]
 
 
 class FileIconCache:
@@ -733,6 +760,148 @@ class ResultsTableView(QTableView):
         self.selectAll()
 
 
+class BreadcrumbHeader(QWidget):
+    """Compact breadcrumb for the selected result path."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(8, 4, 8, 4)
+        layout.setSpacing(0)
+        self._label = QLabel("No selection")
+        self._label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        self._label.setStyleSheet(f"""
+            QLabel {{
+                color: {MOCHA['subtext1']};
+                background-color: {MOCHA['mantle']};
+                border-bottom: 1px solid {MOCHA['surface0']};
+                font-size: 11px;
+                padding: 2px 4px;
+            }}
+        """)
+        layout.addWidget(self._label, 1)
+
+    def set_path(self, path: str):
+        segments = path_segments(path)
+        if not segments:
+            self._label.setText("No selection")
+            self._label.setToolTip("")
+            return
+        self._label.setText("  >  ".join(segments))
+        self._label.setToolTip(path)
+
+
+class PathColumnModel(QAbstractTableModel):
+    """Finder-style path segment columns for search results."""
+
+    def __init__(self, index: FileIndex, parent=None):
+        super().__init__(parent)
+        self._index = index
+        self._rows: list[tuple[FileEntry, list[str]]] = []
+        self._column_count = 1
+
+    def set_results(self, entries: list[FileEntry]):
+        self.beginResetModel()
+        self._rows = [
+            (entry, compact_path_segments(path_segments(entry.get_path(self._index))))
+            for entry in entries[:FETCH_BATCH_SIZE]
+        ]
+        self._column_count = max([len(segments) for _entry, segments in self._rows] or [1])
+        self.endResetModel()
+
+    def clear(self):
+        self.beginResetModel()
+        self._rows.clear()
+        self._column_count = 1
+        self.endResetModel()
+
+    def rowCount(self, parent=QModelIndex()):
+        return len(self._rows)
+
+    def columnCount(self, parent=QModelIndex()):
+        return self._column_count
+
+    def entry_at(self, row: int) -> Optional[FileEntry]:
+        if 0 <= row < len(self._rows):
+            return self._rows[row][0]
+        return None
+
+    def headerData(self, section, orientation, role=Qt.ItemDataRole.DisplayRole):
+        if orientation != Qt.Orientation.Horizontal or role != Qt.ItemDataRole.DisplayRole:
+            return None
+        if section == 0:
+            return "Root"
+        if section == self._column_count - 1:
+            return "Item"
+        return f"Folder {section}"
+
+    def data(self, index: QModelIndex, role=Qt.ItemDataRole.DisplayRole):
+        if not index.isValid() or index.row() >= len(self._rows):
+            return None
+        entry, segments = self._rows[index.row()]
+        col = index.column()
+        if role == Qt.ItemDataRole.DisplayRole:
+            return segments[col] if col < len(segments) else ""
+        if role == Qt.ItemDataRole.DecorationRole and col == max(len(segments) - 1, 0):
+            return FileIconCache.get(entry, self._index)
+        if role == Qt.ItemDataRole.UserRole:
+            return entry
+        if role == Qt.ItemDataRole.ToolTipRole:
+            return entry.get_path(self._index)
+        return None
+
+
+class PathColumnView(QTableView):
+    """Column-oriented path view for Finder-like scanning."""
+
+    item_activated = pyqtSignal(object)
+    selection_changed = pyqtSignal(object)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setAlternatingRowColors(True)
+        self.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        self.setSortingEnabled(False)
+        self.setShowGrid(False)
+        self.verticalHeader().setVisible(False)
+        self.verticalHeader().setDefaultSectionSize(22)
+        self.horizontalHeader().setStretchLastSection(True)
+        self.horizontalHeader().setDefaultAlignment(
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
+        )
+        self.setHorizontalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
+        self.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
+        self.doubleClicked.connect(self._on_double_click)
+
+    def set_model(self, model: PathColumnModel):
+        self.setModel(model)
+        self.selectionModel().selectionChanged.connect(self._on_selection_changed)
+        for column in range(model.columnCount()):
+            self.setColumnWidth(column, 180 if column else 120)
+
+    def _on_double_click(self, index: QModelIndex):
+        model = self.model()
+        if isinstance(model, PathColumnModel):
+            entry = model.entry_at(index.row())
+            if entry:
+                self.item_activated.emit(entry)
+
+    def _on_selection_changed(self, selected, deselected):
+        entries = self.selected_entries()
+        self.selection_changed.emit(entries[0] if entries else None)
+
+    def selected_entries(self) -> list[FileEntry]:
+        entries = []
+        model = self.model()
+        if isinstance(model, PathColumnModel):
+            for idx in self.selectionModel().selectedRows():
+                entry = model.entry_at(idx.row())
+                if entry:
+                    entries.append(entry)
+        return entries
+
+
 class ThumbnailDelegate(QStyledItemDelegate):
     """Custom delegate for thumbnail view rendering."""
 
@@ -813,8 +982,8 @@ class ThumbnailListView(QListView):
                 self.item_activated.emit(entry)
 
 
-class ResultsView(QStackedWidget):
-    """Stacked widget that switches between table view and thumbnail view."""
+class ResultsView(QWidget):
+    """Results container with breadcrumb, details, columns, and thumbnail views."""
 
     item_activated = pyqtSignal(object)
     selection_changed = pyqtSignal(object)
@@ -827,6 +996,17 @@ class ResultsView(QStackedWidget):
         super().__init__(parent)
         self._file_index = index
         self._model = ResultsTableModel(index)
+        self._path_column_model = PathColumnModel(index)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        self.breadcrumb_header = BreadcrumbHeader()
+        layout.addWidget(self.breadcrumb_header)
+
+        self._stack = QStackedWidget()
+        layout.addWidget(self._stack, 1)
 
         # Table view (index 0)
         self.table_view = ResultsTableView()
@@ -834,18 +1014,27 @@ class ResultsView(QStackedWidget):
         self.table_view.setAccessibleDescription("File search results table")
         self.table_view.set_model(self._model)
         self.table_view.item_activated.connect(self.item_activated)
-        self.table_view.selection_changed.connect(self.selection_changed)
+        self.table_view.selection_changed.connect(self._on_child_selection_changed)
         self.table_view.open_folder_requested.connect(self.open_folder_requested)
         self.table_view.delete_requested.connect(self.delete_requested)
         self.table_view.rename_requested.connect(self.rename_requested)
         self.table_view.column_visibility_changed.connect(self.column_visibility_changed)
-        self.addWidget(self.table_view)
+        self._stack.addWidget(self.table_view)
 
-        # Thumbnail view (index 1)
+        # Finder-style path columns (index 1)
+        self.column_view = PathColumnView()
+        self.column_view.setAccessibleName("Path column results")
+        self.column_view.setAccessibleDescription("Search results displayed as path segments")
+        self.column_view.set_model(self._path_column_model)
+        self.column_view.item_activated.connect(self.item_activated)
+        self.column_view.selection_changed.connect(self._on_child_selection_changed)
+        self._stack.addWidget(self.column_view)
+
+        # Thumbnail view (index 2)
         self.thumb_view = ThumbnailListView()
         self.thumb_view.setModel(self._model)
         self.thumb_view.item_activated.connect(self.item_activated)
-        self.addWidget(self.thumb_view)
+        self._stack.addWidget(self.thumb_view)
 
     @property
     def model(self) -> ResultsTableModel:
@@ -853,24 +1042,42 @@ class ResultsView(QStackedWidget):
 
     def set_results(self, entries: list[FileEntry]):
         self._model.set_results(entries)
+        self._path_column_model.set_results(entries)
+        for column in range(self._path_column_model.columnCount()):
+            self.column_view.setColumnWidth(column, 180 if column else 120)
+        self.breadcrumb_header.set_path("")
 
     def set_highlight(self, text: str):
         self.table_view.set_highlight(text)
 
     def clear(self):
         self._model.clear()
+        self._path_column_model.clear()
+        self.breadcrumb_header.set_path("")
 
     def show_table_view(self):
-        self.setCurrentIndex(0)
+        self._stack.setCurrentIndex(0)
+
+    def show_column_view(self):
+        self._stack.setCurrentIndex(1)
 
     def show_thumbnail_view(self):
-        self.setCurrentIndex(1)
+        self._stack.setCurrentIndex(2)
 
     def selected_entries(self) -> list[FileEntry]:
-        if self.currentIndex() == 0:
+        if self._stack.currentIndex() == 0:
             return self.table_view.selected_entries()
+        if self._stack.currentIndex() == 1:
+            return self.column_view.selected_entries()
         return []
 
     @property
     def result_count(self) -> int:
         return self._model.total_count
+
+    def _on_child_selection_changed(self, entry: Optional[FileEntry]):
+        if entry is None:
+            self.breadcrumb_header.set_path("")
+        else:
+            self.breadcrumb_header.set_path(entry.get_path(self._file_index))
+        self.selection_changed.emit(entry)

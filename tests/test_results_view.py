@@ -8,8 +8,8 @@ import gui.results_view as results_view
 from core.index import FileEntry
 from core.ntfs import FILE_ATTRIBUTE_EA, FILE_ATTRIBUTE_REPARSE_POINT
 from gui.results_view import (
-    COLUMN_NAME, FileIconCache, ResultsTableModel, format_attributes,
-    format_reparse_tag,
+    COLUMN_NAME, FileIconCache, PathColumnModel, ResultsTableModel,
+    format_attributes, format_reparse_tag, path_segments,
 )
 
 
@@ -94,3 +94,29 @@ def test_result_tooltip_includes_reparse_and_ea_metadata():
     assert "C:\\docs\\link" in tooltip
     assert "Reparse tag: SYMLINK (0xA000000C)" in tooltip
     assert "Extended attributes: present" in tooltip
+
+
+def test_path_segments_split_drive_and_unc_paths():
+    assert path_segments(r"C:\Users\me\report.txt") == [
+        "C:",
+        "Users",
+        "me",
+        "report.txt",
+    ]
+    assert path_segments(r"\\server\share\folder\file.txt") == [
+        r"\\server\share",
+        "folder",
+        "file.txt",
+    ]
+
+
+def test_path_column_model_exposes_segments():
+    entry = _entry("report.txt")
+    entry._path = r"C:\Users\me\report.txt"
+    model = PathColumnModel(TempIndex())
+    model.set_results([entry])
+
+    assert model.columnCount() == 4
+    assert model.headerData(0, Qt.Orientation.Horizontal) == "Root"
+    assert model.data(model.index(0, 0)) == "C:"
+    assert model.data(model.index(0, 3)) == "report.txt"

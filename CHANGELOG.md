@@ -2,6 +2,12 @@
 
 All notable changes to QuickFind will be documented in this file.
 
+## [v0.8.31] - 2026-06-29
+
+- Added a Finder-style Columns results view that splits paths into root/folder/item segments for fast path scanning.
+- Added a selectable breadcrumb header that tracks the currently selected result path across result views.
+- Added path-segment and column-model coverage, expanding the passing suite to 291 tests.
+
 ## [v0.8.30] - 2026-06-29
 
 - Added a result context-menu Open With submenu for VS Code, VSCodium, Notepad++, and Obsidian when installed.

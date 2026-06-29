@@ -698,6 +698,10 @@ class MainWindow(QMainWindow):
         self._thumb_view_action.setCheckable(True)
         self._thumb_view_action.triggered.connect(lambda: self._set_view_mode('thumbnails'))
 
+        self._column_view_action = view_menu.addAction("&Columns")
+        self._column_view_action.setCheckable(True)
+        self._column_view_action.triggered.connect(lambda: self._set_view_mode('columns'))
+
         view_menu.addSeparator()
 
         self._preview_action = view_menu.addAction("Preview &Pane")
@@ -1543,10 +1547,17 @@ class MainWindow(QMainWindow):
             self._results_view.show_table_view()
             self._detail_view_action.setChecked(True)
             self._thumb_view_action.setChecked(False)
+            self._column_view_action.setChecked(False)
+        elif mode == 'columns':
+            self._results_view.show_column_view()
+            self._detail_view_action.setChecked(False)
+            self._thumb_view_action.setChecked(False)
+            self._column_view_action.setChecked(True)
         else:
             self._results_view.show_thumbnail_view()
             self._detail_view_action.setChecked(False)
             self._thumb_view_action.setChecked(True)
+            self._column_view_action.setChecked(False)
 
     def _toggle_preview(self, show: bool):
         self._preview_pane.setVisible(show)
