@@ -104,6 +104,34 @@ def test_content_cache_roundtrip_and_search(temp_cache):
     assert stats["text_bytes"] == len("alpha needle omega")
 
 
+def test_content_cache_hits_return_ranked_snippets(temp_cache):
+    long_text = f"{'prefix ' * 40}needle{' suffix ' * 40}"
+    cache.upsert_content_cache(
+        path="C:\\docs\\late.txt",
+        size=12,
+        modified_ms=100,
+        extractor="text",
+        text=long_text,
+    )
+    cache.upsert_content_cache(
+        path="C:\\docs\\dense.txt",
+        size=12,
+        modified_ms=100,
+        extractor="text",
+        text="needle alpha needle beta needle",
+    )
+
+    hits = cache.search_content_cache_hits("needle")
+
+    assert [hit.path for hit in hits] == ["C:\\docs\\dense.txt", "C:\\docs\\late.txt"]
+    assert hits[0].rank > hits[1].rank
+    assert hits[1].snippet.startswith("...")
+    assert hits[1].snippet.endswith("...")
+    assert "needle" in hits[1].snippet
+    assert hits[1].snippet != long_text
+    assert cache.search_content_cache("needle") == ["C:\\docs\\dense.txt", "C:\\docs\\late.txt"]
+
+
 def test_search_engine_content_search_reuses_cache(temp_cache, monkeypatch, tmp_path):
     path = tmp_path / "cached.txt"
     path.write_text("cached needle", encoding="utf-8")
@@ -144,6 +172,37 @@ def test_search_engine_content_search_skips_cached_nonmatches(temp_cache, monkey
     results = SearchEngine(TempIndex(entries)).search("content:needle")
 
     assert [entry.name for entry in results] == ["matching.txt"]
+
+
+def test_search_engine_content_search_ranks_cached_hits(temp_cache, monkeypatch, tmp_path):
+    dense = tmp_path / "dense.txt"
+    sparse = tmp_path / "sparse.txt"
+    dense.write_text("needle alpha needle beta needle", encoding="utf-8")
+    sparse.write_text(f"{'prefix ' * 40}needle", encoding="utf-8")
+    entries = [_file_entry(dense, 1), _file_entry(sparse, 2)]
+    for entry in entries:
+        path = entry.get_path(None)
+        text = dense.read_text(encoding="utf-8")
+        if entry.name == "sparse.txt":
+            text = sparse.read_text(encoding="utf-8")
+        cache.upsert_content_cache(
+            path=path,
+            size=entry.size,
+            modified_ms=int(os_path_mtime(path) * 1000),
+            extractor="text",
+            text=text,
+        )
+
+    def fail_extract(_path):
+        raise AssertionError("fresh cache hit should not be extracted")
+
+    monkeypatch.setattr(content, "extract_text", fail_extract)
+
+    results = SearchEngine(TempIndex(entries)).search("content:needle")
+
+    assert [entry.name for entry in results] == ["dense.txt", "sparse.txt"]
+    assert all(entry.content_snippet for entry in results)
+    assert results[0].content_rank > results[1].content_rank
 
 
 def test_matched_line_context_keeps_three_line_window():

@@ -668,12 +668,20 @@ class SearchEngine:
 
             entry_parsed = parsed
             if content_cache:
+                entry.content_snippet = ""
+                entry.content_rank = 0.0
                 path_key = self._content_path_key(entry)
                 freshness = content_cache['freshness'].get(path_key)
                 if freshness and self._content_entry_cache_is_fresh(entry, freshness):
-                    if path_key not in content_cache['matches']:
+                    hit = content_cache['hits'].get(path_key)
+                    if hit is None:
                         continue
+                    entry.content_snippet = hit.snippet
+                    entry.content_rank = hit.rank
                     entry_parsed = parsed_without_content
+            else:
+                entry.content_snippet = ""
+                entry.content_rank = 0.0
 
             if self._matches(entry, entry_parsed, term_matchers, exclude_matchers, or_matchers, filter_exclude_paths):
                 results.append(entry)
@@ -685,20 +693,22 @@ class SearchEngine:
             results = self._filter_duplicate_results(results)
 
         results = self._sort_results(results, parsed.options, cancel_check)
+        if content_cache:
+            results.sort(key=lambda entry: entry.content_rank, reverse=True)
         if parsed.dupe_mode and limit:
             results = results[:limit]
 
         return results
 
-    def _content_cache_filter(self, parsed: ParsedQuery) -> Optional[dict[str, set[str]]]:
+    def _content_cache_filter(self, parsed: ParsedQuery) -> Optional[dict]:
         if not parsed.content_search:
             return None
         try:
-            from core.cache import get_content_cache_freshness, search_content_cache
+            from core.cache import get_content_cache_freshness, search_content_cache_hits
             freshness = get_content_cache_freshness()
             if not freshness:
                 return None
-            matching_paths = search_content_cache(
+            hits = search_content_cache_hits(
                 parsed.content_search,
                 parsed.options.match_case,
             )
@@ -707,7 +717,10 @@ class SearchEngine:
                     self._normalize_path_key(path): meta
                     for path, meta in freshness.items()
                 },
-                'matches': {self._normalize_path_key(path) for path in matching_paths},
+                'hits': {
+                    self._normalize_path_key(hit.path): hit
+                    for hit in hits
+                },
             }
         except Exception as exc:
             logger.debug(f"Content cache filter unavailable: {exc}")

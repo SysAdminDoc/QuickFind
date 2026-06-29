@@ -381,7 +381,11 @@ class ResultsTableModel(QAbstractTableModel):
 
         elif role == Qt.ItemDataRole.ToolTipRole:
             if col == COLUMN_NAME:
-                return entry.get_path(self._index)
+                path = entry.get_path(self._index)
+                snippet = getattr(entry, "content_snippet", "")
+                if snippet:
+                    return f"{path}\n\nContent match:\n{snippet}"
+                return path
 
         return None
 

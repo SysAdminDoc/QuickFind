@@ -17,6 +17,7 @@ import os
 import sqlite3
 import logging
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from datetime import datetime
 from typing import Callable, Optional
@@ -267,6 +268,13 @@ _fts_lock = threading.Lock()
 _FTS_REBUILD_THRESHOLD = 1000
 
 
+@dataclass(frozen=True)
+class ContentSearchHit:
+    path: str
+    snippet: str
+    rank: float
+
+
 def _rebuild_fts(conn: sqlite3.Connection):
     """Rebuild the FTS5 index from the entries table."""
     global _fts_pending_changes
@@ -476,48 +484,59 @@ def upsert_content_cache(path: str, size: int, modified_ms: int,
 
 def search_content_cache(search_text: str, case_sensitive: bool = False,
                          limit: int = 0) -> list[str]:
+    return [hit.path for hit in search_content_cache_hits(search_text, case_sensitive, limit)]
+
+
+def search_content_cache_hits(search_text: str, case_sensitive: bool = False,
+                              limit: int = 0) -> list[ContentSearchHit]:
     if not search_text:
         return []
 
     try:
         conn = _get_connection()
         _init_schema(conn)
-        sql_limit = " LIMIT ?" if limit else ""
         params: list[object]
+        hits: list[ContentSearchHit] = []
 
-        if _FTS5_AVAILABLE:
+        if _FTS5_AVAILABLE and not case_sensitive:
             try:
                 query = _content_fts_query(search_text)
                 params = [query]
                 if limit:
                     params.append(limit)
+                sql_limit = " LIMIT ?" if limit else ""
                 rows = conn.execute(
-                    "SELECT path, text FROM content_fts WHERE content_fts MATCH ?"
+                    "SELECT path, snippet(content_fts, 1, '', '', ' ... ', 12), "
+                    "bm25(content_fts) AS rank "
+                    "FROM content_fts WHERE content_fts MATCH ? "
+                    "ORDER BY rank"
                     f"{sql_limit}",
                     params
                 ).fetchall()
+                hits = [
+                    ContentSearchHit(path=path, snippet=snippet or "", rank=-float(rank or 0.0))
+                    for path, snippet, rank in rows
+                ]
             except Exception:
-                rows = []
-        else:
-            rows = []
+                hits = []
 
-        if not rows:
+        if not hits:
             params = [f"%{search_text}%"]
-            if limit:
-                params.append(limit)
             rows = conn.execute(
                 "SELECT path, text FROM content_cache "
-                "WHERE text LIKE ? COLLATE NOCASE"
-                f"{sql_limit}",
+                "WHERE text LIKE ? COLLATE NOCASE",
                 params
             ).fetchall()
 
-        if case_sensitive:
-            rows = [(path, text) for path, text in rows if search_text in text]
+            for path, text in rows:
+                hit = _content_hit_from_text(path, text, search_text, case_sensitive)
+                if hit:
+                    hits.append(hit)
+            hits.sort(key=lambda hit: hit.rank, reverse=True)
 
-        return [path for path, _ in rows]
+        return hits[:limit] if limit else hits
     except Exception as e:
-        logger.debug(f"search_content_cache failed: {e}")
+        logger.debug(f"search_content_cache_hits failed: {e}")
         return []
 
 
@@ -691,6 +710,35 @@ def cache_diagnostics(run_integrity_check: bool = True) -> dict:
 def _content_fts_query(search_text: str) -> str:
     escaped = search_text.replace('"', '""')
     return f'"{escaped}"'
+
+
+def _content_hit_from_text(path: str, text: str, search_text: str,
+                           case_sensitive: bool) -> Optional[ContentSearchHit]:
+    haystack = text if case_sensitive else text.lower()
+    needle = search_text if case_sensitive else search_text.lower()
+    first = haystack.find(needle)
+    if first < 0:
+        return None
+    occurrences = haystack.count(needle)
+    rank = float(occurrences * 1000) - (first / 1000.0)
+    return ContentSearchHit(
+        path=path,
+        snippet=_content_snippet(text, first, len(search_text)),
+        rank=rank,
+    )
+
+
+def _content_snippet(text: str, match_start: int, match_len: int,
+                     radius: int = 90) -> str:
+    start = max(0, match_start - radius)
+    end = min(len(text), match_start + match_len + radius)
+    snippet = text[start:end].replace("\r", " ").replace("\n", " ")
+    snippet = " ".join(snippet.split())
+    if start > 0:
+        snippet = "..." + snippet
+    if end < len(text):
+        snippet += "..."
+    return snippet
 
 
 # ── Batch DB Operations ──────────────────────────────────

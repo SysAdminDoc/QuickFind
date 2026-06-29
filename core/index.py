@@ -46,7 +46,8 @@ class FileEntry:
     Uses __slots__ for minimal memory footprint across millions of entries.
     """
     __slots__ = ('frn', 'parent_frn', 'name', 'drive', 'attributes',
-                 'size', 'date_modified', 'date_created', '_path', '_stat_loaded')
+                 'size', 'date_modified', 'date_created', 'content_snippet',
+                 'content_rank', '_path', '_stat_loaded')
 
     def __init__(self, frn: int, parent_frn: int, name: str, drive: str,
                  attributes: int = 0, size: int = 0,
@@ -60,6 +61,8 @@ class FileEntry:
         self.size = size
         self.date_modified = date_modified
         self.date_created = date_created
+        self.content_snippet: str = ""
+        self.content_rank: float = 0.0
         self._path: Optional[str] = None
         self._stat_loaded: bool = False
 

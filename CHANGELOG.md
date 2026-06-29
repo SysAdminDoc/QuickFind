@@ -2,6 +2,12 @@
 
 All notable changes to QuickFind will be documented in this file.
 
+## [v0.8.10] - 2026-06-29
+
+- Added ranked content-cache hits with snippets for cached `content:` searches.
+- Exposed cached content snippets in result tooltips without loading full indexed text into table rows.
+- Added content-search ranking/snippet regression tests and expanded the passing suite to 217 tests.
+
 ## [v0.8.9] - 2026-06-28
 
 - Persisted ZIP/7z archive member metadata in SQLite for faster repeated `archive:` searches.
