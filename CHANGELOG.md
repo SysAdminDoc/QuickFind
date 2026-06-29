@@ -2,6 +2,12 @@
 
 All notable changes to QuickFind will be documented in this file.
 
+## [v0.8.19] - 2026-06-29
+
+- Added EML content extraction for message headers and text/plain or HTML bodies.
+- Expanded source-code extraction coverage through the plain-text adapter for modern web and language extensions.
+- Added EML/source-code adapter coverage and expanded the passing suite to 256 tests.
+
 ## [v0.8.18] - 2026-06-29
 
 - Added an external EFU refresh scheduler with a configurable interval in File Lists settings.

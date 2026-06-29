@@ -3,6 +3,10 @@
 import logging
 import os
 import importlib.util
+import re
+from email import policy
+from email.parser import BytesParser
+from html import unescape
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
@@ -15,10 +19,13 @@ MAX_TEXT_BYTES = 10 * 1024 * 1024
 
 TEXT_EXTENSIONS = {
     'txt', 'md', 'log', 'ini', 'cfg', 'conf', 'json', 'xml', 'yaml', 'yml',
-    'csv', 'tsv', 'html', 'htm', 'css', 'js', 'ts', 'py', 'ps1', 'bat',
-    'cmd', 'sh', 'bash', 'c', 'cpp', 'h', 'hpp', 'cs', 'java', 'rs',
-    'go', 'rb', 'php', 'sql', 'r', 'lua', 'pl', 'swift', 'kt',
-    'toml', 'env', 'gitignore', 'dockerfile', 'makefile',
+    'csv', 'tsv', 'html', 'htm', 'css', 'scss', 'sass', 'less', 'js',
+    'jsx', 'mjs', 'cjs', 'ts', 'tsx', 'vue', 'svelte', 'py', 'pyw',
+    'ps1', 'psm1', 'psd1', 'bat', 'cmd', 'sh', 'bash', 'zsh', 'fish',
+    'c', 'cc', 'cpp', 'cxx', 'h', 'hpp', 'hh', 'cs', 'fs', 'java',
+    'kt', 'kts', 'rs', 'go', 'rb', 'php', 'sql', 'r', 'lua', 'pl',
+    'swift', 'scala', 'dart', 'erl', 'ex', 'exs', 'clj', 'cljs',
+    'toml', 'env', 'gitignore', 'dockerfile', 'makefile', 'gradle',
 }
 
 
@@ -122,11 +129,51 @@ class PptxAdapter:
         return '\n'.join(chunks)
 
 
+class EmlAdapter:
+    name = 'eml'
+    extensions = {'eml'}
+
+    def extract(self, path: str, max_chars: int = MAX_EXTRACT_CHARS) -> str:
+        with open(path, 'rb') as f:
+            message = BytesParser(policy=policy.default).parse(f)
+
+        chunks = []
+        for header in ("From", "To", "Cc", "Bcc", "Subject", "Date"):
+            value = message.get(header)
+            if value:
+                chunks.append(f"{header}: {value}")
+
+        plain_parts = []
+        html_parts = []
+        parts = message.walk() if message.is_multipart() else [message]
+        for part in parts:
+            if part.get_content_maintype() == 'multipart':
+                continue
+            if part.get_content_disposition() == 'attachment':
+                continue
+            content_type = part.get_content_type()
+            try:
+                payload = part.get_content()
+            except Exception:
+                payload = ""
+            if not isinstance(payload, str):
+                continue
+            if content_type == 'text/plain':
+                plain_parts.append(payload)
+            elif content_type == 'text/html':
+                html_parts.append(_html_to_text(payload))
+
+        chunks.extend(plain_parts or html_parts)
+        text = '\n'.join(chunk for chunk in chunks if chunk)
+        return text[:max_chars]
+
+
 ADAPTERS: tuple[ContentAdapter, ...] = (
     PlainTextAdapter(),
     PdfAdapter(),
     DocxAdapter(),
     PptxAdapter(),
+    EmlAdapter(),
 )
 
 _ADAPTER_BY_EXTENSION = {
@@ -152,6 +199,7 @@ def adapter_diagnostics() -> list[AdapterDiagnostic]:
         'pdfplumber': 'pdfplumber',
         'python-docx': 'docx',
         'python-pptx': 'pptx',
+        'eml': None,
     }
     diagnostics = []
     for adapter in ADAPTERS:
@@ -231,3 +279,10 @@ def _extension(path: str) -> str:
     if suffix:
         return suffix
     return Path(path).name.lower()
+
+
+def _html_to_text(html: str) -> str:
+    text = re.sub(r"(?is)<(script|style).*?>.*?</\1>", " ", html)
+    text = re.sub(r"(?s)<[^>]+>", " ", text)
+    text = unescape(text)
+    return re.sub(r"\s+", " ", text).strip()

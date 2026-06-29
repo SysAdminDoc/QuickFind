@@ -64,6 +64,38 @@ def test_plain_text_adapter_extracts_text(tmp_path):
     assert "needle" in extracted.text
 
 
+def test_source_code_extension_extracts_as_text(tmp_path):
+    path = tmp_path / "component.tsx"
+    path.write_text("export const needle = 'component';", encoding="utf-8")
+
+    extracted = extract_text(str(path))
+
+    assert extracted is not None
+    assert extracted.extractor == "text"
+    assert "needle" in extracted.text
+
+
+def test_eml_adapter_extracts_headers_and_plain_body(tmp_path):
+    path = tmp_path / "message.eml"
+    path.write_text(
+        "From: sender@example.com\n"
+        "To: receiver@example.com\n"
+        "Subject: Needle Update\n"
+        "Date: Mon, 29 Jun 2026 12:00:00 -0400\n"
+        "MIME-Version: 1.0\n"
+        "Content-Type: text/plain; charset=utf-8\n\n"
+        "The body contains needle text.\n",
+        encoding="utf-8",
+    )
+
+    extracted = extract_text(str(path))
+
+    assert extracted is not None
+    assert extracted.extractor == "eml"
+    assert "Subject: Needle Update" in extracted.text
+    assert "body contains needle" in extracted.text
+
+
 def test_pdf_adapter_uses_pdfplumber(monkeypatch, tmp_path):
     path = tmp_path / "report.pdf"
     path.write_bytes(b"%PDF")
@@ -223,6 +255,9 @@ def test_adapter_diagnostics_reports_text_adapter():
     text_adapter = next(item for item in diagnostics if item.name == "text")
     assert text_adapter.available is True
     assert "txt" in text_adapter.extensions
+    eml_adapter = next(item for item in diagnostics if item.name == "eml")
+    assert eml_adapter.available is True
+    assert "eml" in eml_adapter.extensions
 
 
 def test_content_index_job_honors_roots_extensions_and_cache(temp_cache, tmp_path):
