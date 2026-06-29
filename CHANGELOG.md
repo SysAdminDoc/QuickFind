@@ -2,6 +2,12 @@
 
 All notable changes to QuickFind will be documented in this file.
 
+## [v0.8.27] - 2026-06-29
+
+- Made search tabs keep independent query, filter, and match-option state.
+- Bound background search results to the tab that launched the worker so late completions cannot overwrite the active tab.
+- Added a keyboard-navigable tab switcher dialog from the File menu.
+
 ## [v0.8.26] - 2026-06-29
 
 - Added `git:dirty` search filtering for files inside Git worktrees with non-empty `git status --porcelain` output.

@@ -29,6 +29,7 @@ _QT_ATTRS = {
         'QDesktopServices', 'QPixmap', 'QPainter', 'QImage', 'QDrag',
         'QFontMetrics', 'QPen', 'QKeyEvent', 'QTextDocument',
         'QAbstractTextDocumentLayout', 'QTextCharFormat', 'QTextFormat',
+        'QKeySequence', 'QCloseEvent',
     ],
 }
 

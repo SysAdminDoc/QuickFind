@@ -1,10 +1,10 @@
-# QuickFind v0.8.26
+# QuickFind v0.8.27
 
 Lightning-fast file search for Windows, powered by NTFS MFT + USN Journal.
 
 An open-source alternative to [Voidtools Everything](https://www.voidtools.com/), built with Python and PyQt6 for extensibility and customization.
 
-![Version](https://img.shields.io/badge/Version-v0.8.26-blueviolet)
+![Version](https://img.shields.io/badge/Version-v0.8.27-blueviolet)
 ![Python](https://img.shields.io/badge/Python-3.10+-blue)
 ![License](https://img.shields.io/badge/License-MIT-green)
 ![Platform](https://img.shields.io/badge/Platform-Windows-lightgrey)
@@ -50,6 +50,7 @@ An open-source alternative to [Voidtools Everything](https://www.voidtools.com/)
 - **Launcher popup** — `Ctrl+Shift+F` summons a floating search bar (Wox/Flow Launcher style) with keyboard hints and empty-state feedback
 - **Catppuccin Mocha** dark theme — premium polished aesthetic with rounded inputs, focus rings, and consistent spacing
 - **Details view** with sortable columns (Name, Path, Size, Date Modified, Date Created, Type, Attributes)
+- **Multi-tab search** with independent query/filter/match options and a keyboard-navigable tab switcher dialog
 - **Bounded native icon cache** keeps file-type icons responsive without unbounded memory growth
 - **Column visibility** — right-click header to show/hide columns, persisted in settings
 - **Keyboard navigation** — `Enter` open, `Delete` recycle, `F2` rename, `Ctrl+Enter` open folder
@@ -86,7 +87,7 @@ An open-source alternative to [Voidtools Everything](https://www.voidtools.com/)
 
 ## Supported Runtime Matrix
 
-| Component | Supported | Tested in v0.8.26 |
+| Component | Supported | Tested in v0.8.27 |
 |-----------|-----------|------------------|
 | OS | Windows 10/11 | Windows 10.0.26100 |
 | Python | 3.10+ | 3.11.9 |

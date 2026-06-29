@@ -14,7 +14,8 @@ from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLineEdit,
     QSplitter, QStatusBar, QLabel, QMenuBar, QMenu, QComboBox,
     QProgressBar, QApplication, QMessageBox, QTabWidget, QTabBar,
-    QCompleter, QToolTip
+    QCompleter, QToolTip, QDialog, QListWidget, QListWidgetItem,
+    QDialogButtonBox
 )
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QSize, QThread, pyqtSlot, QStringListModel, QPoint
 from PyQt6.QtGui import (
@@ -152,6 +153,10 @@ class SearchTab:
         self.results_view = ResultsView(file_index)
         self.query = ""
         self.filter_index = 0
+        self.match_case = False
+        self.use_regex = False
+        self.match_path = False
+        self.match_whole_word = False
         self.search_worker: Optional[SearchWorker] = None
 
 
@@ -455,10 +460,73 @@ class MainWindow(QMainWindow):
         self._filter_combo.blockSignals(True)
         self._filter_combo.setCurrentIndex(tab.filter_index)
         self._filter_combo.blockSignals(False)
+        self._restore_tab_search_options(tab)
         # Update result count (guard: label may not exist yet during init)
         if hasattr(self, '_result_count_label'):
             count = tab.results_view.result_count
             self._result_count_label.setText(f"{count:,} object{'s' if count != 1 else ''}")
+
+    def _save_tab_search_options(self):
+        tab = self._current_tab()
+        if not tab or not hasattr(self, '_match_case_action'):
+            return
+        tab.match_case = self._match_case_action.isChecked()
+        tab.use_regex = self._regex_action.isChecked()
+        tab.match_path = self._match_path_action.isChecked()
+        tab.match_whole_word = self._match_whole_action.isChecked()
+
+    def _restore_tab_search_options(self, tab: SearchTab):
+        if not hasattr(self, '_match_case_action'):
+            return
+        for action, checked in (
+            (self._match_case_action, tab.match_case),
+            (self._regex_action, tab.use_regex),
+            (self._match_path_action, tab.match_path),
+            (self._match_whole_action, tab.match_whole_word),
+        ):
+            action.blockSignals(True)
+            action.setChecked(checked)
+            action.blockSignals(False)
+
+    def _on_search_option_changed(self):
+        self._save_tab_search_options()
+        self._trigger_search()
+
+    def _show_tab_switcher(self):
+        if not self._tabs:
+            return
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Switch Tab")
+        dialog.setMinimumWidth(360)
+        layout = QVBoxLayout(dialog)
+
+        list_widget = QListWidget()
+        for index, tab in enumerate(self._tabs):
+            label = self._tab_switcher_label(index, tab)
+            item = QListWidgetItem(label)
+            item.setData(Qt.ItemDataRole.UserRole, index)
+            list_widget.addItem(item)
+        list_widget.setCurrentRow(self._tab_widget.currentIndex())
+        list_widget.itemDoubleClicked.connect(lambda _item: dialog.accept())
+        layout.addWidget(list_widget)
+
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            item = list_widget.currentItem()
+            if item is not None:
+                self._tab_widget.setCurrentIndex(item.data(Qt.ItemDataRole.UserRole))
+
+    def _tab_switcher_label(self, index: int, tab: SearchTab) -> str:
+        query = tab.query.strip() or "Search"
+        count = tab.results_view.result_count
+        return f"{index + 1}. {query[:48]} ({count:,})"
 
     def _current_tab(self) -> Optional[SearchTab]:
         idx = self._tab_widget.currentIndex()
@@ -544,6 +612,9 @@ class MainWindow(QMainWindow):
         close_tab.setShortcut(QKeySequence("Ctrl+W"))
         close_tab.triggered.connect(lambda: self._close_tab(self._tab_widget.currentIndex()))
 
+        switch_tab = file_menu.addAction("Switch &Tab...")
+        switch_tab.triggered.connect(self._show_tab_switcher)
+
         file_menu.addSeparator()
 
         open_efu = file_menu.addAction("Open File &List...")
@@ -617,22 +688,22 @@ class MainWindow(QMainWindow):
         self._match_case_action = search_menu.addAction("Match &Case")
         self._match_case_action.setCheckable(True)
         self._match_case_action.setShortcut(QKeySequence("Alt+C"))
-        self._match_case_action.toggled.connect(lambda: self._trigger_search())
+        self._match_case_action.toggled.connect(self._on_search_option_changed)
 
         self._regex_action = search_menu.addAction("&Regex")
         self._regex_action.setCheckable(True)
         self._regex_action.setShortcut(QKeySequence("Alt+R"))
-        self._regex_action.toggled.connect(lambda: self._trigger_search())
+        self._regex_action.toggled.connect(self._on_search_option_changed)
 
         self._match_path_action = search_menu.addAction("Match &Path")
         self._match_path_action.setCheckable(True)
         self._match_path_action.setShortcut(QKeySequence("Alt+P"))
-        self._match_path_action.toggled.connect(lambda: self._trigger_search())
+        self._match_path_action.toggled.connect(self._on_search_option_changed)
 
         self._match_whole_action = search_menu.addAction("Match &Whole Word")
         self._match_whole_action.setCheckable(True)
         self._match_whole_action.setShortcut(QKeySequence("Alt+W"))
-        self._match_whole_action.toggled.connect(lambda: self._trigger_search())
+        self._match_whole_action.toggled.connect(self._on_search_option_changed)
 
         search_menu.addSeparator()
 
@@ -932,28 +1003,34 @@ class MainWindow(QMainWindow):
         worker = SearchWorker(
             self._search_engine, query, active_filter, options, query_slots
         )
-        worker.results_ready.connect(self._on_search_results)
+        worker.results_ready.connect(
+            lambda results, source_tab=tab: self._on_search_results(results, source_tab)
+        )
         tab.search_worker = worker
         self._search_worker = worker  # Keep reference for backwards compat
         worker.start()
 
     @pyqtSlot(list)
-    def _on_search_results(self, results: list):
+    def _on_search_results(self, results: list, source_tab: Optional[SearchTab] = None):
         """Handle search results from worker thread."""
-        tab = self._current_tab()
-        if not tab:
+        tab = source_tab or self._current_tab()
+        if not tab or tab not in self._tabs:
             return
 
         logger.debug(f"Search returned {len(results)} results")
         tab.results_view.set_results(results)
         count = len(results)
-        self._result_count_label.setText(f"{count:,} object{'s' if count != 1 else ''}")
 
         # Update tab title with result count
-        idx = self._tab_widget.currentIndex()
-        query = self._search_input.text().strip()
+        idx = self._tabs.index(tab)
+        query = tab.query.strip()
         tab_label = query[:20] if query else "Search"
         self._tab_widget.setTabText(idx, f"{tab_label} ({count:,})")
+
+        if tab is not self._current_tab():
+            return
+
+        self._result_count_label.setText(f"{count:,} object{'s' if count != 1 else ''}")
 
         # Update window title like Everything
         if query:
