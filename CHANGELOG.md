@@ -2,6 +2,12 @@
 
 All notable changes to QuickFind will be documented in this file.
 
+## [v0.8.32] - 2026-06-29
+
+- Added HTTP Basic authentication for remote search, using the existing auth token as the Basic password.
+- Added a `WWW-Authenticate` challenge for unauthorized API responses when remote auth is enabled.
+- Added Basic auth acceptance/rejection and challenge-header coverage, expanding the passing suite to 294 tests.
+
 ## [v0.8.31] - 2026-06-29
 
 - Added a Finder-style Columns results view that splits paths into root/folder/item segments for fast path scanning.

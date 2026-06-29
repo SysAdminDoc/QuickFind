@@ -1,5 +1,6 @@
 """Tests for remote HTTP/HTTPS server configuration."""
 
+import base64
 from io import BytesIO
 from unittest.mock import MagicMock, patch
 
@@ -92,6 +93,20 @@ def test_bearer_authorization_is_accepted():
     assert handler._check_auth() is True
 
 
+def test_basic_authorization_accepts_token_as_password():
+    credentials = base64.b64encode(b"quickfind:secret").decode("ascii")
+    handler = _handler({"Authorization": f"Basic {credentials}"})
+
+    assert handler._check_auth() is True
+
+
+def test_basic_authorization_rejects_invalid_password():
+    credentials = base64.b64encode(b"quickfind:wrong").decode("ascii")
+    handler = _handler({"Authorization": f"Basic {credentials}"})
+
+    assert handler._check_auth() is False
+
+
 def test_session_cookie_is_accepted():
     handler = _handler({"Cookie": f"{_SESSION_COOKIE_NAME}=session"})
 
@@ -125,3 +140,15 @@ def test_api_search_omits_wildcard_cors_header():
     header_calls = [call.args for call in handler.send_header.call_args_list]
     assert ("Access-Control-Allow-Origin", "*") not in header_calls
     assert ("Content-Type", "application/json") in header_calls
+
+
+def test_unauthorized_response_includes_basic_challenge():
+    handler = _handler()
+
+    handler._send_unauthorized()
+
+    handler.send_response.assert_called_once_with(401)
+    handler.send_header.assert_any_call(
+        "WWW-Authenticate",
+        'Basic realm="QuickFind", charset="UTF-8"',
+    )

@@ -1,9 +1,11 @@
 """
 HTTP server for remote web browser access to QuickFind search.
 Provides a lightweight web interface for searching the index remotely.
-Supports optional token-based authentication.
+Supports optional Bearer, Basic, and same-origin cookie authentication.
 """
 
+import base64
+import binascii
 import html
 import json
 import logging
@@ -263,12 +265,28 @@ class SearchHandler(BaseHTTPRequestHandler):
             if secrets.compare_digest(request_token, self.auth_token):
                 return True
 
+        if auth_header.startswith('Basic '):
+            password = self._basic_auth_password(auth_header[6:])
+            if password and secrets.compare_digest(password, self.auth_token):
+                return True
+
         session_cookie = self._session_cookie_value()
         return bool(
             self.session_token
             and session_cookie
             and secrets.compare_digest(session_cookie, self.session_token)
         )
+
+    def _basic_auth_password(self, encoded_credentials: str) -> str:
+        try:
+            decoded = base64.b64decode(encoded_credentials, validate=True).decode(
+                'utf-8',
+                errors='strict',
+            )
+        except (binascii.Error, UnicodeDecodeError):
+            return ''
+        _username, sep, password = decoded.partition(':')
+        return password if sep else ''
 
     def _session_cookie_value(self) -> str:
         raw_cookie = self.headers.get('Cookie', '')
@@ -292,6 +310,8 @@ class SearchHandler(BaseHTTPRequestHandler):
     def _send_unauthorized(self):
         self.send_response(401)
         self.send_header('Content-Type', 'application/json')
+        if self.auth_token:
+            self.send_header('WWW-Authenticate', 'Basic realm="QuickFind", charset="UTF-8"')
         self._send_security_headers()
         self.end_headers()
         self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
