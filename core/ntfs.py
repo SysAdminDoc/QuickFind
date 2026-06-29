@@ -50,6 +50,7 @@ FILE_ATTRIBUTE_COMPRESSED = 0x00000800
 FILE_ATTRIBUTE_OFFLINE = 0x00001000
 FILE_ATTRIBUTE_NOT_CONTENT_INDEXED = 0x00002000
 FILE_ATTRIBUTE_ENCRYPTED = 0x00004000
+FILE_ATTRIBUTE_EA = 0x00040000
 
 # USN reason flags
 USN_REASON_DATA_OVERWRITE = 0x00000001
@@ -250,6 +251,9 @@ MFT_SIGNATURE = b'FILE'
 ATTR_STANDARD_INFORMATION = 0x10
 ATTR_FILE_NAME = 0x30
 ATTR_DATA = 0x80
+ATTR_REPARSE_POINT = 0xC0
+ATTR_EA_INFORMATION = 0xD0
+ATTR_EA = 0xE0
 ATTR_END_MARKER = 0xFFFFFFFF
 
 # $FILE_NAME namespace values
@@ -319,6 +323,8 @@ def _parse_mft_record(record_data: bytearray, record_number: int,
     - $STANDARD_INFORMATION (0x10): timestamps, file attributes
     - $FILE_NAME (0x30): parent FRN, filename
     - $DATA (0x80): file size (real size for non-resident)
+    - $REPARSE_POINT (0xC0): reparse tag for links, mount points, and cloud files
+    - $EA_INFORMATION/$EA (0xD0/0xE0): presence of NTFS extended attributes
     """
     if not _apply_usa_fixup(record_data, bytes_per_sector):
         return None
@@ -344,6 +350,8 @@ def _parse_mft_record(record_data: bytearray, record_number: int,
     date_modified = None
     file_size = 0
     attributes = 0
+    reparse_tag = 0
+    has_extended_attributes = False
     best_namespace = -1  # track best filename namespace
 
     offset = first_attr
@@ -408,6 +416,16 @@ def _parse_mft_record(record_data: bytearray, record_number: int,
                     if offset + 0x14 <= record_len:
                         file_size = struct.unpack_from('<I', record_data, offset + 0x10)[0]
 
+        elif attr_type == ATTR_REPARSE_POINT and not non_resident:
+            content_offset = struct.unpack_from('<H', record_data, offset + 0x14)[0]
+            content_start = offset + content_offset
+            if content_start + 4 <= record_len:
+                reparse_tag = struct.unpack_from('<I', record_data, content_start)[0]
+
+        elif attr_type in (ATTR_EA_INFORMATION, ATTR_EA):
+            has_extended_attributes = True
+            attributes |= FILE_ATTRIBUTE_EA
+
         offset += attr_len
 
     if name is None or name in ('.', '..'):
@@ -425,6 +443,8 @@ def _parse_mft_record(record_data: bytearray, record_number: int,
         timestamp=date_modified,
         size=file_size,
         date_created=date_created,
+        reparse_tag=reparse_tag,
+        has_extended_attributes=has_extended_attributes,
         mft_metadata=True,
     )
 
@@ -439,6 +459,8 @@ class FileRecord:
     timestamp: Optional[datetime] = None  # date_modified
     size: int = 0
     date_created: Optional[datetime] = None
+    reparse_tag: int = 0
+    has_extended_attributes: bool = False
     mft_metadata: bool = False  # True when populated from direct $MFT reading
 
     @property
@@ -464,6 +486,10 @@ class FileRecord:
     @property
     def is_encrypted(self) -> bool:
         return bool(self.attributes & FILE_ATTRIBUTE_ENCRYPTED)
+
+    @property
+    def is_reparse_point(self) -> bool:
+        return bool(self.attributes & FILE_ATTRIBUTE_REPARSE_POINT)
 
 
 @dataclass

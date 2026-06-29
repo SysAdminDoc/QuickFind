@@ -585,7 +585,10 @@ class SearchEngine:
 
         # Convert DB rows to FileEntry objects
         results = []
-        for frn, drive, parent_frn, name, path, attrs, size, mtime_ms, ctime_ms in rows:
+        for row in rows:
+            frn, drive, parent_frn, name, path, attrs, size, mtime_ms, ctime_ms = row[:9]
+            reparse_tag = row[9] if len(row) > 9 else 0
+            has_ea = row[10] if len(row) > 10 else 0
             # Try to get from in-memory index first (has full state)
             existing = self._index.get_entry(drive, frn)
             if existing:
@@ -593,7 +596,8 @@ class SearchEngine:
             else:
                 entry = FileEntry(
                     frn=frn, parent_frn=parent_frn, name=name,
-                    drive=drive, attributes=attrs,
+                    drive=drive, attributes=attrs, reparse_tag=reparse_tag,
+                    has_extended_attributes=bool(has_ea),
                 )
                 if path:
                     entry._path = path

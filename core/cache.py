@@ -36,7 +36,7 @@ CONFIG_DIR = Path.home() / '.quickfind'
 DB_FILE = CONFIG_DIR / 'index.db'
 OLD_CACHE_FILE = CONFIG_DIR / 'index_cache.bin'
 
-DB_VERSION = 5
+DB_VERSION = 6
 
 # Thread-local connections for safe multi-threaded access
 import threading
@@ -148,6 +148,8 @@ def _init_schema(conn: sqlite3.Connection):
             name TEXT NOT NULL,
             path TEXT DEFAULT '',
             attributes INTEGER DEFAULT 0,
+            reparse_tag INTEGER DEFAULT 0,
+            has_extended_attributes INTEGER DEFAULT 0,
             size INTEGER DEFAULT 0,
             date_modified_ms INTEGER DEFAULT 0,
             date_created_ms INTEGER DEFAULT 0,
@@ -212,6 +214,12 @@ def _init_schema(conn: sqlite3.Connection):
         CREATE INDEX IF NOT EXISTS idx_archive_members_name
             ON archive_members(name COLLATE NOCASE);
     """)
+
+    entry_columns = {row[1] for row in conn.execute("PRAGMA table_info(entries)")}
+    if "reparse_tag" not in entry_columns:
+        conn.execute("ALTER TABLE entries ADD COLUMN reparse_tag INTEGER DEFAULT 0")
+    if "has_extended_attributes" not in entry_columns:
+        conn.execute("ALTER TABLE entries ADD COLUMN has_extended_attributes INTEGER DEFAULT 0")
 
     # FTS5 table for fast substring search
     if _FTS5_AVAILABLE:
@@ -766,10 +774,12 @@ def db_batch_apply(inserts: list[tuple], deletes: list[tuple],
             ctime_ms = _dt_to_ms(entry.date_created)
             conn.execute(
                 "INSERT OR REPLACE INTO entries "
-                "(frn, drive, parent_frn, name, path, attributes, size, "
-                "date_modified_ms, date_created_ms) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "(frn, drive, parent_frn, name, path, attributes, reparse_tag, "
+                "has_extended_attributes, size, date_modified_ms, date_created_ms) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (entry.frn, entry.drive, entry.parent_frn, entry.name, path,
-                 entry.attributes, entry.size, mtime_ms, ctime_ms)
+                 entry.attributes, entry.reparse_tag, int(entry.has_extended_attributes),
+                 entry.size, mtime_ms, ctime_ms)
             )
 
         for drive, frn in deletes:
@@ -781,17 +791,21 @@ def db_batch_apply(inserts: list[tuple], deletes: list[tuple],
             if path:
                 conn.execute(
                     "UPDATE entries SET parent_frn=?, name=?, path=?, attributes=?, "
-                    "size=?, date_modified_ms=?, date_created_ms=? "
+                    "reparse_tag=?, has_extended_attributes=?, size=?, "
+                    "date_modified_ms=?, date_created_ms=? "
                     "WHERE drive=? AND frn=?",
                     (entry.parent_frn, entry.name, path, entry.attributes,
+                     entry.reparse_tag, int(entry.has_extended_attributes),
                      entry.size, mtime_ms, ctime_ms, entry.drive, entry.frn)
                 )
             else:
                 conn.execute(
                     "UPDATE entries SET parent_frn=?, name=?, attributes=?, "
-                    "size=?, date_modified_ms=?, date_created_ms=? "
+                    "reparse_tag=?, has_extended_attributes=?, size=?, "
+                    "date_modified_ms=?, date_created_ms=? "
                     "WHERE drive=? AND frn=?",
                     (entry.parent_frn, entry.name, entry.attributes,
+                     entry.reparse_tag, int(entry.has_extended_attributes),
                      entry.size, mtime_ms, ctime_ms, entry.drive, entry.frn)
                 )
 
@@ -854,13 +868,15 @@ def save_cache(index: FileIndex, usn_positions: dict[str, tuple[int, int]]):
 
                 batch.append((
                     entry.frn, drive, entry.parent_frn, entry.name, path,
-                    entry.attributes, size, mtime_ms, ctime_ms
+                    entry.attributes, entry.reparse_tag,
+                    int(entry.has_extended_attributes), size, mtime_ms, ctime_ms
                 ))
 
             conn.executemany(
                 "INSERT INTO entries (frn, drive, parent_frn, name, path, "
-                "attributes, size, date_modified_ms, date_created_ms) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "attributes, reparse_tag, has_extended_attributes, size, "
+                "date_modified_ms, date_created_ms) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 batch
             )
             total += len(batch)
@@ -947,16 +963,17 @@ def load_cache(index: FileIndex) -> Optional[dict[str, tuple[int, int]]]:
             # all rows for a drive into memory at once
             cursor = conn.execute(
                 "SELECT frn, parent_frn, name, path, attributes, size, "
-                "date_modified_ms, date_created_ms "
+                "reparse_tag, has_extended_attributes, date_modified_ms, date_created_ms "
                 "FROM entries WHERE drive=?",
                 (drive,)
             )
             drive_count = 0
 
-            for frn, parent_frn, name, path, attrs, size, mtime_ms, ctime_ms in cursor:
+            for frn, parent_frn, name, path, attrs, size, reparse_tag, has_ea, mtime_ms, ctime_ms in cursor:
                 entry = FileEntry(
                     frn=frn, parent_frn=parent_frn, name=name,
-                    drive=drive, attributes=attrs,
+                    drive=drive, attributes=attrs, reparse_tag=reparse_tag,
+                    has_extended_attributes=bool(has_ea),
                 )
 
                 # Restore pre-resolved path
@@ -1039,7 +1056,8 @@ def db_search(query: str, match_path: bool = False,
     Search the database directly. Returns (rows, total_count).
 
     Each row is: (frn, drive, parent_frn, name, path, attributes, size,
-                  date_modified_ms, date_created_ms)
+                  date_modified_ms, date_created_ms, reparse_tag,
+                  has_extended_attributes)
 
     Returns total_count = -1 if count is not computed (for performance).
     """
@@ -1128,7 +1146,8 @@ def db_search(query: str, match_path: bool = False,
         escaped_query = query.replace('"', '""')
         sql = f"""
             SELECT e.frn, e.drive, e.parent_frn, e.name, e.path,
-                   e.attributes, e.size, e.date_modified_ms, e.date_created_ms
+                   e.attributes, e.size, e.date_modified_ms, e.date_created_ms,
+                   e.reparse_tag, e.has_extended_attributes
             FROM entries e
             INNER JOIN entries_fts ON entries_fts.rowid = e.rowid
             WHERE entries_fts.{fts_col} MATCH ?
@@ -1162,7 +1181,8 @@ def db_search(query: str, match_path: bool = False,
 
     sql = f"""
         SELECT e.frn, e.drive, e.parent_frn, e.name, e.path,
-               e.attributes, e.size, e.date_modified_ms, e.date_created_ms
+               e.attributes, e.size, e.date_modified_ms, e.date_created_ms,
+               e.reparse_tag, e.has_extended_attributes
         FROM entries e
         WHERE {where_clause}
         ORDER BY {order_col} {order_dir}
@@ -1254,15 +1274,16 @@ def load_entries_from_cache() -> tuple[list, dict]:
             # Use cursor iteration instead of fetchall()
             cursor = conn.execute(
                 "SELECT frn, parent_frn, name, path, attributes, size, "
-                "date_modified_ms, date_created_ms "
+                "reparse_tag, has_extended_attributes, date_modified_ms, date_created_ms "
                 "FROM entries WHERE drive=?",
                 (drive,)
             )
 
-            for frn, parent_frn, name, path, attrs, size, mtime_ms, ctime_ms in cursor:
+            for frn, parent_frn, name, path, attrs, size, reparse_tag, has_ea, mtime_ms, ctime_ms in cursor:
                 entry = FileEntry(
                     frn=frn, parent_frn=parent_frn, name=name,
-                    drive=drive, attributes=attrs,
+                    drive=drive, attributes=attrs, reparse_tag=reparse_tag,
+                    has_extended_attributes=bool(has_ea),
                 )
                 if path:
                     entry._path = path

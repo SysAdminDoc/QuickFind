@@ -2,6 +2,12 @@
 
 All notable changes to QuickFind will be documented in this file.
 
+## [v0.8.15] - 2026-06-29
+
+- Added reparse tag and NTFS extended-attribute metadata to `FileEntry` and cache records.
+- Surfaced reparse tags and extended-attribute presence in result tooltips, attribute codes, and preview info.
+- Added metadata persistence/formatting coverage and expanded the passing suite to 238 tests.
+
 ## [v0.8.14] - 2026-06-29
 
 - Added a persisted index case mode with smart, case-insensitive, and case-sensitive baseline matching.

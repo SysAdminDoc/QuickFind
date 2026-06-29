@@ -6,7 +6,11 @@ from PyQt6.QtCore import Qt
 
 import gui.results_view as results_view
 from core.index import FileEntry
-from gui.results_view import COLUMN_NAME, FileIconCache, ResultsTableModel
+from core.ntfs import FILE_ATTRIBUTE_EA, FILE_ATTRIBUTE_REPARSE_POINT
+from gui.results_view import (
+    COLUMN_NAME, FileIconCache, ResultsTableModel, format_attributes,
+    format_reparse_tag,
+)
 
 
 class FakeIconProvider:
@@ -64,3 +68,29 @@ def test_result_tooltip_includes_content_snippet():
     tooltip = model.data(model.index(0, COLUMN_NAME), Qt.ItemDataRole.ToolTipRole)
 
     assert tooltip == "C:\\docs\\report.txt\n\nContent match:\nalpha needle omega"
+
+
+def test_attribute_formatter_surfaces_reparse_and_ea_flags():
+    attrs = FILE_ATTRIBUTE_REPARSE_POINT | FILE_ATTRIBUTE_EA
+
+    assert format_attributes(attrs) == "LEA"
+
+
+def test_reparse_tag_formatter_names_common_tags():
+    assert format_reparse_tag(0xA000000C) == "SYMLINK (0xA000000C)"
+    assert format_reparse_tag(0x12345678) == "0x12345678"
+
+
+def test_result_tooltip_includes_reparse_and_ea_metadata():
+    entry = _entry("link")
+    entry._path = "C:\\docs\\link"
+    entry.reparse_tag = 0xA000000C
+    entry.has_extended_attributes = True
+    model = ResultsTableModel(TempIndex())
+    model.set_results([entry])
+
+    tooltip = model.data(model.index(0, COLUMN_NAME), Qt.ItemDataRole.ToolTipRole)
+
+    assert "C:\\docs\\link" in tooltip
+    assert "Reparse tag: SYMLINK (0xA000000C)" in tooltip
+    assert "Extended attributes: present" in tooltip

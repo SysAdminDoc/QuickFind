@@ -8,6 +8,10 @@ import pytest
 from datetime import datetime
 import core.cache as cache_mod
 from core.cache import _dt_to_ms, _ms_to_dt, _has_fts5, _has_trigram, DB_VERSION
+from core.index import FileEntry, FileIndex, NTFS_ROOT_FRN
+from core.ntfs import (
+    FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_EA, FILE_ATTRIBUTE_REPARSE_POINT,
+)
 from core.sqlite_compat import (
     MIN_SAFE_FTS5_SQLITE_VERSION,
     fts5_gate_status,
@@ -141,3 +145,38 @@ class TestCacheDiagnostics:
         assert diagnostics["last_saved"] == "2026-06-28T12:00:00"
         assert diagnostics["drives"][0]["next_usn"] == 34
         assert diagnostics["content"]["count"] == 1
+
+    def test_cache_roundtrips_reparse_and_extended_attribute_metadata(self, monkeypatch, tmp_path):
+        cache_mod._close_connection()
+        monkeypatch.setattr(cache_mod, "CONFIG_DIR", tmp_path)
+        monkeypatch.setattr(cache_mod, "DB_FILE", tmp_path / "index.db")
+        monkeypatch.setattr(cache_mod, "OLD_CACHE_FILE", tmp_path / "index_cache.bin")
+
+        index = FileIndex()
+        root = FileEntry(
+            NTFS_ROOT_FRN,
+            0,
+            "",
+            "C",
+            FILE_ATTRIBUTE_DIRECTORY,
+        )
+        entry = FileEntry(
+            10,
+            NTFS_ROOT_FRN,
+            "link",
+            "C",
+            FILE_ATTRIBUTE_REPARSE_POINT | FILE_ATTRIBUTE_EA,
+            reparse_tag=0xA000000C,
+            has_extended_attributes=True,
+        )
+        entry._path = "C:\\link"
+        index._entries = {"C": {NTFS_ROOT_FRN: root, 10: entry}}
+
+        cache_mod.save_cache(index, {})
+        loaded = FileIndex()
+        cache_mod.load_cache(loaded)
+        cache_mod._close_connection()
+
+        loaded_entry = loaded._entries["C"][10]
+        assert loaded_entry.reparse_tag == 0xA000000C
+        assert loaded_entry.has_extended_attributes is True

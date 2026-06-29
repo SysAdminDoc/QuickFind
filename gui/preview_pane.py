@@ -16,7 +16,7 @@ from PyQt6.QtGui import QPixmap, QImage, QFont, QColor, QPalette
 from core.index import FileEntry, FileIndex
 from core.content import matched_line_context
 from gui.theme import MOCHA
-from gui.results_view import format_size, format_datetime, format_attributes
+from gui.results_view import format_size, format_datetime, format_attributes, format_reparse_tag
 
 logger = logging.getLogger('QuickFind.PreviewPane')
 
@@ -314,6 +314,17 @@ class PreviewPane(QWidget):
             <p><span style="color: {MOCHA['subtext0']};">Attributes</span><br>
                <span style="color: {MOCHA['text']};">{attrs}</span></p>
             """
+        reparse_tag = format_reparse_tag(entry.reparse_tag)
+        if reparse_tag:
+            info_html += f"""
+            <p><span style="color: {MOCHA['subtext0']};">Reparse Tag</span><br>
+               <span style="color: {MOCHA['text']};">{reparse_tag}</span></p>
+            """
+        if entry.has_extended_attributes:
+            info_html += f"""
+            <p><span style="color: {MOCHA['subtext0']};">Extended Attributes</span><br>
+               <span style="color: {MOCHA['text']};">Present</span></p>
+            """
 
         info_html += "</div>"
 
@@ -336,6 +347,17 @@ class PreviewPane(QWidget):
             info_html += f"""
             <p><span style="color: {MOCHA['subtext0']};">Attributes</span><br>
                <span style="color: {MOCHA['text']};">{attrs}</span></p>
+            """
+        reparse_tag = format_reparse_tag(entry.reparse_tag)
+        if reparse_tag:
+            info_html += f"""
+            <p><span style="color: {MOCHA['subtext0']};">Reparse Tag</span><br>
+               <span style="color: {MOCHA['text']};">{reparse_tag}</span></p>
+            """
+        if entry.has_extended_attributes:
+            info_html += f"""
+            <p><span style="color: {MOCHA['subtext0']};">Extended Attributes</span><br>
+               <span style="color: {MOCHA['text']};">Present</span></p>
             """
         info_html += "</div>"
         self._file_info.setText(info_html)

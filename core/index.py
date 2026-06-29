@@ -26,6 +26,7 @@ from core.ntfs import (
     NTFSVolume, FileRecord, USNRecord, get_ntfs_drives, get_all_drives, DriveInfo,
     FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_ARCHIVE,
     FILE_ATTRIBUTE_HIDDEN, FILE_ATTRIBUTE_SYSTEM, FILE_ATTRIBUTE_REPARSE_POINT,
+    FILE_ATTRIBUTE_EA,
     USN_REASON_FILE_CREATE, USN_REASON_FILE_DELETE,
     USN_REASON_RENAME_OLD_NAME, USN_REASON_RENAME_NEW_NAME,
     USN_REASON_CLOSE, USN_REASON_BASIC_INFO_CHANGE,
@@ -70,13 +71,16 @@ class FileEntry:
     Uses __slots__ for minimal memory footprint across millions of entries.
     """
     __slots__ = ('frn', 'parent_frn', 'name', 'drive', 'attributes',
-                 'size', 'date_modified', 'date_created', 'content_snippet',
-                 'content_rank', '_path', '_stat_loaded')
+                 'size', 'date_modified', 'date_created', 'reparse_tag',
+                 'has_extended_attributes', 'content_snippet', 'content_rank',
+                 '_path', '_stat_loaded')
 
     def __init__(self, frn: int, parent_frn: int, name: str, drive: str,
                  attributes: int = 0, size: int = 0,
                  date_modified: Optional[datetime] = None,
-                 date_created: Optional[datetime] = None):
+                 date_created: Optional[datetime] = None,
+                 reparse_tag: int = 0,
+                 has_extended_attributes: bool = False):
         self.frn = frn
         self.parent_frn = parent_frn
         self.name = name
@@ -85,6 +89,8 @@ class FileEntry:
         self.size = size
         self.date_modified = date_modified
         self.date_created = date_created
+        self.reparse_tag = reparse_tag
+        self.has_extended_attributes = has_extended_attributes
         self.content_snippet: str = ""
         self.content_rank: float = 0.0
         self._path: Optional[str] = None
@@ -683,6 +689,8 @@ class FileIndex(QObject):
                 size=rec.size,
                 date_modified=rec.timestamp,
                 date_created=rec.date_created,
+                reparse_tag=rec.reparse_tag,
+                has_extended_attributes=rec.has_extended_attributes,
             )
             entry._stat_loaded = rec.mft_metadata  # Only skip os.stat if data came from direct MFT reading
             drive_entries[rec.frn] = entry
@@ -730,6 +738,8 @@ class FileIndex(QObject):
                 size=rec.size,
                 date_modified=rec.timestamp,
                 date_created=rec.date_created,
+                reparse_tag=rec.reparse_tag,
+                has_extended_attributes=rec.has_extended_attributes,
             )
             entry._stat_loaded = rec.mft_metadata
             drive_entries[rec.frn] = entry
@@ -847,6 +857,7 @@ class FileIndex(QObject):
                                 continue
                             st = de.stat(follow_symlinks=False)
                             raw_attrs = getattr(st, "st_file_attributes", 0)
+                            reparse_tag = getattr(st, "st_reparse_tag", 0)
                             is_reparse = bool(raw_attrs & FILE_ATTRIBUTE_REPARSE_POINT)
                             try:
                                 is_reparse = is_reparse or de.is_symlink()
@@ -877,6 +888,8 @@ class FileIndex(QObject):
                                 size=st.st_size if not is_dir else 0,
                                 date_modified=datetime.fromtimestamp(st.st_mtime),
                                 date_created=datetime.fromtimestamp(st.st_ctime),
+                                reparse_tag=reparse_tag,
+                                has_extended_attributes=bool(raw_attrs & FILE_ATTRIBUTE_EA),
                             )
                             entry._stat_loaded = True
                             drive_entries[frn] = entry
@@ -1223,6 +1236,7 @@ class FileIndex(QObject):
                         attributes=record.attributes,
                         date_modified=record.timestamp,
                         date_created=record.timestamp,
+                        has_extended_attributes=bool(record.attributes & FILE_ATTRIBUTE_EA),
                     )
                     drive_entries[record.frn] = entry
                     added += 1
@@ -1247,6 +1261,7 @@ class FileIndex(QObject):
                             drive=drive,
                             attributes=record.attributes,
                             date_modified=record.timestamp,
+                            has_extended_attributes=bool(record.attributes & FILE_ATTRIBUTE_EA),
                         )
                         drive_entries[record.frn] = entry
                         added += 1
@@ -1259,6 +1274,7 @@ class FileIndex(QObject):
                     if existing:
                         existing.date_modified = record.timestamp
                         existing.attributes = record.attributes
+                        existing.has_extended_attributes = bool(record.attributes & FILE_ATTRIBUTE_EA)
                         # If data changed, invalidate cached size so next access re-reads
                         if record.reason & (
                             USN_REASON_DATA_OVERWRITE | USN_REASON_DATA_EXTEND |

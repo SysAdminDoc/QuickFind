@@ -28,6 +28,13 @@ from PyQt6.QtGui import (
 )
 
 from core.index import FileEntry, FileIndex
+from core.ntfs import (
+    FILE_ATTRIBUTE_COMPRESSED, FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_EA,
+    FILE_ATTRIBUTE_ENCRYPTED, FILE_ATTRIBUTE_HIDDEN,
+    FILE_ATTRIBUTE_NOT_CONTENT_INDEXED, FILE_ATTRIBUTE_OFFLINE,
+    FILE_ATTRIBUTE_REPARSE_POINT, FILE_ATTRIBUTE_SPARSE_FILE,
+    FILE_ATTRIBUTE_SYSTEM, FILE_ATTRIBUTE_TEMPORARY,
+)
 from gui.theme import MOCHA
 
 logger = logging.getLogger('QuickFind.ResultsView')
@@ -81,13 +88,46 @@ def format_attributes(attrs: int) -> str:
     """Format file attributes as letter codes."""
     parts = []
     if attrs & 0x01: parts.append('R')
-    if attrs & 0x02: parts.append('H')
-    if attrs & 0x04: parts.append('S')
-    if attrs & 0x10: parts.append('D')
+    if attrs & FILE_ATTRIBUTE_HIDDEN: parts.append('H')
+    if attrs & FILE_ATTRIBUTE_SYSTEM: parts.append('S')
+    if attrs & FILE_ATTRIBUTE_DIRECTORY: parts.append('D')
     if attrs & 0x20: parts.append('A')
-    if attrs & 0x800: parts.append('C')
-    if attrs & 0x4000: parts.append('E')
+    if attrs & FILE_ATTRIBUTE_TEMPORARY: parts.append('T')
+    if attrs & FILE_ATTRIBUTE_SPARSE_FILE: parts.append('P')
+    if attrs & FILE_ATTRIBUTE_REPARSE_POINT: parts.append('L')
+    if attrs & FILE_ATTRIBUTE_COMPRESSED: parts.append('C')
+    if attrs & FILE_ATTRIBUTE_OFFLINE: parts.append('O')
+    if attrs & FILE_ATTRIBUTE_NOT_CONTENT_INDEXED: parts.append('I')
+    if attrs & FILE_ATTRIBUTE_ENCRYPTED: parts.append('E')
+    if attrs & FILE_ATTRIBUTE_EA: parts.append('EA')
     return ''.join(parts)
+
+
+REPARSE_TAG_NAMES = {
+    0xA0000003: "MOUNT_POINT",
+    0xA000000C: "SYMLINK",
+    0x8000001B: "APP_EXEC_LINK",
+    0x9000001A: "CLOUD",
+}
+
+
+def format_reparse_tag(tag: int) -> str:
+    if not tag:
+        return ""
+    name = REPARSE_TAG_NAMES.get(tag)
+    if name:
+        return f"{name} (0x{tag:08X})"
+    return f"0x{tag:08X}"
+
+
+def entry_metadata_lines(entry: FileEntry) -> list[str]:
+    lines = []
+    tag = format_reparse_tag(entry.reparse_tag)
+    if tag:
+        lines.append(f"Reparse tag: {tag}")
+    if entry.has_extended_attributes:
+        lines.append("Extended attributes: present")
+    return lines
 
 
 class FileIconCache:
@@ -383,6 +423,9 @@ class ResultsTableModel(QAbstractTableModel):
             if col == COLUMN_NAME:
                 path = entry.get_path(self._index)
                 snippet = getattr(entry, "content_snippet", "")
+                metadata = entry_metadata_lines(entry)
+                if metadata:
+                    path = "\n".join([path] + metadata)
                 if snippet:
                     return f"{path}\n\nContent match:\n{snippet}"
                 return path

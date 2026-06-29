@@ -14,7 +14,7 @@ from core.ntfs import (
     MFT_SIGNATURE, ATTR_STANDARD_INFORMATION, ATTR_FILE_NAME,
     ATTR_DATA, ATTR_END_MARKER,
     FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_ARCHIVE,
-    FILE_ATTRIBUTE_HIDDEN, FILE_ATTRIBUTE_SYSTEM,
+    FILE_ATTRIBUTE_HIDDEN, FILE_ATTRIBUTE_SYSTEM, FILE_ATTRIBUTE_REPARSE_POINT,
     FILENAME_WIN32, FILENAME_DOS, FILENAME_WIN32_DOS,
     USN_REASON_FILE_CREATE, USN_REASON_FILE_DELETE,
     USN_REASON_RENAME_OLD_NAME, USN_REASON_RENAME_NEW_NAME,
@@ -122,6 +122,20 @@ class TestFileRecord:
         rec = FileRecord(frn=10, parent_frn=5, name="encrypted",
                          attributes=0x4000)
         assert rec.is_encrypted is True
+
+    def test_reparse_and_extended_attribute_metadata(self):
+        rec = FileRecord(
+            frn=10,
+            parent_frn=5,
+            name="link",
+            attributes=FILE_ATTRIBUTE_REPARSE_POINT,
+            reparse_tag=0xA000000C,
+            has_extended_attributes=True,
+        )
+
+        assert rec.is_reparse_point is True
+        assert rec.reparse_tag == 0xA000000C
+        assert rec.has_extended_attributes is True
 
 
 class TestUSNRecord:
