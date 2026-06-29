@@ -161,6 +161,7 @@ class Settings:
 
     # EFU file lists
     efu_files: list[str] = field(default_factory=list)
+    efu_refresh_interval_minutes: int = 0
 
     # Content indexing
     content_index_enabled: bool = False
@@ -427,6 +428,14 @@ class SettingsDialog(QDialog):
         efu_label = QLabel("EFU file lists for non-NTFS / network drives:")
         efu_layout.addWidget(efu_label)
 
+        efu_form = QFormLayout()
+        self._efu_refresh_interval = QSpinBox()
+        self._efu_refresh_interval.setRange(0, 1440)
+        self._efu_refresh_interval.setSpecialValueText("Disabled")
+        self._efu_refresh_interval.setSuffix(" min")
+        efu_form.addRow("Refresh interval:", self._efu_refresh_interval)
+        efu_layout.addLayout(efu_form)
+
         self._efu_list = QListWidget()
         efu_layout.addWidget(self._efu_list)
 
@@ -595,6 +604,7 @@ class SettingsDialog(QDialog):
         self._efu_list.clear()
         for path in s.efu_files:
             self._efu_list.addItem(path)
+        self._efu_refresh_interval.setValue(s.efu_refresh_interval_minutes)
         self._network_list.clear()
         for root in s.network_share_roots:
             item = QListWidgetItem(root)
@@ -668,6 +678,7 @@ class SettingsDialog(QDialog):
         s.efu_files = []
         for i in range(self._efu_list.count()):
             s.efu_files.append(self._efu_list.item(i).text())
+        s.efu_refresh_interval_minutes = self._efu_refresh_interval.value()
         s.content_index_enabled = self._content_index_enabled.isChecked()
         s.content_index_roots = [
             root.strip() for root in self._content_index_roots.text().split(";")

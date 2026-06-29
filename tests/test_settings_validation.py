@@ -28,6 +28,7 @@ DEFAULTS = {
     "exclude_regexes": [],
     "exclude_attribute_mask": 0,
     "network_share_roots": [],
+    "efu_refresh_interval_minutes": 0,
 }
 
 
@@ -104,6 +105,16 @@ def test_efu_files_keep_only_existing_paths(tmp_path):
     assert sanitized["efu_files"] == [str(efu)]
     assert any("Ignored missing EFU file" in warning for warning in warnings)
     assert any("empty or invalid EFU" in warning for warning in warnings)
+
+
+def test_invalid_efu_refresh_interval_resets_to_default():
+    sanitized, warnings = sanitize_settings_data(
+        {"efu_refresh_interval_minutes": 2000},
+        DEFAULTS,
+    )
+
+    assert sanitized["efu_refresh_interval_minutes"] == 0
+    assert any("efu_refresh_interval_minutes reset" in warning for warning in warnings)
 
 
 def test_content_index_settings_are_validated(tmp_path):

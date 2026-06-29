@@ -6,6 +6,7 @@ Paths are absolute (e.g., \\\\server\\share\\folder\\file.txt)
 """
 
 import csv
+import hashlib
 import os
 import logging
 from datetime import datetime
@@ -18,6 +19,13 @@ from core.ntfs import FILE_ATTRIBUTE_DIRECTORY
 logger = logging.getLogger('QuickFind.FileList')
 
 _FILETIME_EPOCH_DIFF = 116444736000000000  # 100ns intervals between 1601 and 1970
+
+
+def efu_source_key(filepath: str) -> str:
+    """Return a stable index/cache source key for one EFU file."""
+    normalized = str(Path(filepath).expanduser().resolve(strict=False)).lower()
+    digest = hashlib.sha1(normalized.encode("utf-8")).hexdigest()[:12]
+    return f"EFU:{digest}"
 
 
 def _parse_efu_date(date_str: str) -> Optional[datetime]:

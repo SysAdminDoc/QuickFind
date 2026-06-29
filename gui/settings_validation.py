@@ -18,6 +18,7 @@ INT_RANGES = {
     "content_index_max_cache_mb": (1, 102400),
     "content_index_max_file_mb": (1, 1024),
     "exclude_attribute_mask": (0, 0xFFFFFFFF),
+    "efu_refresh_interval_minutes": (0, 1440),
 }
 
 STRING_FIELDS = {

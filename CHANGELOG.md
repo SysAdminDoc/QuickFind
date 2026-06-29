@@ -2,6 +2,12 @@
 
 All notable changes to QuickFind will be documented in this file.
 
+## [v0.8.18] - 2026-06-29
+
+- Added an external EFU refresh scheduler with a configurable interval in File Lists settings.
+- Isolated EFU imports into stable synthetic sources so scheduled refreshes replace stale rows cleanly.
+- Added EFU refresh/source-key coverage and expanded the passing suite to 254 tests.
+
 ## [v0.8.17] - 2026-06-29
 
 - Added SMB/UNC network-share indexing with stable synthetic index sources.

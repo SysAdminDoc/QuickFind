@@ -22,12 +22,13 @@ from PyQt6.QtGui import (
     QCloseEvent
 )
 
-from core.index import FileIndex, FileEntry, IndexWorker
+from core.index import FileIndex, FileEntry, IndexWorker, NTFS_ROOT_FRN
 from core.search import (
     CASE_MODE_SENSITIVE, SearchEngine, SearchOptions, SearchFilter,
     BUILTIN_FILTERS, parse_query,
 )
-from core.file_list import load_efu
+from core.file_list import efu_source_key, load_efu
+from core.ntfs import FILE_ATTRIBUTE_DIRECTORY
 from core.version import VERSION, APP_TITLE
 
 from gui.theme import MOCHA, ACCENT
@@ -174,6 +175,10 @@ class MainWindow(QMainWindow):
         self._status_refresh_timer = QTimer()
         self._status_refresh_timer.setInterval(5000)  # Update every 5 seconds
         self._status_refresh_timer.timeout.connect(self._refresh_status_bar)
+        self._efu_refresh_timer = QTimer()
+        self._efu_refresh_timer.timeout.connect(self._refresh_efu_files)
+        self._efu_source_paths: dict[str, str] = {}
+        self._efu_mtimes: dict[str, float] = {}
 
         # Search history completer model
         self._history_model = QStringListModel()
@@ -756,6 +761,16 @@ class MainWindow(QMainWindow):
                 tab.results_view.table_view.apply_column_visibility(s.column_visibility)
 
         self._apply_http_server_settings()
+        self._apply_efu_refresh_settings()
+
+    def _apply_efu_refresh_settings(self):
+        interval_minutes = int(getattr(self._settings, "efu_refresh_interval_minutes", 0) or 0)
+        if interval_minutes <= 0 or not self._settings.efu_files:
+            self._efu_refresh_timer.stop()
+            return
+        self._efu_refresh_timer.setInterval(interval_minutes * 60 * 1000)
+        if not self._efu_refresh_timer.isActive():
+            self._efu_refresh_timer.start()
 
     def _apply_http_server_settings(self):
         """Start, stop, or restart the remote search server based on settings."""
@@ -1035,16 +1050,7 @@ class MainWindow(QMainWindow):
 
         self._refresh_status_bar()
 
-        # Load EFU files
-        for efu_path in self._settings.efu_files:
-            if os.path.exists(efu_path):
-                entries = load_efu(efu_path)
-                for entry in entries:
-                    drive = entry.drive
-                    if drive not in self._file_index._entries:
-                        self._file_index._entries[drive] = {}
-                    self._file_index._entries[drive][entry.frn] = entry
-                self._file_index._rebuild_flat_list()
+        self._refresh_efu_files(force=True)
 
         # Start USN monitoring (no-op if already started by _on_cache_loaded)
         if self._settings.monitor_usn:
@@ -1071,6 +1077,68 @@ class MainWindow(QMainWindow):
         self._refresh_status_bar()
         if self._settings.content_index_enabled:
             self._start_content_indexing()
+
+    def _load_efu_file(self, path: str) -> bool:
+        if not os.path.exists(path):
+            return False
+
+        source = efu_source_key(path)
+        entries = load_efu(path)
+        source_entries: dict[int, FileEntry] = {
+            NTFS_ROOT_FRN: FileEntry(
+                NTFS_ROOT_FRN,
+                0,
+                "",
+                source,
+                FILE_ATTRIBUTE_DIRECTORY,
+            )
+        }
+        for entry in entries:
+            entry.drive = source
+            source_entries[entry.frn] = entry
+
+        self._file_index._entries[source] = source_entries
+        self._efu_source_paths[source] = path
+        try:
+            self._efu_mtimes[path] = os.path.getmtime(path)
+        except OSError:
+            self._efu_mtimes.pop(path, None)
+        return True
+
+    def _refresh_efu_files(self, force: bool = False) -> bool:
+        changed = False
+        active_sources = set()
+
+        for path in self._settings.efu_files:
+            source = efu_source_key(path)
+            active_sources.add(source)
+            try:
+                mtime = os.path.getmtime(path)
+            except OSError:
+                continue
+            if not force and self._efu_mtimes.get(path) == mtime and source in self._file_index._entries:
+                continue
+            changed = self._load_efu_file(path) or changed
+
+        for source, path in list(self._efu_source_paths.items()):
+            if source in active_sources:
+                continue
+            self._file_index._entries.pop(source, None)
+            self._efu_source_paths.pop(source, None)
+            self._efu_mtimes.pop(path, None)
+            changed = True
+
+        if changed:
+            self._file_index._rebuild_flat_list()
+            self._file_index._recount_stats()
+            self._trigger_search()
+            self._refresh_status_bar()
+            try:
+                self._file_index.save_to_cache()
+            except Exception:
+                pass
+            self._status_label.setText("EFU file lists refreshed")
+        return changed
 
     # -- Content indexing ---------------------------------
 
@@ -1385,15 +1453,11 @@ class MainWindow(QMainWindow):
             "Everything File Lists (*.efu);;All Files (*)"
         )
         if path:
-            entries = load_efu(path)
-            for entry in entries:
-                drive = entry.drive
-                if drive not in self._file_index._entries:
-                    self._file_index._entries[drive] = {}
-                self._file_index._entries[drive][entry.frn] = entry
-            self._file_index.set_external_source(f"EFU file list: {os.path.basename(path)}")
-            self._file_index._rebuild_flat_list()
-            self._trigger_search()
+            if self._load_efu_file(path):
+                self._file_index.set_external_source(f"EFU file list: {os.path.basename(path)}")
+                self._file_index._rebuild_flat_list()
+                self._file_index._recount_stats()
+                self._trigger_search()
 
     def _export_efu(self):
         from PyQt6.QtWidgets import QFileDialog
@@ -1708,6 +1772,9 @@ class MainWindow(QMainWindow):
         network_roots_changed = (
             old_settings.network_share_roots != new_settings.network_share_roots
         )
+        efu_files_changed = (
+            old_settings.efu_files != new_settings.efu_files
+        )
         self._settings = new_settings
         self._settings.save()
         self._apply_settings()
@@ -1716,9 +1783,11 @@ class MainWindow(QMainWindow):
         if hasattr(self, '_launcher_popup'):
             self._launcher_popup.set_dialog_quick_switch_enabled(
                 self._settings.enable_dialog_quick_switch
-            )
+        )
         self._file_index._rebuild_flat_list()
         self._trigger_search()
+        if efu_files_changed:
+            self._refresh_efu_files(force=True)
         if reparse_follow_changed or exclude_rules_changed or network_roots_changed:
             self._status_label.setText("Re-indexing to apply indexing settings...")
             self._start_indexing()
@@ -1741,6 +1810,7 @@ class MainWindow(QMainWindow):
     def _quit(self):
         # Stop status bar timer
         self._status_refresh_timer.stop()
+        self._efu_refresh_timer.stop()
         # Save cache before shutdown for instant next startup
         try:
             self._file_index.save_to_cache()
