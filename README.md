@@ -1,14 +1,14 @@
-# QuickFind v0.8.35
+# QuickFind v0.8.36
 
 Lightning-fast file search for Windows, powered by NTFS MFT + USN Journal.
 
 An open-source alternative to [Voidtools Everything](https://www.voidtools.com/), built with Python and PyQt6 for extensibility and customization.
 
-![Version](https://img.shields.io/badge/Version-v0.8.35-blueviolet)
+![Version](https://img.shields.io/badge/Version-v0.8.36-blueviolet)
 ![Python](https://img.shields.io/badge/Python-3.10+-blue)
 ![License](https://img.shields.io/badge/License-MIT-green)
 ![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey)
-![Tests](https://img.shields.io/badge/Tests-304%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/Tests-308%20passing-brightgreen)
 
 ## Features
 
@@ -79,8 +79,8 @@ An open-source alternative to [Voidtools Everything](https://www.voidtools.com/)
 - **Open/Save dialog Quick Switch** — optional Windows integration that sends selected folders to the active common file dialog
 - **Everything import hardening** — malformed CSV rows and invalid JSON are rejected before atomic filter/bookmark replacement
 - **Log rotation** — `RotatingFileHandler` with 5 MB max and 3 backups
-- **304 automated tests** covering startup dependency handling, cross-platform engine selection, POSIX root indexing, build/runtime matrix reporting, SQLite/FTS5 version gates, Finder-style path columns, inline file diff, Open With discovery, saved query slot expansion, bookmark workspace roots, nested boolean query parsing, hash duplicate detection, broken link/shortcut finders, Git dirty worktree filtering, remote REST docs/OpenAPI, remote web UI cards/filters, remote auth/CORS hardening, SMB/UNC network-share indexing, EFU refresh scheduling, EML/source-code content extraction, optional PDF OCR fallback, preview matched-line highlighting, Everything import validation, index/cache/service diagnostics, removable-drive stale state, dialog Quick Switch helpers, link/junction traversal loop guards, global exclude rules, reparse/EA metadata persistence, case-mode matching policy, content indexing jobs/quotas/diagnostics, content search ranking/snippets, search parsing, archive metadata caching, content adapters/cache, service IPC, duplicate detection, MFT record parsing, privilege lifecycle, settings validation, index mode UI state, results-view cache bounds, cache helpers, remote server configuration, and ignore patterns
-- **PyInstaller build script** for single-file or single-folder distribution
+- **308 automated tests** covering startup dependency handling, cross-platform engine selection, POSIX root indexing, build/runtime matrix reporting, SQLite/FTS5 version gates, Finder-style path columns, inline file diff, Open With discovery, saved query slot expansion, bookmark workspace roots, nested boolean query parsing, hash duplicate detection, broken link/shortcut finders, Git dirty worktree filtering, remote REST docs/OpenAPI, remote web UI cards/filters, remote auth/CORS hardening, SMB/UNC network-share indexing, EFU refresh scheduling, EML/source-code content extraction, optional PDF OCR fallback, preview matched-line highlighting, Everything import validation, index/cache/service diagnostics, removable-drive stale state, dialog Quick Switch helpers, link/junction traversal loop guards, global exclude rules, reparse/EA metadata persistence, case-mode matching policy, content indexing jobs/quotas/diagnostics, content search ranking/snippets, search parsing, archive metadata caching, content adapters/cache, service IPC, duplicate detection, MFT record parsing, privilege lifecycle, settings validation, index mode UI state, results-view cache bounds, cache helpers, remote server configuration, MSIX/App Installer/winget packaging, and ignore patterns
+- **PyInstaller and MSIX build script** for single-file, single-folder, App Installer, and winget distribution
 
 ## Requirements
 
@@ -90,7 +90,7 @@ An open-source alternative to [Voidtools Everything](https://www.voidtools.com/)
 
 ## Supported Runtime Matrix
 
-| Component | Supported | Tested in v0.8.35 |
+| Component | Supported | Tested in v0.8.36 |
 |-----------|-----------|------------------|
 | OS | Windows 10/11 | Windows 10.0.26100 |
 | Python | 3.10+ | 3.11.9 |
@@ -177,11 +177,14 @@ python build.py
 # Build single-file exe
 python build.py --onefile
 
+# Build signed MSIX package and winget manifests
+python build.py --msix --winget
+
 # Clean build artifacts
 python build.py --clean
 ```
 
-Build output prints the tested runtime matrix before invoking PyInstaller. If PyInstaller is missing, install the pinned requirements instead of relying on an automatic build-time install.
+Build output prints the tested runtime matrix before invoking PyInstaller. If PyInstaller is missing, install the pinned requirements instead of relying on an automatic build-time install. MSIX signing uses `QUICKFIND_SIGN_PFX` and optional `QUICKFIND_SIGN_PFX_PASSWORD`; without a PFX, `build.py --msix` asks `signtool` to auto-select a signing certificate from the local store.
 
 ## Search Syntax
 
@@ -301,11 +304,11 @@ QuickFind/
 ## Testing
 
 ```bash
-# Run the test suite (304 tests)
+# Run the test suite (308 tests)
 python -m pytest tests/ -v
 ```
 
-Tests cover startup dependency handling, cross-platform engine selection, POSIX root indexing, build/runtime matrix reporting, SQLite/FTS5 version gates, Finder-style path columns, inline file diff, Open With discovery, saved query slot expansion, bookmark workspace roots, nested boolean query parsing, hash duplicate detection, broken link/shortcut finders, Git dirty worktree filtering, remote REST docs/OpenAPI, remote web UI cards/filters, remote auth/CORS hardening, SMB/UNC network-share indexing, EFU refresh scheduling, EML/source-code content extraction, optional PDF OCR fallback, preview matched-line highlighting, Everything import validation, index/cache/service diagnostics, removable-drive stale state, dialog Quick Switch helpers, link/junction traversal loop guards, global exclude-rule settings, reparse/EA metadata persistence, case-mode matching policy, content indexing jobs/quotas/diagnostics, search query parsing (all modifiers), archive metadata caching, content extraction/cache, service IPC, size/date helpers, smart case sensitivity, fuzzy matching, MFT record parsing, USA fixup, USN records, cache datetime round-trip, FTS5 detection, results-view cache bounds, `.quickfindignore` pattern matching, and EFU file loading.
+Tests cover startup dependency handling, cross-platform engine selection, POSIX root indexing, build/runtime matrix reporting, SQLite/FTS5 version gates, Finder-style path columns, inline file diff, Open With discovery, saved query slot expansion, bookmark workspace roots, nested boolean query parsing, hash duplicate detection, broken link/shortcut finders, Git dirty worktree filtering, remote REST docs/OpenAPI, remote web UI cards/filters, remote auth/CORS hardening, SMB/UNC network-share indexing, EFU refresh scheduling, EML/source-code content extraction, optional PDF OCR fallback, preview matched-line highlighting, Everything import validation, index/cache/service diagnostics, removable-drive stale state, dialog Quick Switch helpers, link/junction traversal loop guards, global exclude-rule settings, reparse/EA metadata persistence, case-mode matching policy, content indexing jobs/quotas/diagnostics, search query parsing (all modifiers), archive metadata caching, content extraction/cache, service IPC, size/date helpers, smart case sensitivity, fuzzy matching, MFT record parsing, USA fixup, USN records, cache datetime round-trip, FTS5 detection, results-view cache bounds, MSIX/App Installer/winget manifest generation, `.quickfindignore` pattern matching, and EFU file loading.
 
 ## Security
 

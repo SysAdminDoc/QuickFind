@@ -1,0 +1,17 @@
+PackageIdentifier: SysAdminDoc.QuickFind
+PackageVersion: 0.8.36
+PackageLocale: en-US
+Publisher: SysAdminDoc
+PublisherUrl: https://github.com/SysAdminDoc
+PackageName: QuickFind
+PackageUrl: https://github.com/SysAdminDoc/QuickFind
+License: MIT
+LicenseUrl: https://github.com/SysAdminDoc/QuickFind/blob/main/LICENSE
+ShortDescription: Lightning-fast file search powered by NTFS MFT, SQLite cache, and a PyQt6 interface.
+Tags:
+- file-search
+- ntfs
+- sqlite
+- pyqt6
+ManifestType: defaultLocale
+ManifestVersion: 1.9.0

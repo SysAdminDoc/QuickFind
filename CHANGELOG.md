@@ -2,6 +2,12 @@
 
 All notable changes to QuickFind will be documented in this file.
 
+## [v0.8.36] - 2026-06-29
+
+- Added MSIX packaging with full-trust shell integration, `quickfind://` protocol registration, and `quickfind.exe` app execution alias.
+- Added App Installer update-feed generation and winget manifests wired to the packaged MSIX SHA-256 hash.
+- Added packaging manifest coverage, expanding the passing suite to 308 tests.
+
 ## [v0.8.35] - 2026-06-29
 
 - Added a platform engine boundary that keeps Windows on MFT/USN while routing Linux/macOS through POSIX root indexing.
