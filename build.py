@@ -362,7 +362,7 @@ def build(onefile=False):
         'core.sqlite_compat',
         'gui.main_window', 'gui.results_view', 'gui.settings_dialog',
         'gui.diagnostics_dialog',
-        'gui.theme', 'gui.tray', 'gui.accessibility',
+        'gui.theme', 'gui.tray', 'gui.accessibility', 'gui.help_docs',
         'cli.es', 'server.http_server', 'py7zr',
         'pdfplumber', 'docx', 'pptx',
         'watchdog', 'watchdog.events', 'watchdog.observers',

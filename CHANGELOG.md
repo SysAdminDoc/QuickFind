@@ -2,6 +2,12 @@
 
 All notable changes to QuickFind will be documented in this file.
 
+## [v0.8.42] - 2026-06-29
+
+- Added a bundled offline Help menu dialog with search syntax, workflow, and troubleshooting cheat sheets.
+- Kept the offline help self-contained for no-network use and added an assistive label for screen readers.
+- Added offline help content coverage, expanding the passing suite to 329 tests.
+
 ## [v0.8.41] - 2026-06-29
 
 - Added narrator-friendly labels and descriptions for settings controls, result view modes, preview panes, and status surfaces.

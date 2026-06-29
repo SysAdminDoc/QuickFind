@@ -46,6 +46,7 @@ from gui.preview_pane import PreviewPane, QuickPreviewPopover
 from gui.diff_dialog import DiffCompareDialog
 from gui.filters import FilterBar
 from gui.bookmarks import BookmarkManager, BookmarksPanel, Bookmark
+from gui.help_docs import OfflineHelpDialog
 from gui.context_menu import build_context_menu
 from gui.tray import SystemTray
 from gui.settings_dialog import Settings, SettingsDialog
@@ -928,6 +929,9 @@ class MainWindow(QMainWindow):
         syntax_help = help_menu.addAction(tr("menu.help.syntax", "Search &Syntax"))
         syntax_help.triggered.connect(self._show_syntax_help)
 
+        offline_docs = help_menu.addAction(tr("menu.help.offline_docs", "Offline &Docs / Cheat Sheet"))
+        offline_docs.triggered.connect(self._show_offline_help)
+
         help_menu.addSeparator()
 
         about_action = help_menu.addAction(tr("menu.help.about", "&About QuickFind"))
@@ -1716,6 +1720,11 @@ class MainWindow(QMainWindow):
             f"<pre style='font-family: Consolas, monospace; font-size: 12px;'>"
             f"{SYNTAX_HELP}</pre>"
         )
+
+    def _show_offline_help(self):
+        """Show bundled offline help and cheat sheet."""
+        dialog = OfflineHelpDialog(self)
+        dialog.exec()
 
     # ── Bookmarks ──────────────────────────────────────
 

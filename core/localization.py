@@ -53,6 +53,7 @@ CATALOGS = {
         "menu.tools.hidden_paths": "Administrar rutas ocultas",
         "menu.help": "Ayuda",
         "menu.help.syntax": "Ayuda de sintaxis",
+        "menu.help.offline_docs": "Documentacion sin conexion",
         "menu.help.about": "Acerca de QuickFind",
         "status.select_result_preview": "Seleccione un resultado para vista previa",
         "settings.language": "Idioma:",
