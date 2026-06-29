@@ -227,6 +227,11 @@ class TestParseQuery:
         parsed = parse_query("dupe:")
         assert parsed.dupe_mode is True
 
+    def test_duplicate_hash_modifier(self):
+        parsed = parse_query("duplicate:hash")
+        assert parsed.dupe_mode is True
+        assert parsed.dupe_hash_mode is True
+
     def test_archive_modifier(self):
         parsed = parse_query("archive:report")
         assert parsed.archive_mode is True
@@ -470,6 +475,18 @@ class FakeIndex:
         return f"{drive}:\\fake"
 
 
+class PathIndex(FakeIndex):
+    def __init__(self, entries, paths):
+        super().__init__(entries)
+        self._paths = paths
+
+    def resolve_path(self, drive: str, frn: int) -> str:
+        return str(self._paths[frn])
+
+    def resolve_parent_path(self, drive: str, parent_frn: int) -> str:
+        return str(next(iter(self._paths.values())).parent)
+
+
 def _entry(name: str, frn: int, attributes: int = 0) -> FileEntry:
     return FileEntry(frn=frn, parent_frn=5, name=name, drive="C", attributes=attributes)
 
@@ -531,6 +548,34 @@ class TestDupeSearch:
 
         assert len(results) == 1
         assert results[0].name == "alpha.txt"
+
+    def test_duplicate_hash_returns_same_content_with_different_names(self, tmp_path):
+        first = tmp_path / "alpha.txt"
+        second = tmp_path / "beta.txt"
+        third = tmp_path / "same-size.txt"
+        first.write_bytes(b"same content")
+        second.write_bytes(b"same content")
+        third.write_bytes(b"other bytes!")
+        entries = [
+            _entry(first.name, 1),
+            _entry(second.name, 2),
+            _entry(third.name, 3),
+        ]
+        engine = SearchEngine(PathIndex(entries, {
+            1: first,
+            2: second,
+            3: third,
+        }))
+
+        results = engine.search(
+            "duplicate:hash ext:txt",
+            base_options=SearchOptions(
+                sort_by=SortField.NAME,
+                sort_order=SortOrder.ASCENDING,
+            ),
+        )
+
+        assert [entry.name for entry in results] == ["alpha.txt", "beta.txt"]
 
 
 class TestQuerySlotSearch:

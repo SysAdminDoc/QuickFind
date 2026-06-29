@@ -70,6 +70,7 @@ SYNTAX_HELP = """Search Syntax:
   len:>10         Filename length
   attrib:H        Attribute filter (R,H,S,D,A)
   dupe:name       Find duplicates by name/size
+  duplicate:hash  Find duplicate files by SHA-256 content
   regex:pattern   Regex search
   content:text    Content search (slow)
   @slot           Expand a saved bookmark query slot

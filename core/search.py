@@ -10,6 +10,7 @@ dc: (date created), ext:, attrib:, len:, parent:, dupe:, archive:, @slot
 import re
 import os
 import fnmatch
+import hashlib
 import logging
 from datetime import datetime, timedelta
 from dataclasses import dataclass, field, replace
@@ -27,6 +28,7 @@ CASE_MODE_SMART = "smart"
 CASE_MODE_INSENSITIVE = "insensitive"
 CASE_MODE_SENSITIVE = "sensitive"
 CASE_MODES = {CASE_MODE_SMART, CASE_MODE_INSENSITIVE, CASE_MODE_SENSITIVE}
+CONTENT_HASH_CHUNK_SIZE = 1024 * 1024
 
 
 def _fuzzy_match(text: str, pattern: str) -> bool:
@@ -228,6 +230,7 @@ class ParsedQuery:
     attrib_exclude: int = 0
     content_search: str = ""
     dupe_mode: bool = False
+    dupe_hash_mode: bool = False
     archive_mode: bool = False
     boolean_expression: Optional[BooleanExpression] = None
     or_groups: list[list[str]] = field(default_factory=list)
@@ -579,8 +582,9 @@ def parse_query(raw_query: str, base_options: Optional[SearchOptions] = None,
             elif mod_lower == 'content':
                 parsed.content_search = val
                 i += 1; continue
-            elif mod_lower == 'dupe':
+            elif mod_lower in ('dupe', 'duplicate'):
                 parsed.dupe_mode = True
+                parsed.dupe_hash_mode = val.lower() == 'hash'
                 i += 1; continue
             elif mod_lower == 'archive':
                 parsed.archive_mode = True
@@ -891,7 +895,7 @@ class SearchEngine:
             return results
 
         if parsed.dupe_mode:
-            results = self._filter_duplicate_results(results)
+            results = self._filter_duplicate_results(results, parsed)
 
         results = self._sort_results(results, parsed.options, cancel_check)
         if content_cache:
@@ -988,7 +992,7 @@ class SearchEngine:
             return results
 
         if parsed.dupe_mode:
-            results = self._filter_duplicate_results(results)
+            results = self._filter_duplicate_results(results, parsed)
 
         results = self._sort_results(results, parsed.options, cancel_check)
         if parsed.dupe_mode and limit:
@@ -996,7 +1000,11 @@ class SearchEngine:
 
         return results
 
-    def _filter_duplicate_results(self, entries: list[FileEntry]) -> list[FileEntry]:
+    def _filter_duplicate_results(self, entries: list[FileEntry],
+                                  parsed: ParsedQuery) -> list[FileEntry]:
+        if parsed.dupe_hash_mode:
+            return self._filter_content_hash_duplicates(entries)
+
         duplicates = self.find_duplicates(entries)
         if not duplicates:
             return []
@@ -1005,6 +1013,51 @@ class SearchEngine:
             entry for entry in entries
             if not entry.is_dir and entry.name.lower() in duplicate_names
         ]
+
+    def _filter_content_hash_duplicates(self, entries: list[FileEntry]) -> list[FileEntry]:
+        size_groups: dict[int, list[FileEntry]] = {}
+        for entry in entries:
+            if entry.is_dir:
+                continue
+            entry.ensure_stat(self._index)
+            size_groups.setdefault(entry.size, []).append(entry)
+
+        hash_groups: dict[tuple[int, str], list[FileEntry]] = {}
+        entry_keys: dict[FileEntry, tuple[int, str]] = {}
+        for size, group in size_groups.items():
+            if len(group) < 2:
+                continue
+            for entry in group:
+                digest = self._entry_content_hash(entry)
+                if digest is None:
+                    continue
+                key = (size, digest)
+                hash_groups.setdefault(key, []).append(entry)
+                entry_keys[entry] = key
+
+        duplicate_keys = {
+            key for key, group in hash_groups.items()
+            if len(group) > 1
+        }
+        if not duplicate_keys:
+            return []
+        return [
+            entry for entry in entries
+            if entry_keys.get(entry) in duplicate_keys
+        ]
+
+    def _entry_content_hash(self, entry: FileEntry) -> Optional[str]:
+        try:
+            path = entry.get_path(self._index)
+            if not os.path.isfile(path):
+                return None
+            digest = hashlib.sha256()
+            with open(path, 'rb') as handle:
+                for chunk in iter(lambda: handle.read(CONTENT_HASH_CHUNK_SIZE), b''):
+                    digest.update(chunk)
+            return digest.hexdigest()
+        except (OSError, PermissionError):
+            return None
 
     def _compile_term_matchers(self, parsed: ParsedQuery) -> list:
         matchers = []

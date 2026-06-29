@@ -2,6 +2,12 @@
 
 All notable changes to QuickFind will be documented in this file.
 
+## [v0.8.24] - 2026-06-29
+
+- Added `duplicate:hash` / `dupe:hash` search mode for SHA-256 content duplicate detection after normal filters.
+- Preserved existing filename duplicate behavior for `dupe:` and `dupe:name`.
+- Added hash duplicate coverage and expanded the passing suite to 273 tests.
+
 ## [v0.8.23] - 2026-06-29
 
 - Added nested boolean query parsing with parentheses and NOT > implicit AND > OR precedence.
