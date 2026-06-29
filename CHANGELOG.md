@@ -2,6 +2,11 @@
 
 All notable changes to QuickFind will be documented in this file.
 
+## [v0.8.21] - 2026-06-29
+
+- Highlighted matched `content:` preview context lines with full-width accent styling.
+- Added preview helper coverage and expanded the passing suite to 259 tests.
+
 ## [v0.8.20] - 2026-06-29
 
 - Added optional Tesseract OCR fallback for PDF pages where `pdfplumber` extracts no text.

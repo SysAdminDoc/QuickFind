@@ -8,10 +8,13 @@ from typing import Optional
 
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QLabel, QPlainTextEdit, QScrollArea,
-    QStackedWidget, QHBoxLayout
+    QStackedWidget, QHBoxLayout, QTextEdit
 )
 from PyQt6.QtCore import Qt, QSize, QThread, pyqtSignal
-from PyQt6.QtGui import QPixmap, QImage, QFont, QColor, QPalette
+from PyQt6.QtGui import (
+    QPixmap, QImage, QFont, QColor, QPalette, QTextCharFormat,
+    QTextFormat,
+)
 
 from core.index import FileEntry, FileIndex
 from core.content import matched_line_context
@@ -34,6 +37,13 @@ VIDEO_EXTENSIONS = {'mp4', 'mkv', 'avi', 'mov', 'wmv', 'webm', 'flv'}
 
 MAX_TEXT_PREVIEW_SIZE = 512 * 1024  # 512KB
 MAX_IMAGE_PREVIEW_SIZE = 50 * 1024 * 1024  # 50MB
+
+
+def _matched_context_line_numbers(content: str) -> list[int]:
+    return [
+        index for index, line in enumerate(content.splitlines())
+        if line.startswith("> ")
+    ]
 
 
 class TextPreviewLoader(QThread):
@@ -119,6 +129,7 @@ class PreviewPane(QWidget):
         self._file_index = file_index
         self._current_path: Optional[str] = None
         self._loader_thread: Optional[QThread] = None
+        self._highlight_preview_lines = False
 
         self._setup_ui()
 
@@ -158,6 +169,14 @@ class PreviewPane(QWidget):
         self._text_edit.setReadOnly(True)
         self._text_edit.setFont(QFont("Cascadia Code", 10))
         self._text_edit.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
+        self._text_edit.setStyleSheet(f"""
+            QPlainTextEdit {{
+                background-color: {MOCHA['base']};
+                color: {MOCHA['text']};
+                border: 0;
+                selection-background-color: {MOCHA['surface2']};
+            }}
+        """)
         self._stack.addWidget(self._text_edit)
 
         # Page 2: Image preview
@@ -225,7 +244,9 @@ class PreviewPane(QWidget):
                            case_sensitive: bool = False):
         """Load text file preview in background."""
         self._text_edit.clear()
+        self._text_edit.setExtraSelections([])
         self._stack.setCurrentIndex(1)
+        self._highlight_preview_lines = bool(content_query)
 
         loader = TextPreviewLoader(
             path,
@@ -241,6 +262,40 @@ class PreviewPane(QWidget):
     def _on_text_loaded(self, path: str, content: str):
         if path == self._current_path:
             self._text_edit.setPlainText(content)
+            self._apply_match_line_highlighting(content)
+
+    def _apply_match_line_highlighting(self, content: str):
+        if not self._highlight_preview_lines:
+            self._text_edit.setExtraSelections([])
+            return
+
+        line_numbers = _matched_context_line_numbers(content)
+        if not line_numbers:
+            self._text_edit.setExtraSelections([])
+            return
+
+        highlight_format = QTextCharFormat()
+        highlight_format.setBackground(QColor(MOCHA['surface1']))
+        highlight_format.setForeground(QColor(MOCHA['peach']))
+        highlight_format.setProperty(
+            QTextFormat.Property.FullWidthSelection,
+            True,
+        )
+
+        selections = []
+        document = self._text_edit.document()
+        for line_number in line_numbers:
+            block = document.findBlockByLineNumber(line_number)
+            if not block.isValid():
+                continue
+            selection = QTextEdit.ExtraSelection()
+            cursor = self._text_edit.textCursor()
+            cursor.setPosition(block.position())
+            selection.cursor = cursor
+            selection.format = highlight_format
+            selections.append(selection)
+
+        self._text_edit.setExtraSelections(selections)
 
     def _load_image_preview(self, path: str):
         """Load image preview in background."""

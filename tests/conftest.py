@@ -17,7 +17,8 @@ _QT_ATTRS = {
         'QSplitter', 'QStatusBar', 'QLabel', 'QMenuBar', 'QComboBox',
         'QProgressBar', 'QTabWidget', 'QTabBar', 'QCompleter', 'QToolTip',
         'QTableView', 'QAbstractItemView', 'QHeaderView', 'QListView',
-        'QStackedWidget', 'QStyledItemDelegate', 'QStyle',
+        'QPlainTextEdit', 'QScrollArea', 'QStackedWidget', 'QTextEdit',
+        'QStyledItemDelegate', 'QStyle',
         'QFileIconProvider', 'QDialog', 'QFormLayout', 'QCheckBox',
         'QSpinBox', 'QGroupBox', 'QPushButton', 'QDialogButtonBox',
         'QListWidget', 'QListWidgetItem', 'QFileDialog',
@@ -26,7 +27,7 @@ _QT_ATTRS = {
         'QIcon', 'QPalette', 'QColor', 'QFont', 'QAction',
         'QDesktopServices', 'QPixmap', 'QPainter', 'QImage', 'QDrag',
         'QFontMetrics', 'QPen', 'QKeyEvent', 'QTextDocument',
-        'QAbstractTextDocumentLayout',
+        'QAbstractTextDocumentLayout', 'QTextCharFormat', 'QTextFormat',
     ],
 }
 
