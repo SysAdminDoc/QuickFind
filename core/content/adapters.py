@@ -81,6 +81,8 @@ class PdfAdapter:
                     break
                 chunks.append(text[:remaining])
                 total += len(chunks[-1])
+        if not chunks:
+            return _ocr_pdf_with_tesseract(path, max_chars=max_chars)
         return '\n'.join(chunks)
 
 
@@ -216,6 +218,7 @@ def adapter_diagnostics() -> list[AdapterDiagnostic]:
             available=available,
             detail=detail,
         ))
+    diagnostics.append(_ocr_diagnostic())
     return diagnostics
 
 
@@ -286,3 +289,56 @@ def _html_to_text(html: str) -> str:
     text = re.sub(r"(?s)<[^>]+>", " ", text)
     text = unescape(text)
     return re.sub(r"\s+", " ", text).strip()
+
+
+def _ocr_diagnostic() -> AdapterDiagnostic:
+    missing = []
+    if importlib.util.find_spec("pytesseract") is None:
+        missing.append("pytesseract")
+    if importlib.util.find_spec("pypdfium2") is None:
+        missing.append("pypdfium2")
+    if missing:
+        return AdapterDiagnostic(
+            name="tesseract-ocr",
+            extensions=("pdf",),
+            available=False,
+            detail="Missing optional module: " + ", ".join(missing),
+        )
+    return AdapterDiagnostic(
+        name="tesseract-ocr",
+        extensions=("pdf",),
+        available=True,
+        detail="Requires a working Tesseract executable on PATH.",
+    )
+
+
+def _ocr_pdf_with_tesseract(path: str, max_chars: int = MAX_EXTRACT_CHARS) -> str:
+    try:
+        import pypdfium2 as pdfium
+        import pytesseract
+    except ImportError:
+        return ""
+
+    chunks = []
+    total = 0
+    pdf = pdfium.PdfDocument(path)
+    try:
+        for page in pdf:
+            remaining = max_chars - total
+            if remaining <= 0:
+                break
+            try:
+                image = page.render(scale=2).to_pil()
+                text = pytesseract.image_to_string(image) or ""
+            except Exception as exc:
+                logger.debug("PDF OCR failed for %s: %s", path, exc)
+                continue
+            if not text:
+                continue
+            chunks.append(text[:remaining])
+            total += len(chunks[-1])
+    finally:
+        close = getattr(pdf, "close", None)
+        if callable(close):
+            close()
+    return "\n".join(chunks)

@@ -2,6 +2,12 @@
 
 All notable changes to QuickFind will be documented in this file.
 
+## [v0.8.20] - 2026-06-29
+
+- Added optional Tesseract OCR fallback for PDF pages where `pdfplumber` extracts no text.
+- Surfaced OCR adapter availability in content adapter diagnostics without making OCR a required dependency.
+- Added OCR fallback coverage and expanded the passing suite to 257 tests.
+
 ## [v0.8.19] - 2026-06-29
 
 - Added EML content extraction for message headers and text/plain or HTML bodies.

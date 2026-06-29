@@ -118,6 +118,47 @@ def test_pdf_adapter_uses_pdfplumber(monkeypatch, tmp_path):
     assert PdfAdapter().extract(str(path)) == "first page\nsecond needle"
 
 
+def test_pdf_adapter_uses_optional_ocr_when_pdf_text_is_empty(monkeypatch, tmp_path):
+    path = tmp_path / "scan.pdf"
+    path.write_bytes(b"%PDF")
+
+    class EmptyPdf:
+        pages = [types.SimpleNamespace(extract_text=lambda: "")]
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    class FakeBitmap:
+        def to_pil(self):
+            return object()
+
+    class FakePage:
+        def render(self, scale=1):
+            return FakeBitmap()
+
+    class FakePdfDocument:
+        def __init__(self, _path):
+            self.closed = False
+
+        def __iter__(self):
+            return iter([FakePage()])
+
+        def close(self):
+            self.closed = True
+
+    fake_pdfplumber = types.SimpleNamespace(open=lambda _: EmptyPdf())
+    fake_pdfium = types.SimpleNamespace(PdfDocument=FakePdfDocument)
+    fake_tesseract = types.SimpleNamespace(image_to_string=lambda _image: "ocr needle")
+    monkeypatch.setitem(sys.modules, "pdfplumber", fake_pdfplumber)
+    monkeypatch.setitem(sys.modules, "pypdfium2", fake_pdfium)
+    monkeypatch.setitem(sys.modules, "pytesseract", fake_tesseract)
+
+    assert PdfAdapter().extract(str(path)) == "ocr needle"
+
+
 def test_content_cache_roundtrip_and_search(temp_cache):
     cache.upsert_content_cache(
         path="C:\\docs\\a.txt",
@@ -258,6 +299,8 @@ def test_adapter_diagnostics_reports_text_adapter():
     eml_adapter = next(item for item in diagnostics if item.name == "eml")
     assert eml_adapter.available is True
     assert "eml" in eml_adapter.extensions
+    ocr_adapter = next(item for item in diagnostics if item.name == "tesseract-ocr")
+    assert "pdf" in ocr_adapter.extensions
 
 
 def test_content_index_job_honors_roots_extensions_and_cache(temp_cache, tmp_path):
