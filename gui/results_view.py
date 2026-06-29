@@ -588,6 +588,7 @@ class ResultsTableView(QTableView):
     open_folder_requested = pyqtSignal(object)  # FileEntry
     delete_requested = pyqtSignal(object)  # list[FileEntry]
     rename_requested = pyqtSignal(object)  # FileEntry
+    quick_preview_requested = pyqtSignal()
     column_visibility_changed = pyqtSignal(dict)  # {column_index: bool}
 
     def __init__(self, parent=None):
@@ -656,9 +657,13 @@ class ResultsTableView(QTableView):
         self.sortByColumn(COLUMN_DATE_MOD, Qt.SortOrder.DescendingOrder)
 
     def keyPressEvent(self, event: QKeyEvent):
-        """Keyboard navigation: Enter=open, Delete=recycle, F2=rename, Ctrl+Enter=open folder."""
+        """Keyboard navigation: Enter=open, Delete=recycle, F2=rename."""
         key = event.key()
         mods = event.modifiers()
+
+        if key == Qt.Key.Key_Space and mods == Qt.KeyboardModifier.NoModifier:
+            self.quick_preview_requested.emit()
+            return
 
         if key == Qt.Key.Key_Return or key == Qt.Key.Key_Enter:
             entries = self.selected_entries()
@@ -856,6 +861,7 @@ class PathColumnView(QTableView):
 
     item_activated = pyqtSignal(object)
     selection_changed = pyqtSignal(object)
+    quick_preview_requested = pyqtSignal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -890,6 +896,12 @@ class PathColumnView(QTableView):
     def _on_selection_changed(self, selected, deselected):
         entries = self.selected_entries()
         self.selection_changed.emit(entries[0] if entries else None)
+
+    def keyPressEvent(self, event: QKeyEvent):
+        if event.key() == Qt.Key.Key_Space and event.modifiers() == Qt.KeyboardModifier.NoModifier:
+            self.quick_preview_requested.emit()
+            return
+        super().keyPressEvent(event)
 
     def selected_entries(self) -> list[FileEntry]:
         entries = []
@@ -955,6 +967,7 @@ class ThumbnailListView(QListView):
 
     item_activated = pyqtSignal(object)
     selection_changed = pyqtSignal(object)
+    quick_preview_requested = pyqtSignal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -974,12 +987,43 @@ class ThumbnailListView(QListView):
 
         self.doubleClicked.connect(self._on_double_click)
 
+    def set_model(self, model: ResultsTableModel):
+        self.setModel(model)
+        selection_model = self.selectionModel()
+        if selection_model is not None:
+            selection_model.selectionChanged.connect(self._on_selection_changed)
+
     def _on_double_click(self, index: QModelIndex):
         model = self.model()
         if isinstance(model, ResultsTableModel):
             entry = model.entry_at(index.row())
             if entry:
                 self.item_activated.emit(entry)
+
+    def _on_selection_changed(self, selected, deselected):
+        entries = self.selected_entries()
+        self.selection_changed.emit(entries[0] if entries else None)
+
+    def keyPressEvent(self, event: QKeyEvent):
+        if event.key() == Qt.Key.Key_Space and event.modifiers() == Qt.KeyboardModifier.NoModifier:
+            self.quick_preview_requested.emit()
+            return
+        super().keyPressEvent(event)
+
+    def selected_entries(self) -> list[FileEntry]:
+        entries = []
+        seen_rows = set()
+        model = self.model()
+        if isinstance(model, ResultsTableModel):
+            for idx in self.selectedIndexes():
+                row = idx.row()
+                if row in seen_rows:
+                    continue
+                seen_rows.add(row)
+                entry = model.entry_at(row)
+                if entry:
+                    entries.append(entry)
+        return entries
 
 
 class ResultsView(QWidget):
@@ -990,6 +1034,7 @@ class ResultsView(QWidget):
     open_folder_requested = pyqtSignal(object)
     delete_requested = pyqtSignal(object)
     rename_requested = pyqtSignal(object)
+    quick_preview_requested = pyqtSignal()
     column_visibility_changed = pyqtSignal(dict)
 
     def __init__(self, index: FileIndex, parent=None):
@@ -1018,6 +1063,7 @@ class ResultsView(QWidget):
         self.table_view.open_folder_requested.connect(self.open_folder_requested)
         self.table_view.delete_requested.connect(self.delete_requested)
         self.table_view.rename_requested.connect(self.rename_requested)
+        self.table_view.quick_preview_requested.connect(self.quick_preview_requested)
         self.table_view.column_visibility_changed.connect(self.column_visibility_changed)
         self._stack.addWidget(self.table_view)
 
@@ -1028,12 +1074,15 @@ class ResultsView(QWidget):
         self.column_view.set_model(self._path_column_model)
         self.column_view.item_activated.connect(self.item_activated)
         self.column_view.selection_changed.connect(self._on_child_selection_changed)
+        self.column_view.quick_preview_requested.connect(self.quick_preview_requested)
         self._stack.addWidget(self.column_view)
 
         # Thumbnail view (index 2)
         self.thumb_view = ThumbnailListView()
-        self.thumb_view.setModel(self._model)
+        self.thumb_view.set_model(self._model)
         self.thumb_view.item_activated.connect(self.item_activated)
+        self.thumb_view.selection_changed.connect(self._on_child_selection_changed)
+        self.thumb_view.quick_preview_requested.connect(self.quick_preview_requested)
         self._stack.addWidget(self.thumb_view)
 
     @property
@@ -1069,7 +1118,7 @@ class ResultsView(QWidget):
             return self.table_view.selected_entries()
         if self._stack.currentIndex() == 1:
             return self.column_view.selected_entries()
-        return []
+        return self.thumb_view.selected_entries()
 
     @property
     def result_count(self) -> int:

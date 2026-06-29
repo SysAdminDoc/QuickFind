@@ -2,6 +2,12 @@
 
 All notable changes to QuickFind will be documented in this file.
 
+## [v0.8.37] - 2026-06-29
+
+- Added a floating quick-preview popover for the selected result, using Space from details, columns, or thumbnail result views.
+- Reused the existing async preview loaders in the popover and synced visible quick previews as selection changes.
+- Added preview geometry and thumbnail selection coverage, expanding the passing suite to 310 tests.
+
 ## [v0.8.36] - 2026-06-29
 
 - Added MSIX packaging with full-trust shell integration, `quickfind://` protocol registration, and `quickfind.exe` app execution alias.

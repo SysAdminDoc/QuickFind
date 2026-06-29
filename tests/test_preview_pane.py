@@ -1,6 +1,8 @@
 """Tests for preview pane helpers."""
 
-from gui.preview_pane import _matched_context_line_numbers
+from PyQt6.QtCore import QRect, QSize
+
+from gui.preview_pane import _matched_context_line_numbers, quick_preview_geometry
 
 
 def test_matched_context_line_numbers_detects_preview_match_markers():
@@ -22,3 +24,16 @@ def test_matched_context_line_numbers_ignores_plain_blockquote_text():
     ])
 
     assert _matched_context_line_numbers(content) == []
+
+
+def test_quick_preview_geometry_stays_inside_available_screen():
+    geometry = quick_preview_geometry(
+        QRect(1200, 680, 80, 40),
+        QRect(0, 0, 1280, 720),
+        QSize(760, 520),
+    )
+
+    assert geometry.right() <= 1279
+    assert geometry.bottom() <= 719
+    assert geometry.width() == 760
+    assert geometry.height() == 520

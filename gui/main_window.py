@@ -40,7 +40,7 @@ from core.workspaces import (
 
 from gui.theme import MOCHA, ACCENT
 from gui.results_view import ResultsView
-from gui.preview_pane import PreviewPane
+from gui.preview_pane import PreviewPane, QuickPreviewPopover
 from gui.diff_dialog import DiffCompareDialog
 from gui.filters import FilterBar
 from gui.bookmarks import BookmarkManager, BookmarksPanel, Bookmark
@@ -366,6 +366,7 @@ class MainWindow(QMainWindow):
         # Preview pane (right, hidden by default)
         self._preview_pane = PreviewPane(self._file_index)
         self._preview_pane.setMinimumWidth(200)
+        self._quick_preview = QuickPreviewPopover(self._file_index, self)
 
         self._splitter.addWidget(self._bookmarks_panel)
         self._splitter.addWidget(self._tab_widget)
@@ -459,6 +460,7 @@ class MainWindow(QMainWindow):
         tab.results_view.open_folder_requested.connect(self._on_open_folder)
         tab.results_view.delete_requested.connect(self._on_delete_requested)
         tab.results_view.rename_requested.connect(self._on_rename_requested)
+        tab.results_view.quick_preview_requested.connect(self._toggle_quick_preview)
         tab.results_view.column_visibility_changed.connect(self._on_column_visibility_changed)
         tab.results_view.table_view.setContextMenuPolicy(
             Qt.ContextMenuPolicy.CustomContextMenu
@@ -1479,6 +1481,10 @@ class MainWindow(QMainWindow):
         if entry:
             path = entry.get_path(self._file_index)
             self._status_label.setText(path)
+            if self._quick_preview.isVisible():
+                self._show_quick_preview(entry)
+        elif self._quick_preview.isVisible():
+            self._quick_preview.hide()
 
     def _current_content_preview_query(self) -> tuple[str, bool]:
         query = self._search_input.text().strip()
@@ -1501,6 +1507,22 @@ class MainWindow(QMainWindow):
             compare_callback=self._show_file_diff,
         )
         menu.exec(self._results_view.table_view.viewport().mapToGlobal(pos))
+
+    def _toggle_quick_preview(self):
+        entries = self._results_view.selected_entries()
+        if not entries:
+            self._status_label.setText("Select a result to preview")
+            return
+        if self._quick_preview.isVisible():
+            self._quick_preview.hide()
+            return
+        self._show_quick_preview(entries[0])
+
+    def _show_quick_preview(self, entry: FileEntry):
+        content_query, case_sensitive = self._current_content_preview_query()
+        self._quick_preview.preview_entry(entry, content_query, case_sensitive)
+        self._quick_preview.show_for_anchor(self._results_view)
+        self._status_label.setText(entry.get_path(self._file_index))
 
     def _show_file_diff(self, entries):
         if len(entries) != 2:

@@ -9,6 +9,7 @@ from core.index import FileEntry
 from core.ntfs import FILE_ATTRIBUTE_EA, FILE_ATTRIBUTE_REPARSE_POINT
 from gui.results_view import (
     COLUMN_NAME, FileIconCache, PathColumnModel, ResultsTableModel,
+    ThumbnailListView,
     format_attributes, format_reparse_tag, path_segments,
 )
 
@@ -120,3 +121,18 @@ def test_path_column_model_exposes_segments():
     assert model.headerData(0, Qt.Orientation.Horizontal) == "Root"
     assert model.data(model.index(0, 0)) == "C:"
     assert model.data(model.index(0, 3)) == "report.txt"
+
+
+def test_thumbnail_selected_entries_returns_unique_rows():
+    entry = _entry("report.txt")
+    model = ResultsTableModel(TempIndex())
+    model.set_results([entry])
+
+    class FakeThumbnailView:
+        def model(self):
+            return model
+
+        def selectedIndexes(self):
+            return [model.index(0, 0), model.index(0, 1)]
+
+    assert ThumbnailListView.selected_entries(FakeThumbnailView()) == [entry]

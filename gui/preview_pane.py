@@ -8,9 +8,9 @@ from typing import Optional
 
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QLabel, QPlainTextEdit, QScrollArea,
-    QStackedWidget, QHBoxLayout, QTextEdit
+    QStackedWidget, QHBoxLayout, QTextEdit, QDialog, QApplication
 )
-from PyQt6.QtCore import Qt, QSize, QThread, pyqtSignal
+from PyQt6.QtCore import Qt, QSize, QRect, QThread, pyqtSignal
 from PyQt6.QtGui import (
     QPixmap, QImage, QFont, QColor, QPalette, QTextCharFormat,
     QTextFormat,
@@ -37,6 +37,8 @@ VIDEO_EXTENSIONS = {'mp4', 'mkv', 'avi', 'mov', 'wmv', 'webm', 'flv'}
 
 MAX_TEXT_PREVIEW_SIZE = 512 * 1024  # 512KB
 MAX_IMAGE_PREVIEW_SIZE = 50 * 1024 * 1024  # 50MB
+QUICK_PREVIEW_MIN_SIZE = QSize(520, 360)
+QUICK_PREVIEW_MAX_SCREEN_RATIO = 0.82
 
 
 def _matched_context_line_numbers(content: str) -> list[int]:
@@ -44,6 +46,33 @@ def _matched_context_line_numbers(content: str) -> list[int]:
         index for index, line in enumerate(content.splitlines())
         if line.startswith("> ")
     ]
+
+
+def quick_preview_geometry(anchor_rect: QRect, available_rect: QRect,
+                           preferred_size: QSize) -> QRect:
+    """Return an on-screen geometry for a floating quick preview."""
+    max_width = max(QUICK_PREVIEW_MIN_SIZE.width(),
+                    int(available_rect.width() * QUICK_PREVIEW_MAX_SCREEN_RATIO))
+    max_height = max(QUICK_PREVIEW_MIN_SIZE.height(),
+                     int(available_rect.height() * QUICK_PREVIEW_MAX_SCREEN_RATIO))
+    width = min(max(preferred_size.width(), QUICK_PREVIEW_MIN_SIZE.width()), max_width)
+    height = min(max(preferred_size.height(), QUICK_PREVIEW_MIN_SIZE.height()), max_height)
+
+    center = anchor_rect.center() if anchor_rect.isValid() else available_rect.center()
+    x = center.x() - width // 2
+    y = center.y() - height // 2
+    margin = 12
+
+    above = anchor_rect.top() - height - margin
+    below = anchor_rect.bottom() + margin
+    if anchor_rect.isValid() and above >= available_rect.top():
+        y = above
+    elif anchor_rect.isValid() and below + height <= available_rect.bottom():
+        y = below
+
+    x = max(available_rect.left(), min(x, available_rect.right() - width + 1))
+    y = max(available_rect.top(), min(y, available_rect.bottom() - height + 1))
+    return QRect(x, y, width, height)
 
 
 class TextPreviewLoader(QThread):
@@ -426,3 +455,57 @@ class PreviewPane(QWidget):
         self._info_label.setText("Select a file to preview")
         self._stack.setCurrentIndex(0)
         self._header.setText("Preview")
+
+
+class QuickPreviewPopover(QDialog):
+    """Floating preview popup for the currently selected result."""
+
+    def __init__(self, file_index: FileIndex, parent=None):
+        super().__init__(
+            parent,
+            Qt.WindowType.Popup | Qt.WindowType.FramelessWindowHint,
+        )
+        self.setObjectName("quickPreviewPopover")
+        self.setWindowTitle("Quick Preview")
+        self.setModal(False)
+        self.setMinimumSize(QUICK_PREVIEW_MIN_SIZE)
+        self.resize(760, 520)
+        self.setStyleSheet(f"""
+            #quickPreviewPopover {{
+                background-color: {MOCHA['base']};
+                border: 1px solid {MOCHA['surface2']};
+            }}
+        """)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(1, 1, 1, 1)
+        layout.setSpacing(0)
+        self._preview_pane = PreviewPane(file_index, self)
+        layout.addWidget(self._preview_pane)
+
+    def preview_entry(self, entry: Optional[FileEntry],
+                      content_query: str = "",
+                      case_sensitive: bool = False):
+        self._preview_pane.preview_entry(entry, content_query, case_sensitive)
+
+    def show_for_anchor(self, anchor: QWidget):
+        screen = anchor.screen() or QApplication.primaryScreen()
+        available = screen.availableGeometry() if screen else QRect(0, 0, 1280, 720)
+        anchor_rect = QRect(
+            anchor.mapToGlobal(anchor.rect().topLeft()),
+            anchor.rect().size(),
+        )
+        self.setGeometry(quick_preview_geometry(anchor_rect, available, self.size()))
+        self.show()
+        self.raise_()
+        self.activateWindow()
+
+    def hideEvent(self, event):
+        self._preview_pane.clear()
+        super().hideEvent(event)
+
+    def keyPressEvent(self, event):
+        if event.key() in (Qt.Key.Key_Escape, Qt.Key.Key_Space):
+            self.hide()
+            return
+        super().keyPressEvent(event)
