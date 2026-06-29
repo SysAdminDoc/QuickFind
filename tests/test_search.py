@@ -10,6 +10,7 @@ from core.utils import parse_size as _parse_size
 from core.search import (
     _parse_date, _fuzzy_match, parse_query, SearchOptions, SearchFilter,
     ParsedQuery, SearchEngine, SortField, SortOrder, ATTRIB_MAP,
+    CASE_MODE_INSENSITIVE, CASE_MODE_SENSITIVE,
 )
 from core.index import FileEntry
 
@@ -331,6 +332,33 @@ class TestSmartCase:
     def test_modifier_value_not_counted(self):
         parsed = parse_query("ext:PY")
         assert parsed.options.match_case is False
+
+    def test_case_insensitive_index_mode_overrides_smart_case(self):
+        parsed = parse_query(
+            "Hello",
+            SearchOptions(case_mode=CASE_MODE_INSENSITIVE),
+        )
+        assert parsed.options.match_case is False
+
+    def test_case_sensitive_index_mode_matches_lowercase_case_sensitively(self):
+        parsed = parse_query(
+            "hello",
+            SearchOptions(case_mode=CASE_MODE_SENSITIVE),
+        )
+        assert parsed.options.match_case is True
+
+    def test_explicit_case_modifiers_override_index_case_mode(self):
+        sensitive = parse_query(
+            "case: hello",
+            SearchOptions(case_mode=CASE_MODE_INSENSITIVE),
+        )
+        insensitive = parse_query(
+            "nocase: Hello",
+            SearchOptions(case_mode=CASE_MODE_SENSITIVE),
+        )
+
+        assert sensitive.options.match_case is True
+        assert insensitive.options.match_case is False
 
 
 class TestSearchFilter:

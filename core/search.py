@@ -22,6 +22,11 @@ from core.utils import parse_size as _parse_size
 
 logger = logging.getLogger('QuickFind.Search')
 
+CASE_MODE_SMART = "smart"
+CASE_MODE_INSENSITIVE = "insensitive"
+CASE_MODE_SENSITIVE = "sensitive"
+CASE_MODES = {CASE_MODE_SMART, CASE_MODE_INSENSITIVE, CASE_MODE_SENSITIVE}
+
 
 def _fuzzy_match(text: str, pattern: str) -> bool:
     """Subsequence match: all chars of pattern appear in text in order."""
@@ -49,6 +54,7 @@ class SortOrder(Enum):
 class SearchOptions:
     """Options controlling search behavior."""
     match_case: bool = False
+    case_mode: str = CASE_MODE_SMART
     match_whole_word: bool = False
     match_whole_filename: bool = False
     match_path: bool = False
@@ -227,6 +233,7 @@ def parse_query(raw_query: str, base_options: Optional[SearchOptions] = None) ->
     if base_options:
         parsed.options = SearchOptions(
             match_case=base_options.match_case,
+            case_mode=base_options.case_mode if base_options.case_mode in CASE_MODES else CASE_MODE_SMART,
             match_whole_word=base_options.match_whole_word,
             match_whole_filename=base_options.match_whole_filename,
             match_path=base_options.match_path,
@@ -434,10 +441,15 @@ def parse_query(raw_query: str, base_options: Optional[SearchOptions] = None) ->
                 parsed.options.use_wildcards = True
                 break
 
-    if not parsed._case_explicit and not parsed.options.match_case:
-        all_text = ' '.join(parsed.terms + [t for g in parsed.or_groups for t in g])
-        if any(c.isupper() for c in all_text):
+    if not parsed._case_explicit:
+        if parsed.options.case_mode == CASE_MODE_SENSITIVE:
             parsed.options.match_case = True
+        elif parsed.options.case_mode == CASE_MODE_INSENSITIVE:
+            parsed.options.match_case = False
+        elif not parsed.options.match_case:
+            all_text = ' '.join(parsed.terms + [t for g in parsed.or_groups for t in g])
+            if any(c.isupper() for c in all_text):
+                parsed.options.match_case = True
 
     return parsed
 

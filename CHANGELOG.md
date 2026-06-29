@@ -2,6 +2,12 @@
 
 All notable changes to QuickFind will be documented in this file.
 
+## [v0.8.14] - 2026-06-29
+
+- Added a persisted index case mode with smart, case-insensitive, and case-sensitive baseline matching.
+- Kept `case:` and `nocase:` query modifiers as explicit overrides of the selected mode.
+- Added parser/settings validation coverage and expanded the passing suite to 233 tests.
+
 ## [v0.8.13] - 2026-06-29
 
 - Added an opt-in symbolic link and junction traversal setting for directory-walk indexing.

@@ -21,6 +21,7 @@ DEFAULTS = {
     "content_index_extensions": [],
     "content_index_max_cache_mb": 512,
     "content_index_max_file_mb": 10,
+    "index_case_mode": "smart",
 }
 
 
@@ -117,3 +118,13 @@ def test_content_index_settings_are_validated(tmp_path):
     assert sanitized["content_index_max_cache_mb"] == 512
     assert any("content_index_max_cache_mb reset" in warning for warning in warnings)
     assert any("Ignored missing content index root" in warning for warning in warnings)
+
+
+def test_invalid_index_case_mode_resets_to_default():
+    sanitized, warnings = sanitize_settings_data(
+        {"index_case_mode": "folded"},
+        DEFAULTS,
+    )
+
+    assert sanitized["index_case_mode"] == "smart"
+    assert any("index_case_mode reset" in warning for warning in warnings)

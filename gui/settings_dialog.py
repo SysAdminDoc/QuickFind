@@ -32,6 +32,12 @@ DEFAULT_COLUMN_VISIBILITY = {
     'attributes': False,
 }
 
+INDEX_CASE_MODE_CHOICES = [
+    ("Smart", "smart"),
+    ("Case-insensitive", "insensitive"),
+    ("Case-sensitive", "sensitive"),
+]
+
 
 @dataclass
 class Settings:
@@ -45,6 +51,7 @@ class Settings:
     exclude_hidden: bool = False
     exclude_system: bool = False
     follow_reparse_points: bool = False
+    index_case_mode: str = "smart"
 
     # Search
     default_match_case: bool = False
@@ -188,6 +195,11 @@ class SettingsDialog(QDialog):
 
         self._follow_reparse = QCheckBox("Follow symbolic links and junctions")
         idx_form.addRow(self._follow_reparse)
+
+        self._index_case_mode = QComboBox()
+        for label, value in INDEX_CASE_MODE_CHOICES:
+            self._index_case_mode.addItem(label, value)
+        idx_form.addRow("Index case mode:", self._index_case_mode)
 
         general_layout.addWidget(idx_group)
 
@@ -434,6 +446,8 @@ class SettingsDialog(QDialog):
         self._exclude_hidden.setChecked(s.exclude_hidden)
         self._exclude_system.setChecked(s.exclude_system)
         self._follow_reparse.setChecked(s.follow_reparse_points)
+        mode_index = self._index_case_mode.findData(s.index_case_mode)
+        self._index_case_mode.setCurrentIndex(max(0, mode_index))
         self._default_case.setChecked(s.default_match_case)
         self._default_regex.setChecked(s.default_regex)
         self._max_results.setValue(s.default_max_results)
@@ -477,6 +491,7 @@ class SettingsDialog(QDialog):
         s.exclude_hidden = self._exclude_hidden.isChecked()
         s.exclude_system = self._exclude_system.isChecked()
         s.follow_reparse_points = self._follow_reparse.isChecked()
+        s.index_case_mode = self._index_case_mode.currentData() or "smart"
         s.default_match_case = self._default_case.isChecked()
         s.default_regex = self._default_regex.isChecked()
         s.default_max_results = self._max_results.value()

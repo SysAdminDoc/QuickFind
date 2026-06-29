@@ -23,7 +23,10 @@ from PyQt6.QtGui import (
 )
 
 from core.index import FileIndex, FileEntry, IndexWorker
-from core.search import SearchEngine, SearchOptions, SearchFilter, BUILTIN_FILTERS, parse_query
+from core.search import (
+    CASE_MODE_SENSITIVE, SearchEngine, SearchOptions, SearchFilter,
+    BUILTIN_FILTERS, parse_query,
+)
 from core.file_list import load_efu
 from core.version import VERSION, APP_TITLE
 
@@ -188,6 +191,7 @@ class MainWindow(QMainWindow):
         self._file_index._exclude_hidden = self._settings.exclude_hidden
         self._file_index._exclude_system = self._settings.exclude_system
         self._file_index._follow_reparse_points = self._settings.follow_reparse_points
+        self._file_index._index_case_mode = self._settings.index_case_mode
         self._file_index._usn_poll_interval_ms = self._settings.usn_poll_interval_ms
 
         # Start maximized
@@ -869,8 +873,14 @@ class MainWindow(QMainWindow):
         else:
             self._search_input.setStyleSheet("")
 
+        case_mode = (
+            CASE_MODE_SENSITIVE
+            if self._match_case_action.isChecked()
+            else self._settings.index_case_mode
+        )
         options = SearchOptions(
             match_case=self._match_case_action.isChecked(),
+            case_mode=case_mode,
             use_regex=use_regex,
             match_path=self._match_path_action.isChecked(),
             match_whole_word=self._match_whole_action.isChecked(),
@@ -1686,6 +1696,7 @@ class MainWindow(QMainWindow):
         self._file_index._exclude_hidden = self._settings.exclude_hidden
         self._file_index._exclude_system = self._settings.exclude_system
         self._file_index._follow_reparse_points = self._settings.follow_reparse_points
+        self._file_index._index_case_mode = self._settings.index_case_mode
         self._file_index._usn_poll_interval_ms = self._settings.usn_poll_interval_ms
         if hasattr(self, '_launcher_popup'):
             self._launcher_popup.set_dialog_quick_switch_enabled(

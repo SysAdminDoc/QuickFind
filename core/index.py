@@ -185,6 +185,7 @@ class FileIndex(QObject):
         self._exclude_hidden: bool = False
         self._exclude_system: bool = False
         self._follow_reparse_points: bool = False
+        self._index_case_mode: str = "smart"
         self._usn_poll_interval_ms: int = 1000
         self._drive_rescan_intervals: dict[str, int] = {}
 
@@ -315,6 +316,7 @@ class FileIndex(QObject):
         return {
             "source": self._last_index_source,
             "admin_mode": self._admin_mode,
+            "case_mode": self._index_case_mode,
             "total_entries": len(self._all_entries),
             "total_files": self._stats.total_files,
             "total_folders": self._stats.total_folders,

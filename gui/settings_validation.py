@@ -23,6 +23,8 @@ STRING_FIELDS = {
     "https_key_file",
 }
 
+INDEX_CASE_MODES = {"smart", "insensitive", "sensitive"}
+
 
 def _path_exists(path: str) -> bool:
     return Path(path).expanduser().exists()
@@ -60,6 +62,11 @@ def sanitize_settings_data(
     for name in STRING_FIELDS:
         value = sanitized.get(name, "")
         sanitized[name] = value.strip() if isinstance(value, str) else ""
+
+    index_case_mode = sanitized.get("index_case_mode", defaults.get("index_case_mode", "smart"))
+    if not isinstance(index_case_mode, str) or index_case_mode not in INDEX_CASE_MODES:
+        sanitized["index_case_mode"] = defaults.get("index_case_mode", "smart")
+        warnings.append("index_case_mode reset because it must be smart, insensitive, or sensitive.")
 
     if not sanitized["http_bind"]:
         sanitized["http_bind"] = defaults["http_bind"]
