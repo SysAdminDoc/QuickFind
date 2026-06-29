@@ -15,6 +15,7 @@ from PyQt6.QtCore import QUrl
 
 from core.dialog_switch import switch_dialog_to_folder
 from core.index import FileEntry, FileIndex
+from core.open_with import launch_open_with, resolve_open_with_apps
 
 logger = logging.getLogger('QuickFind.ContextMenu')
 
@@ -156,6 +157,26 @@ def build_context_menu(entries: list[FileEntry], file_index: FileIndex,
         compare_action.triggered.connect(
             lambda: compare_callback(entries) if compare_callback else None
         )
+
+    open_with_menu = menu.addMenu("Open With")
+    open_with_apps = resolve_open_with_apps()
+    selected_paths = [e.get_path(file_index) for e in entries]
+    if open_with_apps:
+        for app in open_with_apps:
+            action = open_with_menu.addAction(app.label)
+
+            def _launch_open_with(target_app=app):
+                ok, message = launch_open_with(target_app, selected_paths)
+                if status_callback:
+                    status_callback(message)
+                if not ok:
+                    logger.warning(message)
+
+            action.triggered.connect(_launch_open_with)
+    else:
+        missing_action = open_with_menu.addAction("No supported apps found")
+        if hasattr(missing_action, "setEnabled"):
+            missing_action.setEnabled(False)
 
     if single and dialog_quick_switch_enabled:
         target_dir = path if entry.is_dir else parent_dir

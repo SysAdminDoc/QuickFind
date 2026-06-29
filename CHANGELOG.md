@@ -2,6 +2,12 @@
 
 All notable changes to QuickFind will be documented in this file.
 
+## [v0.8.30] - 2026-06-29
+
+- Added a result context-menu Open With submenu for VS Code, VSCodium, Notepad++, and Obsidian when installed.
+- Added executable discovery across PATH and common Windows install locations with launch status feedback.
+- Added Open With discovery/command coverage, expanding the passing suite to 289 tests.
+
 ## [v0.8.29] - 2026-06-29
 
 - Added an inline unified-diff dialog for comparing exactly two selected text files from result context menus.
