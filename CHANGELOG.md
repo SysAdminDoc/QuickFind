@@ -2,6 +2,12 @@
 
 All notable changes to QuickFind will be documented in this file.
 
+## [v0.8.26] - 2026-06-29
+
+- Added `git:dirty` search filtering for files inside Git worktrees with non-empty `git status --porcelain` output.
+- Cached Git repo-root discovery and dirty status per search engine to avoid per-file shell-outs.
+- Added Git dirty parser/search coverage and expanded the passing suite to 278 tests.
+
 ## [v0.8.25] - 2026-06-29
 
 - Added `broken:link` and `broken:shortcut` search predicates for broken reparse points and `.lnk` files with missing targets.

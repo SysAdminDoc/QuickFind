@@ -4,7 +4,7 @@ Routes simple queries through SQLite for speed, falls back to in-memory for comp
 
 Supports: plain text, regex:, wildcards:, case:, path:, file:, folder:,
 wholeword:, wholefilename:, content:, size:, dm: (date modified),
-dc: (date created), ext:, attrib:, len:, parent:, dupe:, broken:,
+dc: (date created), ext:, attrib:, len:, parent:, dupe:, broken:, git:,
 archive:, @slot
 """
 
@@ -13,6 +13,7 @@ import os
 import fnmatch
 import hashlib
 import logging
+import subprocess
 from datetime import datetime, timedelta
 from dataclasses import dataclass, field, replace
 from enum import Enum, auto
@@ -235,6 +236,7 @@ class ParsedQuery:
     dupe_hash_mode: bool = False
     broken_link_mode: bool = False
     broken_shortcut_mode: bool = False
+    git_dirty_mode: bool = False
     archive_mode: bool = False
     boolean_expression: Optional[BooleanExpression] = None
     or_groups: list[list[str]] = field(default_factory=list)
@@ -600,6 +602,9 @@ def parse_query(raw_query: str, base_options: Optional[SearchOptions] = None,
                     parsed.broken_link_mode = True
                     parsed.broken_shortcut_mode = True
                 i += 1; continue
+            elif mod_lower == 'git':
+                parsed.git_dirty_mode = val.lower() == 'dirty'
+                i += 1; continue
             elif mod_lower == 'archive':
                 parsed.archive_mode = True
                 if val:
@@ -690,6 +695,8 @@ class SearchEngine:
 
     def __init__(self, index: FileIndex):
         self._index = index
+        self._git_root_cache: dict[str, Optional[str]] = {}
+        self._git_dirty_cache: dict[str, bool] = {}
 
     def _can_use_db(self, parsed: ParsedQuery) -> bool:
         """Check if the query can be executed via DB search."""
@@ -711,6 +718,8 @@ class SearchEngine:
         if parsed.dupe_mode:
             return False
         if parsed.broken_link_mode or parsed.broken_shortcut_mode:
+            return False
+        if parsed.git_dirty_mode:
             return False
         if parsed.archive_mode:
             return False
@@ -1116,6 +1125,63 @@ class SearchEngine:
             logger.debug(f"Shortcut target resolution failed for {path}: {exc}")
             return ""
 
+    def _is_in_dirty_git_repo(self, entry: FileEntry) -> bool:
+        try:
+            repo_root = self._git_repo_root_for_path(entry.get_path(self._index))
+            if not repo_root:
+                return False
+            return self._git_repo_is_dirty(repo_root)
+        except (OSError, PermissionError, ValueError):
+            return False
+
+    def _git_repo_root_for_path(self, path: str) -> Optional[str]:
+        directory = path if os.path.isdir(path) else os.path.dirname(path)
+        directory = os.path.normcase(os.path.abspath(directory))
+        if directory in self._git_root_cache:
+            return self._git_root_cache[directory]
+
+        visited = []
+        current = directory
+        repo_root = None
+        while current:
+            if current in self._git_root_cache:
+                repo_root = self._git_root_cache[current]
+                break
+            visited.append(current)
+            if os.path.exists(os.path.join(current, '.git')):
+                repo_root = current
+                break
+            parent = os.path.dirname(current)
+            if parent == current:
+                break
+            current = parent
+
+        for item in visited:
+            self._git_root_cache[item] = repo_root
+        return repo_root
+
+    def _git_repo_is_dirty(self, repo_root: str) -> bool:
+        if repo_root in self._git_dirty_cache:
+            return self._git_dirty_cache[repo_root]
+
+        creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        try:
+            result = subprocess.run(
+                ['git', '-C', repo_root, 'status', '--porcelain'],
+                capture_output=True,
+                text=True,
+                timeout=3,
+                creationflags=creationflags,
+                check=False,
+            )
+            dirty = result.returncode == 0 and bool(result.stdout.strip())
+        except (OSError, subprocess.SubprocessError) as exc:
+            logger.debug(f"Git dirty check failed for {repo_root}: {exc}")
+            dirty = False
+
+        self._git_dirty_cache[repo_root] = dirty
+        return dirty
+
     def _compile_term_matchers(self, parsed: ParsedQuery) -> list:
         matchers = []
         for term in parsed.terms:
@@ -1280,6 +1346,8 @@ class SearchEngine:
         if parsed.broken_link_mode and not self._is_broken_link(entry):
             return False
         if parsed.broken_shortcut_mode and not self._is_broken_shortcut(entry):
+            return False
+        if parsed.git_dirty_mode and not self._is_in_dirty_git_repo(entry):
             return False
 
         if boolean_matcher is not None:

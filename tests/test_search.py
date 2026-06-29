@@ -241,6 +241,11 @@ class TestParseQuery:
         assert link.broken_link_mode is True
         assert shortcut.broken_shortcut_mode is True
 
+    def test_git_dirty_modifier(self):
+        parsed = parse_query("git:dirty")
+
+        assert parsed.git_dirty_mode is True
+
     def test_archive_modifier(self):
         parsed = parse_query("archive:report")
         assert parsed.archive_mode is True
@@ -690,3 +695,28 @@ class TestBrokenTargetSearch:
         results = engine.search("broken:shortcut")
 
         assert [entry.name for entry in results] == ["missing-target.lnk"]
+
+
+class TestGitDirtySearch:
+    def test_git_dirty_modifier_returns_entries_inside_dirty_repositories(self, monkeypatch):
+        dirty = _entry("dirty.py", 1)
+        clean = _entry("clean.py", 2)
+        outside = _entry("outside.py", 3)
+        dirty._path = "C:\\repos\\dirty\\dirty.py"
+        clean._path = "C:\\repos\\clean\\clean.py"
+        outside._path = "C:\\tmp\\outside.py"
+        engine = SearchEngine(FakeIndex([dirty, clean, outside]))
+
+        def repo_root(path):
+            if "\\dirty\\" in path:
+                return "C:\\repos\\dirty"
+            if "\\clean\\" in path:
+                return "C:\\repos\\clean"
+            return None
+
+        monkeypatch.setattr(engine, "_git_repo_root_for_path", repo_root)
+        monkeypatch.setattr(engine, "_git_repo_is_dirty", lambda root: root.endswith("dirty"))
+
+        results = engine.search("git:dirty")
+
+        assert [entry.name for entry in results] == ["dirty.py"]

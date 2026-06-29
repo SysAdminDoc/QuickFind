@@ -73,6 +73,7 @@ SYNTAX_HELP = """Search Syntax:
   duplicate:hash  Find duplicate files by SHA-256 content
   broken:link     Find broken reparse links
   broken:shortcut Find .lnk files with missing targets
+  git:dirty       Files inside dirty Git worktrees
   regex:pattern   Regex search
   content:text    Content search (slow)
   @slot           Expand a saved bookmark query slot
