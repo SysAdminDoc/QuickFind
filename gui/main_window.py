@@ -716,7 +716,11 @@ class MainWindow(QMainWindow):
         self._tray.start_hotkey()
 
         from gui.launcher_popup import LauncherPopup
-        self._launcher_popup = LauncherPopup(self._search_engine, self._file_index)
+        self._launcher_popup = LauncherPopup(
+            self._search_engine,
+            self._file_index,
+            dialog_quick_switch_enabled=self._settings.enable_dialog_quick_switch,
+        )
 
     def _connect_signals(self):
         """Connect all signals."""
@@ -1259,7 +1263,9 @@ class MainWindow(QMainWindow):
             return
         menu = build_context_menu(
             entries, self._file_index, self,
-            hide_callback=self._hide_path_from_results
+            hide_callback=self._hide_path_from_results,
+            dialog_quick_switch_enabled=self._settings.enable_dialog_quick_switch,
+            status_callback=self._status_label.setText,
         )
         menu.exec(self._results_view.table_view.viewport().mapToGlobal(pos))
 
@@ -1676,6 +1682,10 @@ class MainWindow(QMainWindow):
         self._file_index._exclude_hidden = self._settings.exclude_hidden
         self._file_index._exclude_system = self._settings.exclude_system
         self._file_index._usn_poll_interval_ms = self._settings.usn_poll_interval_ms
+        if hasattr(self, '_launcher_popup'):
+            self._launcher_popup.set_dialog_quick_switch_enabled(
+                self._settings.enable_dialog_quick_switch
+            )
         self._file_index._rebuild_flat_list()
         self._trigger_search()
 

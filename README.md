@@ -1,14 +1,14 @@
-# QuickFind v0.8.11
+# QuickFind v0.8.12
 
 Lightning-fast file search for Windows, powered by NTFS MFT + USN Journal.
 
 An open-source alternative to [Voidtools Everything](https://www.voidtools.com/), built with Python and PyQt6 for extensibility and customization.
 
-![Version](https://img.shields.io/badge/Version-v0.8.11-blueviolet)
+![Version](https://img.shields.io/badge/Version-v0.8.12-blueviolet)
 ![Python](https://img.shields.io/badge/Python-3.10+-blue)
 ![License](https://img.shields.io/badge/License-MIT-green)
 ![Platform](https://img.shields.io/badge/Platform-Windows-lightgrey)
-![Tests](https://img.shields.io/badge/Tests-222%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/Tests-226%20passing-brightgreen)
 
 ## Features
 
@@ -51,7 +51,7 @@ An open-source alternative to [Voidtools Everything](https://www.voidtools.com/)
 - **Preview pane** for text files, images, and file info with matched-line context for `content:` searches
 - **Filter bar** with built-in filters (Audio, Video, Image, Document, Executable, Compressed, Folder) + custom filters
 - **Bookmarks** — save/restore search + filter state
-- **Context menu** — Open, Open Path, Copy Name/Path, Terminal Here (CMD/PowerShell/WT), Delete to Recycle Bin, Properties
+- **Context menu** — Open, Open Path, opt-in Open/Save dialog Quick Switch, Copy Name/Path, Terminal Here (CMD/PowerShell/WT), Delete to Recycle Bin, Properties
 - **System tray** with minimize-to-tray and close-to-tray
 - **Index diagnostics** from the Tools menu with cache integrity, per-drive online/offline/stale state, per-drive refresh, service heartbeat, content cache size, and recovery buttons
 - **Dark title bar** via DwmSetWindowAttribute on Windows 10/11
@@ -65,9 +65,10 @@ An open-source alternative to [Voidtools Everything](https://www.voidtools.com/)
 - **CLI tool** (`es.py`) with full search syntax, CSV/JSON output, and DB cache for instant results
 - **Per-drive rescan intervals and startup delay** — configure refresh cadence and wait for late-mounted removable or virtual drives
 - **Export/import settings** — save and restore configuration as validated JSON
+- **Open/Save dialog Quick Switch** — optional Windows integration that sends selected folders to the active common file dialog
 - **Everything import hardening** — malformed CSV rows and invalid JSON are rejected before atomic filter/bookmark replacement
 - **Log rotation** — `RotatingFileHandler` with 5 MB max and 3 backups
-- **222 automated tests** covering startup dependency handling, build/runtime matrix reporting, SQLite/FTS5 version gates, remote auth/CORS hardening, Everything import validation, index/cache/service diagnostics, removable-drive stale state, content indexing jobs/quotas/diagnostics, content search ranking/snippets, search parsing, archive metadata caching, content adapters/cache, service IPC, duplicate detection, MFT record parsing, privilege lifecycle, settings validation, index mode UI state, results-view cache bounds, cache helpers, remote server configuration, and ignore patterns
+- **226 automated tests** covering startup dependency handling, build/runtime matrix reporting, SQLite/FTS5 version gates, remote auth/CORS hardening, Everything import validation, index/cache/service diagnostics, removable-drive stale state, dialog Quick Switch helpers, content indexing jobs/quotas/diagnostics, content search ranking/snippets, search parsing, archive metadata caching, content adapters/cache, service IPC, duplicate detection, MFT record parsing, privilege lifecycle, settings validation, index mode UI state, results-view cache bounds, cache helpers, remote server configuration, and ignore patterns
 - **PyInstaller build script** for single-file or single-folder distribution
 
 ## Requirements
@@ -78,7 +79,7 @@ An open-source alternative to [Voidtools Everything](https://www.voidtools.com/)
 
 ## Supported Runtime Matrix
 
-| Component | Supported | Tested in v0.8.11 |
+| Component | Supported | Tested in v0.8.12 |
 |-----------|-----------|------------------|
 | OS | Windows 10/11 | Windows 10.0.26100 |
 | Python | 3.10+ | 3.11.9 |
@@ -268,11 +269,11 @@ QuickFind/
 ## Testing
 
 ```bash
-# Run the test suite (222 tests)
+# Run the test suite (226 tests)
 python -m pytest tests/ -v
 ```
 
-Tests cover startup dependency handling, build/runtime matrix reporting, SQLite/FTS5 version gates, remote auth/CORS hardening, Everything import validation, index/cache/service diagnostics, content indexing jobs/quotas/diagnostics, search query parsing (all modifiers), archive metadata caching, content extraction/cache, service IPC, size/date helpers, smart case sensitivity, fuzzy matching, MFT record parsing, USA fixup, USN records, cache datetime round-trip, FTS5 detection, results-view cache bounds, `.quickfindignore` pattern matching, and EFU file loading.
+Tests cover startup dependency handling, build/runtime matrix reporting, SQLite/FTS5 version gates, remote auth/CORS hardening, Everything import validation, index/cache/service diagnostics, removable-drive stale state, dialog Quick Switch helpers, content indexing jobs/quotas/diagnostics, search query parsing (all modifiers), archive metadata caching, content extraction/cache, service IPC, size/date helpers, smart case sensitivity, fuzzy matching, MFT record parsing, USA fixup, USN records, cache datetime round-trip, FTS5 detection, results-view cache bounds, `.quickfindignore` pattern matching, and EFU file loading.
 
 ## Security
 

@@ -15,6 +15,7 @@ from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QPropertyAnimation, QEasingCurv
 from PyQt6.QtGui import QFont, QColor, QKeyEvent
 
 from gui.theme import MOCHA, ACCENT
+from core.dialog_switch import switch_dialog_to_folder
 from core.search import SearchEngine, SearchOptions
 
 logger = logging.getLogger('QuickFind.Launcher')
@@ -27,10 +28,12 @@ class LauncherPopup(QWidget):
 
     file_opened = pyqtSignal(str)
 
-    def __init__(self, search_engine: SearchEngine, file_index, parent=None):
+    def __init__(self, search_engine: SearchEngine, file_index, parent=None,
+                 dialog_quick_switch_enabled: bool = False):
         super().__init__(parent)
         self._engine = search_engine
         self._file_index = file_index
+        self._dialog_quick_switch_enabled = dialog_quick_switch_enabled
         self._debounce = QTimer()
         self._debounce.setSingleShot(True)
         self._debounce.setInterval(120)
@@ -46,6 +49,9 @@ class LauncherPopup(QWidget):
         self._setup_ui()
         self.setFixedWidth(640)
         self.hide()
+
+    def set_dialog_quick_switch_enabled(self, enabled: bool):
+        self._dialog_quick_switch_enabled = enabled
 
     def _setup_ui(self):
         layout = QVBoxLayout(self)
@@ -181,6 +187,12 @@ class LauncherPopup(QWidget):
     def _on_item_activated(self, item: QListWidgetItem):
         path = item.data(Qt.ItemDataRole.UserRole)
         if path:
+            if self._dialog_quick_switch_enabled:
+                result = switch_dialog_to_folder(path)
+                if result.ok:
+                    self.file_opened.emit(result.folder)
+                    self.dismiss()
+                    return
             try:
                 os.startfile(path)
                 from core.cache import record_file_open

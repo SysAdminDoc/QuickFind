@@ -63,6 +63,7 @@ class Settings:
     window_height: int = 700
     start_maximized: bool = True
     column_visibility: dict = field(default_factory=lambda: dict(DEFAULT_COLUMN_VISIBILITY))
+    enable_dialog_quick_switch: bool = False
 
     # Network
     enable_http_server: bool = False
@@ -225,6 +226,9 @@ class SettingsDialog(QDialog):
 
         self._show_status = QCheckBox("Show status bar")
         ui_form.addRow(self._show_status)
+
+        self._dialog_quick_switch = QCheckBox("Enable Open/Save dialog Quick Switch")
+        ui_form.addRow(self._dialog_quick_switch)
 
         self._start_min = QCheckBox("Start minimized")
         ui_form.addRow(self._start_min)
@@ -432,6 +436,7 @@ class SettingsDialog(QDialog):
         self._show_preview.setChecked(s.show_preview_pane)
         self._show_filters.setChecked(s.show_filter_bar)
         self._show_status.setChecked(s.show_status_bar)
+        self._dialog_quick_switch.setChecked(s.enable_dialog_quick_switch)
         self._start_min.setChecked(s.start_minimized)
         self._min_tray.setChecked(s.minimize_to_tray)
         self._close_tray.setChecked(s.close_to_tray)
@@ -473,6 +478,7 @@ class SettingsDialog(QDialog):
         s.show_preview_pane = self._show_preview.isChecked()
         s.show_filter_bar = self._show_filters.isChecked()
         s.show_status_bar = self._show_status.isChecked()
+        s.enable_dialog_quick_switch = self._dialog_quick_switch.isChecked()
         s.start_minimized = self._start_min.isChecked()
         s.minimize_to_tray = self._min_tray.isChecked()
         s.close_to_tray = self._close_tray.isChecked()

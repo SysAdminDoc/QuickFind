@@ -2,6 +2,12 @@
 
 All notable changes to QuickFind will be documented in this file.
 
+## [v0.8.12] - 2026-06-29
+
+- Added an opt-in Open/Save dialog Quick Switch prototype for sending selected folders to the active common file dialog.
+- Wired Quick Switch through launcher activation and the result context menu without changing normal open behavior when disabled.
+- Added dialog-switch helper/context-menu tests and expanded the passing suite to 226 tests.
+
 ## [v0.8.11] - 2026-06-29
 
 - Added online/offline/stale drive state tracking for cached and indexed drives.

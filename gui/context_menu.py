@@ -13,6 +13,7 @@ from PyQt6.QtWidgets import QMenu, QApplication, QInputDialog
 from PyQt6.QtGui import QAction, QDesktopServices
 from PyQt6.QtCore import QUrl
 
+from core.dialog_switch import switch_dialog_to_folder
 from core.index import FileEntry, FileIndex
 
 logger = logging.getLogger('QuickFind.ContextMenu')
@@ -115,7 +116,9 @@ def _delete_to_recycle(path: str):
 
 def build_context_menu(entries: list[FileEntry], file_index: FileIndex,
                        parent_widget=None,
-                       hide_callback=None) -> QMenu:
+                       hide_callback=None,
+                       dialog_quick_switch_enabled: bool = False,
+                       status_callback=None) -> QMenu:
     """
     Build a context menu for the selected file entries.
     """
@@ -146,6 +149,17 @@ def build_context_menu(entries: list[FileEntry], file_index: FileIndex,
         open_path_action.triggered.connect(lambda: [
             _open_path(e.get_path(file_index)) for e in entries[:5]
         ])
+
+    if single and dialog_quick_switch_enabled:
+        target_dir = path if entry.is_dir else parent_dir
+        quick_switch = menu.addAction("Quick Switch Open/Save Dialog Here")
+
+        def _quick_switch_dialog():
+            result = switch_dialog_to_folder(target_dir)
+            if status_callback:
+                status_callback(result.message)
+
+        quick_switch.triggered.connect(_quick_switch_dialog)
 
     menu.addSeparator()
 
