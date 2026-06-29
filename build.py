@@ -40,6 +40,7 @@ RUNTIME_PACKAGES = [
     ("py7zr", "py7zr"),
     ("python-docx", "python-docx"),
     ("python-pptx", "python-pptx"),
+    ("watchdog", "watchdog"),
 ]
 
 
@@ -115,13 +116,14 @@ def build(onefile=False):
     hidden = [
         'core.ntfs', 'core.index', 'core.cache', 'core.search',
         'core.query_slots', 'core.archives', 'core.dialog_switch',
-        'core.network_shares',
+        'core.network_shares', 'core.platform_engines',
         'core.content', 'core.content.adapters', 'core.content.indexer',
         'core.sqlite_compat',
         'gui.main_window', 'gui.results_view', 'gui.settings_dialog',
         'gui.diagnostics_dialog',
         'gui.theme', 'gui.tray', 'cli.es', 'server.http_server', 'py7zr',
         'pdfplumber', 'docx', 'pptx',
+        'watchdog', 'watchdog.events', 'watchdog.observers',
         'service.ipc', 'service.windows_service',
         'win32serviceutil', 'win32service', 'win32event', 'servicemanager',
         'win32gui', 'win32con', 'win32cred', 'win32wnet', 'win32netcon',

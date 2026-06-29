@@ -8,6 +8,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import core.index as index_mod
 from core.index import FileEntry, FileIndex, NTFS_ROOT_FRN
 from core.network_shares import network_source_key
+from core.platform_engines import LinuxPlatformEngine, PlatformRoot
 from core.ntfs import (
     DRIVE_FIXED, FILE_ATTRIBUTE_ARCHIVE, FILE_ATTRIBUTE_DIRECTORY,
     FILE_ATTRIBUTE_HIDDEN, FILE_ATTRIBUTE_REPARSE_POINT, DriveInfo,
@@ -57,6 +58,7 @@ class FakeScandir:
 
 def install_fake_walk(monkeypatch, tree: dict[str, list[FakeDirEntry]],
                       identities: dict[str, tuple[int, int]]):
+    original_stat = os.stat
     monkeypatch.setattr(index_mod, "get_all_drives", lambda: [])
     monkeypatch.setattr(
         index_mod.FileIndex,
@@ -70,7 +72,9 @@ def install_fake_walk(monkeypatch, tree: dict[str, list[FakeDirEntry]],
         lambda path: FakeScandir(tree.get(path, [])),
     )
 
-    def fake_stat(path: str):
+    def fake_stat(path: str, *args, **kwargs):
+        if path not in identities:
+            return original_stat(path, *args, **kwargs)
         dev, ino = identities[path]
         return FakeStat(FILE_ATTRIBUTE_DIRECTORY, dev=dev, ino=ino)
 
@@ -369,3 +373,32 @@ class TestIndexMode:
         assert count == 1
         assert "Loop" in names
         assert "child.txt" not in names
+
+    def test_platform_root_walk_uses_posix_source_key_and_absolute_paths(self, monkeypatch):
+        root = "/home/user"
+        docs = "/home/user/docs"
+        child = "/home/user/docs/readme.txt"
+        tree = {
+            root: [FakeDirEntry("docs", docs, 0, True, True)],
+            docs: [FakeDirEntry("readme.txt", child, 0, False, False, size=4)],
+        }
+        install_fake_walk(monkeypatch, tree, {root: (3, 1), docs: (3, 2)})
+
+        index = FileIndex()
+        index._platform_engine = LinuxPlatformEngine()
+        platform_root = PlatformRoot(
+            key="POSIX:TEST",
+            path=root,
+            label="user",
+            filesystem="Linux filesystem",
+            watcher="inotify",
+        )
+
+        count = index._walk_platform_root(platform_root)
+        paths = {entry.get_path(index) for entry in index._entries["POSIX:TEST"].values()}
+        diagnostics = {row["drive"]: row for row in index.drive_diagnostics()}
+
+        assert count == 2
+        assert child in paths
+        assert index.resolve_parent_path("POSIX:TEST", NTFS_ROOT_FRN) == root
+        assert diagnostics["POSIX:TEST"]["mode"] == "inotify + os.scandir"

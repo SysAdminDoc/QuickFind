@@ -11,6 +11,7 @@ import ctypes.wintypes as wintypes
 import struct
 import string
 import logging
+import sys
 import threading
 from contextlib import contextmanager
 from dataclasses import dataclass, field
@@ -74,6 +75,20 @@ USN_REASON_OBJECT_ID_CHANGE = 0x00080000
 USN_REASON_REPARSE_POINT_CHANGE = 0x00100000
 USN_REASON_STREAM_CHANGE = 0x00200000
 USN_REASON_CLOSE = 0x80000000
+
+
+class _UnsupportedWin32Function:
+    def __call__(self, *args, **kwargs):
+        raise OSError("Win32 filesystem APIs are only available on Windows")
+
+
+class _UnsupportedWin32DLL:
+    def __getattr__(self, _name):
+        return _UnsupportedWin32Function()
+
+
+if sys.platform != "win32":
+    ctypes.WinDLL = lambda *_args, **_kwargs: _UnsupportedWin32DLL()
 
 # ── Win32 API setup ─────────────────────────────────────────────────
 kernel32 = ctypes.WinDLL('kernel32', use_last_error=True)
@@ -1117,6 +1132,9 @@ SUPPORTED_FILESYSTEMS = {'NTFS', 'FAT', 'FAT32', 'EXFAT', 'REFS'}
 
 def get_all_drives() -> list[DriveInfo]:
     """Return info for all fixed/removable drives with supported filesystems."""
+    if sys.platform != "win32":
+        return []
+
     buf = ctypes.create_unicode_buffer(512)
     length = GetLogicalDriveStringsW(512, buf)
     if length == 0:

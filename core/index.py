@@ -38,6 +38,7 @@ from core.network_shares import (
     network_source_key,
     normalize_network_root,
 )
+from core.platform_engines import PlatformRoot, select_platform_engine
 
 logger = logging.getLogger('QuickFind.Index')
 
@@ -182,6 +183,10 @@ class FileIndex(QObject):
         self._walked_drives: set[str] = set()
         # Network share source key -> UNC root path
         self._network_roots: dict[str, str] = {}
+        # POSIX platform source key -> root metadata
+        self._platform_roots: dict[str, PlatformRoot] = {}
+        self._platform_engine = select_platform_engine()
+        self._platform_watch_thread: Optional['PlatformWatchThread'] = None
         # Runtime online/offline/stale state for indexed or cached drives
         self._drive_states: dict[str, DriveState] = {}
         # All entries flat list for search (rebuilt after indexing)
@@ -247,12 +252,18 @@ class FileIndex(QObject):
         return {d.letter.upper(): d for d in get_all_drives()}
 
     def _state_for_drive(self, drive: str) -> DriveState:
-        drive = drive.upper()
+        drive = self._state_key(drive)
         state = self._drive_states.get(drive)
         if state is None:
             state = DriveState(letter=drive)
             self._drive_states[drive] = state
         return state
+
+    @staticmethod
+    def _state_key(drive: str) -> str:
+        if drive.startswith(("POSIX:", "UNC:")):
+            return drive
+        return drive.upper()
 
     def _mark_drive_available(self, info: DriveInfo, *, stale: bool = False,
                               reason: str = "") -> None:
@@ -295,7 +306,16 @@ class FileIndex(QObject):
 
     def _mark_cached_drive_states(self, drives: list[str]) -> None:
         available = self._available_drive_info()
-        for drive in sorted({d.upper() for d in drives}):
+        for drive in sorted({self._state_key(d) for d in drives}):
+            platform_root = self._platform_roots.get(drive)
+            if platform_root is not None:
+                self._mark_platform_root_state(
+                    platform_root,
+                    stale=True,
+                    reason="Loaded from cache; waiting for native watcher catchup",
+                    online=os.path.exists(platform_root.path),
+                )
+                continue
             info = available.get(drive)
             if info:
                 self._mark_drive_stale(
@@ -341,7 +361,10 @@ class FileIndex(QObject):
 
     def index_diagnostics(self) -> dict:
         """Return structured index state for UI diagnostics."""
-        monitor_running = bool(self._monitor_thread and self._monitor_thread.isRunning())
+        platform_monitor_running = bool(
+            self._platform_watch_thread and self._platform_watch_thread.isRunning()
+        )
+        monitor_running = bool(self._monitor_thread and self._monitor_thread.isRunning()) or platform_monitor_running
         rescan_running = bool(self._rescan_thread and self._rescan_thread.isRunning())
         pending_usn = bool(getattr(self, '_pending_usn_positions', None))
         return {
@@ -383,7 +406,12 @@ class FileIndex(QObject):
                         files += 1
 
                 volume = self._volumes.get(drive)
-                if drive in self._walked_drives:
+                platform_root = self._platform_roots.get(drive)
+                if platform_root is not None:
+                    mode = f"{platform_root.watcher} + os.scandir"
+                    if platform_root.search_fallback:
+                        mode += f" + {platform_root.search_fallback}"
+                elif drive in self._walked_drives:
                     mode = "os.scandir fallback" if not self._admin_mode else "os.scandir"
                 elif volume is not None:
                     mode = "MFT + USN"
@@ -409,8 +437,26 @@ class FileIndex(QObject):
                     "folders": folders,
                     "journal_id": getattr(volume, "journal_id", 0) if volume else 0,
                     "next_usn": getattr(volume, "current_usn", 0) if volume else 0,
-                    "monitoring": bool(volume is not None and self._monitor_thread and self._monitor_thread.isRunning()),
-                    "rescanning": bool(drive in self._walked_drives and self._rescan_thread and self._rescan_thread.isRunning()),
+                    "monitoring": bool(
+                        (
+                            platform_root is not None
+                            and self._platform_watch_thread
+                            and self._platform_watch_thread.isRunning()
+                        )
+                        or (
+                            volume is not None
+                            and self._monitor_thread
+                            and self._monitor_thread.isRunning()
+                        )
+                    ),
+                    "rescanning": bool(
+                        platform_root is None
+                        and (
+                            drive in self._walked_drives
+                            and self._rescan_thread
+                            and self._rescan_thread.isRunning()
+                        )
+                    ),
                 })
         return rows
 
@@ -425,11 +471,19 @@ class FileIndex(QObject):
     def resolve_path(self, drive: str, frn: int) -> str:
         """Resolve the full path for a file by walking parent FRNs."""
         parts = []
-        drive = drive.upper()
+        original_drive = drive
+        drive = drive.upper() if len(drive) <= 3 and not drive.startswith("POSIX:") else drive
+        source_root = self._source_root_path(original_drive)
         visited = set()
 
         with self._lock:
             drive_entries = self._entries.get(drive, {})
+            if source_root is not None:
+                entry = drive_entries.get(frn)
+                if entry and entry._path:
+                    return entry._path
+                if frn == NTFS_ROOT_FRN:
+                    return source_root
             current_frn = frn
 
             while current_frn and current_frn not in visited:
@@ -443,13 +497,24 @@ class FileIndex(QObject):
                 current_frn = entry.parent_frn
 
         parts.reverse()
+        if source_root is not None:
+            return os.path.join(source_root, *parts) if parts else source_root
         return f"{drive}:\\" + "\\".join(parts) if parts else f"{drive}:\\"
 
     def resolve_parent_path(self, drive: str, parent_frn: int) -> str:
         """Resolve just the parent directory path."""
+        source_root = self._source_root_path(drive)
+        if source_root is not None and parent_frn == NTFS_ROOT_FRN:
+            return source_root
         if parent_frn == NTFS_ROOT_FRN:
             return f"{drive.upper()}:\\"
         return self.resolve_path(drive, parent_frn)
+
+    def _source_root_path(self, source_key: str) -> Optional[str]:
+        if source_key in self._network_roots:
+            return self._network_roots[source_key]
+        root = self._platform_roots.get(source_key)
+        return root.path if root else None
 
     def cancel_indexing(self):
         """Signal to cancel any in-progress indexing."""
@@ -516,7 +581,12 @@ class FileIndex(QObject):
 
         loaded_drives = sorted(self._entries)
         if drives is None:
+            if not self._platform_engine.is_windows:
+                self._refresh_platform_roots(None)
             drives = loaded_drives
+        elif not self._platform_engine.is_windows:
+            platform_roots = self._refresh_platform_roots(drives)
+            drives = [root.key for root in platform_roots] or loaded_drives
         else:
             drives = [drive.upper() for drive in drives]
         self._mark_cached_drive_states(loaded_drives)
@@ -583,6 +653,25 @@ class FileIndex(QObject):
             if self._cancel_flag:
                 break
             if drive_letter not in self._entries:
+                continue
+            platform_root = self._platform_roots.get(drive_letter)
+            if platform_root is not None:
+                if not os.path.exists(platform_root.path):
+                    self._mark_platform_root_state(
+                        platform_root,
+                        stale=True,
+                        reason="Root unavailable; cached results may be stale",
+                        online=False,
+                    )
+                    continue
+                logger.info("Re-walking platform root %s for cache catchup", platform_root.path)
+                old_count = len(self._entries.get(drive_letter, {}))
+                self._walk_platform_root(platform_root)
+                new_count = len(self._entries.get(drive_letter, {}))
+                diff = abs(new_count - old_count)
+                if diff > 0:
+                    total_changes += diff
+                    walked_updated = True
                 continue
             drive_info = available.get(drive_letter)
 
@@ -685,8 +774,14 @@ class FileIndex(QObject):
             self._stats.last_update = datetime.now()
             self.index_updated.emit(total_changes)
 
-        self._last_index_source = "SQLite cache + USN catchup"
-        logger.info(f"USN catchup: {total_changes} changes applied in {elapsed:.0f}ms")
+        if self._platform_engine.is_windows:
+            self._last_index_source = "SQLite cache + USN catchup"
+        else:
+            self._last_index_source = (
+                f"SQLite cache + {self._platform_engine.watcher} catchup"
+            )
+        catchup_label = "USN" if self._platform_engine.is_windows else self._platform_engine.watcher
+        logger.info(f"{catchup_label} catchup: {total_changes} changes applied in {elapsed:.0f}ms")
 
         # Cleanup
         self._pending_usn_positions = None
@@ -850,6 +945,190 @@ class FileIndex(QObject):
             self._rebuild_flat_list()
             self._recount_stats()
         return indexed_sources
+
+    def _refresh_platform_roots(self, configured: Optional[list[str]] = None) -> list[PlatformRoot]:
+        if self._platform_engine.is_windows:
+            return []
+        roots = self._platform_engine.discover_roots(configured)
+        for root in roots:
+            self._platform_roots[root.key] = root
+        return roots
+
+    def _mark_platform_root_state(self, root: PlatformRoot, *, stale: bool = False,
+                                  reason: str = "", online: bool = True,
+                                  error: str = "") -> None:
+        state = self._drive_states.get(root.key)
+        if state is None:
+            state = DriveState(letter=root.key)
+            self._drive_states[root.key] = state
+        state.filesystem = root.filesystem
+        state.drive_type = 0
+        state.label = root.label
+        state.online = online
+        state.stale = stale
+        state.stale_reason = reason if stale else ""
+        state.last_seen = datetime.now() if online else state.last_seen
+        if online and not stale:
+            state.last_scan = datetime.now()
+        state.refresh_error = error
+
+    def _walk_platform_root(self, root: PlatformRoot) -> int:
+        """Index a POSIX root using recursive os.scandir and synthetic FRNs."""
+        self._platform_roots[root.key] = root
+        logger.info(
+            "Walking %s root %s via os.scandir (%s)...",
+            self._platform_engine.display_name,
+            root.path,
+            root.watcher,
+        )
+        if not os.path.exists(root.path):
+            self._mark_platform_root_state(
+                root,
+                stale=True,
+                reason="Root unavailable; cached results may be stale",
+                online=False,
+            )
+            return len(self._entries.get(root.key, {}))
+
+        drive_entries: dict[int, FileEntry] = {}
+        root_frn = NTFS_ROOT_FRN
+        root_entry = FileEntry(
+            frn=root_frn, parent_frn=0, name="",
+            drive=root.key, attributes=FILE_ATTRIBUTE_DIRECTORY,
+        )
+        root_entry._path = root.path
+        root_entry._stat_loaded = True
+        drive_entries[root_frn] = root_entry
+
+        dir_frn_map: dict[str, int] = {root.path: root_frn}
+        visited_dirs = set()
+        self._reserve_directory_for_walk(root.path, visited_dirs)
+        total = 0
+        callback_interval = 10000
+        stack = [root.path]
+
+        while stack:
+            if self._cancel_flag:
+                break
+
+            current_dir = stack.pop()
+            parent_frn = dir_frn_map.pop(current_dir, root_frn)
+
+            try:
+                ignore_patterns = self._load_ignore_patterns(current_dir)
+                with os.scandir(current_dir) as it:
+                    for de in it:
+                        if self._cancel_flag:
+                            break
+                        try:
+                            name = de.name
+                            if ignore_patterns and self._matches_ignore(name, ignore_patterns):
+                                continue
+                            st = de.stat(follow_symlinks=False)
+                            is_reparse = False
+                            try:
+                                is_reparse = de.is_symlink()
+                            except OSError:
+                                pass
+                            is_dir = de.is_dir(follow_symlinks=False)
+                            if is_reparse and self._follow_reparse_points:
+                                try:
+                                    is_dir = is_dir or de.is_dir(follow_symlinks=True)
+                                except OSError:
+                                    pass
+
+                            self._next_synthetic_frn += 1
+                            frn = self._next_synthetic_frn
+
+                            attrs = FILE_ATTRIBUTE_DIRECTORY if is_dir else FILE_ATTRIBUTE_ARCHIVE
+                            if is_reparse:
+                                attrs |= FILE_ATTRIBUTE_REPARSE_POINT
+
+                            entry = FileEntry(
+                                frn=frn,
+                                parent_frn=parent_frn,
+                                name=name,
+                                drive=root.key,
+                                attributes=attrs,
+                                size=st.st_size if not is_dir else 0,
+                                date_modified=datetime.fromtimestamp(st.st_mtime),
+                                date_created=datetime.fromtimestamp(st.st_ctime),
+                            )
+                            entry._stat_loaded = True
+                            entry._path = de.path
+
+                            excluded = self._should_exclude(entry)
+                            if excluded:
+                                if is_dir:
+                                    logger.debug("Skipped excluded platform directory: %s", de.path)
+                                continue
+
+                            drive_entries[frn] = entry
+                            total += 1
+
+                            if is_dir:
+                                full_path = de.path
+                                should_descend = (
+                                    not is_reparse or self._follow_reparse_points
+                                )
+                                if should_descend and self._reserve_directory_for_walk(full_path, visited_dirs):
+                                    dir_frn_map[full_path] = frn
+                                    stack.append(full_path)
+
+                            if total % callback_interval == 0:
+                                self.indexing_progress.emit(root.label, total)
+
+                        except (OSError, PermissionError):
+                            continue
+            except (OSError, PermissionError):
+                continue
+
+        dir_frn_map.clear()
+
+        with self._lock:
+            self._entries[root.key] = drive_entries
+            self._walked_drives.add(root.key)
+
+        self._mark_platform_root_state(root)
+        logger.info("Platform root walk complete on %s: %s entries", root.path, f"{total:,}")
+        self.indexing_progress.emit(root.label, total)
+        return total
+
+    def _index_platform_roots(self, configured: Optional[list[str]] = None) -> None:
+        roots = self._refresh_platform_roots(configured)
+        start_time = time.perf_counter()
+
+        for root in roots:
+            if self._cancel_flag:
+                break
+            self._mark_platform_root_state(
+                root,
+                stale=True,
+                reason="Index refresh in progress",
+                online=True,
+            )
+            self._walk_platform_root(root)
+            self._rebuild_flat_list()
+
+        self._rebuild_flat_list()
+        self._recount_stats()
+
+        elapsed = (time.perf_counter() - start_time) * 1000
+        total = self._stats.total_files + self._stats.total_folders
+        self._stats.volumes_indexed = sorted(self._entries)
+        self._stats.index_time_ms = int(elapsed)
+        self._stats.last_update = datetime.now()
+        self._stats.entries_per_sec = (total / (elapsed / 1000.0)) if elapsed > 0 else 0
+        self._last_index_source = (
+            f"{self._platform_engine.display_name} os.scandir + SQLite cache"
+        )
+        logger.info(
+            "%s indexing complete: %s entries in %.0fms",
+            self._platform_engine.display_name,
+            f"{total:,}",
+            elapsed,
+        )
+        self.indexing_complete.emit(self._stats)
 
     def _walk_drive(self, drive_letter: str):
         """
@@ -1110,6 +1389,11 @@ class FileIndex(QObject):
         self._admin_mode = not force_walk
         self.indexing_started.emit()
 
+        if not self._platform_engine.is_windows:
+            self._admin_mode = False
+            self._index_platform_roots(drives)
+            return
+
         # Build drive info map for all available drives
         all_drive_info = {d.letter: d for d in get_all_drives()}
 
@@ -1349,6 +1633,26 @@ class FileIndex(QObject):
 
     def start_monitoring(self):
         """Start the USN journal monitor thread and FAT rescan thread."""
+        if not self._platform_engine.is_windows:
+            if self._platform_roots and (
+                not self._platform_watch_thread
+                or not self._platform_watch_thread.isRunning()
+            ):
+                self._platform_watch_thread = PlatformWatchThread(
+                    list(self._platform_roots.values())
+                )
+                self._platform_watch_thread.roots_changed.connect(
+                    self._on_platform_roots_changed
+                )
+                self._platform_watch_thread.start()
+                logger.info(
+                    "%s monitoring started for %s roots",
+                    self._platform_engine.watcher,
+                    len(self._platform_roots),
+                )
+            self._start_path_resolve_timer()
+            return
+
         if self._monitor_thread and self._monitor_thread.isRunning():
             pass  # Already running
         else:
@@ -1372,6 +1676,11 @@ class FileIndex(QObject):
 
     def stop_monitoring(self):
         """Stop the USN journal monitor thread and FAT rescan thread."""
+        if self._platform_watch_thread:
+            self._platform_watch_thread.stop()
+            self._platform_watch_thread.wait(5000)
+            self._platform_watch_thread = None
+            logger.info("%s monitoring stopped", self._platform_engine.watcher)
         if self._monitor_thread:
             self._monitor_thread.stop()
             self._monitor_thread.wait(3000)
@@ -1398,6 +1707,26 @@ class FileIndex(QObject):
         self._stats.last_update = datetime.now()
         if changes > 0:
             self.index_updated.emit(changes)
+
+    def _on_platform_roots_changed(self, root_keys: list[str]):
+        """Handle native POSIX watcher changes by re-walking affected roots."""
+        total_changes = 0
+        walked_any = False
+        for root_key in root_keys:
+            root = self._platform_roots.get(root_key)
+            if root is None:
+                continue
+            old_count = len(self._entries.get(root.key, {}))
+            self._walk_platform_root(root)
+            new_count = len(self._entries.get(root.key, {}))
+            total_changes += abs(new_count - old_count)
+            walked_any = True
+
+        if walked_any:
+            self._rebuild_flat_list()
+            self._recount_stats()
+            self._stats.last_update = datetime.now()
+            self.index_updated.emit(total_changes)
 
     def _apply_usn_changes(self, changes: list):
         """Apply USN journal changes to the index and batch-sync to DB."""
@@ -1532,6 +1861,85 @@ class FileIndex(QObject):
         for vol in self._volumes.values():
             vol.close()
         self._volumes.clear()
+
+
+class PlatformWatchThread(QThread):
+    """Background native filesystem watcher for POSIX platform roots."""
+    roots_changed = pyqtSignal(list)
+
+    def __init__(self, roots: list[PlatformRoot], debounce_seconds: float = 1.0):
+        super().__init__()
+        self._roots = roots
+        self._debounce_seconds = debounce_seconds
+        self._running = False
+        self._pending: dict[str, float] = {}
+        self._pending_lock = threading.Lock()
+        self._observer = None
+
+    def stop(self):
+        self._running = False
+        if self._observer is not None:
+            self._observer.stop()
+
+    def notify(self, root_key: str):
+        with self._pending_lock:
+            self._pending[root_key] = time.monotonic()
+
+    def _pop_due_roots(self) -> list[str]:
+        now = time.monotonic()
+        due = []
+        with self._pending_lock:
+            for root_key, last_event in list(self._pending.items()):
+                if now - last_event >= self._debounce_seconds:
+                    due.append(root_key)
+                    del self._pending[root_key]
+        return due
+
+    def run(self):
+        try:
+            from watchdog.events import FileSystemEventHandler
+            from watchdog.observers import Observer
+        except ImportError:
+            logger.warning("watchdog is missing; native platform monitoring disabled")
+            return
+
+        watch_thread = self
+
+        class Handler(FileSystemEventHandler):
+            def __init__(self, root_key: str):
+                super().__init__()
+                self._root_key = root_key
+
+            def on_any_event(self, _event):
+                watch_thread.notify(self._root_key)
+
+        self._observer = Observer()
+        scheduled = 0
+        for root in self._roots:
+            if not os.path.isdir(root.path):
+                continue
+            try:
+                self._observer.schedule(Handler(root.key), root.path, recursive=True)
+                scheduled += 1
+            except OSError as exc:
+                logger.warning("Could not watch platform root %s: %s", root.path, exc)
+
+        if scheduled == 0:
+            return
+
+        self._running = True
+        self._observer.start()
+        logger.info("Native platform watcher scheduled for %s roots", scheduled)
+        try:
+            while self._running:
+                time.sleep(0.25)
+                due = self._pop_due_roots()
+                if due:
+                    self.roots_changed.emit(due)
+        finally:
+            self._observer.stop()
+            self._observer.join(timeout=5)
+            self._observer = None
 
 
 class USNMonitorThread(QThread):

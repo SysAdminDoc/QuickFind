@@ -174,12 +174,14 @@ def main():
     if _handle_service_command(sys.argv):
         return
 
-    admin = is_admin()
-    if not admin:
+    admin = is_admin() if sys.platform == "win32" else False
+    if sys.platform == "win32" and not admin:
         logger.info("Not running as admin - attempting elevation for MFT access...")
         if not try_elevate():
             logger.warning("UAC declined or elevation failed - running in non-admin mode "
                            "(MFT scanning disabled, using os.scandir fallback)")
+    elif sys.platform != "win32":
+        logger.info("Running cross-platform index engine for %s", sys.platform)
 
     # Hide console window
     try:

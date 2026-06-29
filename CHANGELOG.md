@@ -2,6 +2,12 @@
 
 All notable changes to QuickFind will be documented in this file.
 
+## [v0.8.35] - 2026-06-29
+
+- Added a platform engine boundary that keeps Windows on MFT/USN while routing Linux/macOS through POSIX root indexing.
+- Added Watchdog-backed native monitoring for Linux inotify and macOS FSEvents, plus a macOS Spotlight fallback helper.
+- Made NTFS and tray hotkey imports safe on non-Windows platforms, and expanded cross-platform coverage to 304 tests.
+
 ## [v0.8.34] - 2026-06-29
 
 - Added authenticated `/api/docs` and `/openapi.json` endpoints for the remote search server.

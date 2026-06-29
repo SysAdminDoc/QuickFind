@@ -6,6 +6,7 @@ import ctypes
 import ctypes.wintypes as wintypes
 import logging
 import struct
+import sys
 import threading
 from pathlib import Path
 from typing import Optional
@@ -29,10 +30,15 @@ VK_SPACE = 0x20
 VK_F = 0x46
 HOTKEY_ID = 9001
 
-user32 = ctypes.windll.user32
-RegisterHotKey = user32.RegisterHotKey
-UnregisterHotKey = user32.UnregisterHotKey
-PeekMessageW = user32.PeekMessageW
+if sys.platform == "win32":
+    user32 = ctypes.windll.user32
+    RegisterHotKey = user32.RegisterHotKey
+    UnregisterHotKey = user32.UnregisterHotKey
+    PeekMessageW = user32.PeekMessageW
+else:
+    RegisterHotKey = None
+    UnregisterHotKey = None
+    PeekMessageW = None
 PM_REMOVE = 0x0001
 
 # Icon paths
@@ -52,6 +58,9 @@ class HotkeyListener(QObject):
 
     def start(self):
         if self._running:
+            return
+        if RegisterHotKey is None:
+            logger.info("Global hotkey unavailable on this platform")
             return
         self._running = True
         self._thread = threading.Thread(target=self._listen, daemon=True)
