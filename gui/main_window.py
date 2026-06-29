@@ -35,7 +35,7 @@ from gui.bookmarks import BookmarkManager, BookmarksPanel, Bookmark
 from gui.context_menu import build_context_menu
 from gui.tray import SystemTray
 from gui.settings_dialog import Settings, SettingsDialog
-from gui.status_indicators import index_mode_indicator_state
+from gui.status_indicators import drive_state_indicator_state, index_mode_indicator_state
 from core.hidden_paths import HiddenPathsManager
 
 logger = logging.getLogger('QuickFind.MainWindow')
@@ -362,6 +362,15 @@ class MainWindow(QMainWindow):
         self._last_update_label = QLabel("")
         self._last_update_label.setStyleSheet(f"color: {MOCHA['overlay0']}; font-size: 11px; padding: 0 8px;")
         self._status_bar.addPermanentWidget(self._last_update_label)
+
+        self._drive_state_label = QLabel("")
+        self._drive_state_label.setAccessibleName("Drive freshness")
+        self._drive_state_label.setStyleSheet(
+            f"color: {MOCHA['yellow']}; font-size: 11px; font-weight: 600; "
+            f"padding: 1px 6px; border: 1px solid {MOCHA['surface1']}; border-radius: 4px;"
+        )
+        self._drive_state_label.hide()
+        self._status_bar.addPermanentWidget(self._drive_state_label)
 
         self._index_mode_label = QLabel("")
         self._index_mode_label.setAccessibleName("Index mode")
@@ -945,7 +954,12 @@ class MainWindow(QMainWindow):
             return
 
         drives = self._settings.index_drives if self._settings.index_drives else None
-        self._index_worker = IndexWorker(self._file_index, drives, use_cache=True)
+        self._index_worker = IndexWorker(
+            self._file_index,
+            drives,
+            use_cache=True,
+            startup_delay_seconds=self._settings.drive_startup_delay_seconds,
+        )
         self._index_worker.cache_loaded.connect(self._on_cache_loaded)
         self._index_worker.finished.connect(self._on_index_worker_done)
         self._index_worker.start()
@@ -956,7 +970,12 @@ class MainWindow(QMainWindow):
             return
 
         drives = self._settings.index_drives if self._settings.index_drives else None
-        self._index_worker = IndexWorker(self._file_index, drives, use_cache=False)
+        self._index_worker = IndexWorker(
+            self._file_index,
+            drives,
+            use_cache=False,
+            startup_delay_seconds=self._settings.drive_startup_delay_seconds,
+        )
         self._index_worker.finished.connect(self._on_index_worker_done)
         self._index_worker.start()
 
@@ -988,6 +1007,7 @@ class MainWindow(QMainWindow):
 
         # Show non-admin mode indicator
         self._refresh_index_mode_indicator()
+        self._refresh_drive_state_indicator()
 
         self._refresh_status_bar()
 
@@ -1105,6 +1125,7 @@ class MainWindow(QMainWindow):
         from service.ipc import query_service_status
 
         self._refresh_index_mode_indicator()
+        self._refresh_drive_state_indicator()
 
         try:
             entry_count = db_count()
@@ -1168,6 +1189,18 @@ class MainWindow(QMainWindow):
             self._index_mode_label.show()
         else:
             self._index_mode_label.hide()
+
+    def _refresh_drive_state_indicator(self):
+        if not hasattr(self, '_drive_state_label'):
+            return
+
+        state = drive_state_indicator_state(self._file_index.drive_diagnostics())
+        self._drive_state_label.setText(state.text)
+        self._drive_state_label.setToolTip(state.tooltip)
+        if state.visible:
+            self._drive_state_label.show()
+        else:
+            self._drive_state_label.hide()
 
     def _on_item_activated(self, entry: FileEntry):
         """Open a file/folder when double-clicked or Enter pressed."""
@@ -1584,6 +1617,7 @@ class MainWindow(QMainWindow):
             {
                 "rebuild": self._diagnostics_rebuild_index,
                 "save_cache": self._diagnostics_save_cache,
+                "refresh_drive": self._diagnostics_refresh_drive,
                 "start_service": lambda: self._diagnostics_service_action("start"),
                 "stop_service": lambda: self._diagnostics_service_action("stop"),
             },
@@ -1601,6 +1635,14 @@ class MainWindow(QMainWindow):
         self._refresh_status_bar()
         self._status_label.setText("Index cache saved")
         return "Index cache saved."
+
+    def _diagnostics_refresh_drive(self, drive: str) -> str:
+        message = self._file_index.refresh_drive(drive)
+        self._file_index.save_to_cache()
+        self._trigger_search()
+        self._refresh_status_bar()
+        self._status_label.setText(message)
+        return message
 
     def _diagnostics_service_action(self, action: str) -> str:
         from service import windows_service

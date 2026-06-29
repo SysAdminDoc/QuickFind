@@ -25,7 +25,7 @@ from service.ipc import service_health
 class DiagnosticsDialog(QDialog):
     """Shows trust and recovery diagnostics for the active index."""
 
-    def __init__(self, index, actions: dict[str, Callable[[], str | None]] | None = None,
+    def __init__(self, index, actions: dict[str, Callable[..., str | None]] | None = None,
                  parent=None):
         super().__init__(parent)
         self._index = index
@@ -53,10 +53,10 @@ class DiagnosticsDialog(QDialog):
         self._summary_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         layout.addWidget(self._summary_table, 1)
 
-        self._drive_table = QTableWidget(0, 9)
+        self._drive_table = QTableWidget(0, 12)
         self._drive_table.setHorizontalHeaderLabels([
-            "Drive", "Mode", "Entries", "Files", "Folders",
-            "Journal ID", "Next USN", "Monitor", "Rescan",
+            "Drive", "State", "Mode", "Entries", "Files", "Folders",
+            "Journal ID", "Next USN", "Monitor", "Rescan", "Note", "Action",
         ])
         self._drive_table.verticalHeader().setVisible(False)
         self._drive_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
@@ -133,6 +133,8 @@ class DiagnosticsDialog(QDialog):
                 "entries": 0,
                 "files": 0,
                 "folders": 0,
+                "state": "cache",
+                "stale_reason": "Cached drive metadata only",
                 "journal_id": row.get("journal_id", 0),
                 "next_usn": row.get("next_usn", 0),
                 "monitoring": False,
@@ -141,8 +143,10 @@ class DiagnosticsDialog(QDialog):
 
         self._drive_table.setRowCount(len(merged))
         for row_idx, row in enumerate(merged):
+            drive = row.get("drive", "")
             values = [
-                row.get("drive", ""),
+                drive,
+                row.get("state", ""),
                 row.get("mode", ""),
                 f"{int(row.get('entries') or 0):,}",
                 f"{int(row.get('files') or 0):,}",
@@ -151,20 +155,26 @@ class DiagnosticsDialog(QDialog):
                 str(row.get("next_usn") or ""),
                 yes_no(bool(row.get("monitoring"))),
                 yes_no(bool(row.get("rescanning"))),
+                row.get("stale_reason") or row.get("refresh_error") or "",
             ]
             for col_idx, value in enumerate(values):
                 item = QTableWidgetItem(value)
-                if col_idx not in (0, 1):
+                if col_idx not in (0, 1, 2, 10):
                     item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
                 self._drive_table.setItem(row_idx, col_idx, item)
 
-    def _run_action(self, action_name: str) -> None:
+            refresh = QPushButton("Refresh")
+            refresh.setEnabled(bool(drive and self._actions.get("refresh_drive")))
+            refresh.clicked.connect(lambda _checked=False, d=drive: self._run_action("refresh_drive", d))
+            self._drive_table.setCellWidget(row_idx, 11, refresh)
+
+    def _run_action(self, action_name: str, *args) -> None:
         handler = self._actions.get(action_name)
         if handler is None:
             self._message.setText("Action unavailable.")
             return
         try:
-            message = handler()
+            message = handler(*args)
             self._message.setText(message or "Action completed.")
         except Exception as exc:
             self._message.setText(f"Action failed: {exc}")

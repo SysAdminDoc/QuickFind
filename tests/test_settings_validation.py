@@ -6,6 +6,7 @@ from gui.settings_validation import sanitize_settings_data
 DEFAULTS = {
     "http_port": 8080,
     "usn_poll_interval_ms": 1000,
+    "drive_startup_delay_seconds": 0,
     "default_max_results": 0,
     "search_delay_ms": 0,
     "window_width": 1200,
@@ -35,6 +36,16 @@ def test_blank_bind_resets_to_loopback():
 
     assert sanitized["http_bind"] == "127.0.0.1"
     assert any("http_bind reset" in warning for warning in warnings)
+
+
+def test_invalid_drive_startup_delay_resets_to_default():
+    sanitized, warnings = sanitize_settings_data(
+        {"drive_startup_delay_seconds": 500},
+        DEFAULTS,
+    )
+
+    assert sanitized["drive_startup_delay_seconds"] == 0
+    assert any("drive_startup_delay_seconds reset" in warning for warning in warnings)
 
 
 def test_missing_tls_files_disable_https():

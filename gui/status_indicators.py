@@ -29,6 +29,39 @@ def index_mode_indicator_state(is_admin_mode: bool) -> IndexModeIndicator:
     )
 
 
+def drive_state_indicator_state(drive_rows: list[dict]) -> IndexModeIndicator:
+    """Return the status-bar badge state for offline or stale drive results."""
+    stale = [
+        str(row.get("drive", ""))
+        for row in drive_rows
+        if bool(row.get("stale"))
+    ]
+    offline = [
+        str(row.get("drive", ""))
+        for row in drive_rows
+        if row.get("state") == "offline"
+    ]
+    affected = sorted({drive for drive in stale + offline if drive})
+    if not affected:
+        return IndexModeIndicator(text="", tooltip="", visible=False)
+
+    label = "Drive stale" if len(affected) == 1 else f"{len(affected)} drives stale"
+    reasons = []
+    for row in drive_rows:
+        drive = str(row.get("drive", ""))
+        if drive not in affected:
+            continue
+        state = str(row.get("state") or "stale")
+        reason = str(row.get("stale_reason") or row.get("refresh_error") or "Refresh recommended")
+        reasons.append(f"{drive}: {state} - {reason}")
+
+    return IndexModeIndicator(
+        text=label,
+        tooltip="\n".join(reasons),
+        visible=True,
+    )
+
+
 def format_bytes(size: int) -> str:
     """Format byte counts for compact diagnostics labels."""
     if size >= 1024 * 1024 * 1024:

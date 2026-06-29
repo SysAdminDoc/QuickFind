@@ -7,6 +7,7 @@ from typing import Any, Mapping
 INT_RANGES = {
     "http_port": (1, 65535),
     "usn_poll_interval_ms": (100, 10000),
+    "drive_startup_delay_seconds": (0, 120),
     "default_max_results": (0, 10000000),
     "search_delay_ms": (0, 2000),
     "window_width": (640, 10000),

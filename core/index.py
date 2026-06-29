@@ -15,6 +15,7 @@ import logging
 import threading
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, Callable
@@ -39,6 +40,29 @@ NTFS_ROOT_FRN = 5
 # Deferred path resolution: batch resolve paths on a timer instead of per-entry
 _PATH_RESOLVE_INTERVAL_MS = 500
 _PATH_RESOLVE_BATCH_SIZE = 1000
+
+
+@dataclass
+class DriveState:
+    """Runtime trust state for a cached or indexed drive."""
+    letter: str
+    filesystem: str = ""
+    drive_type: int = 0
+    label: str = ""
+    online: bool = False
+    stale: bool = False
+    stale_reason: str = ""
+    last_seen: Optional[datetime] = None
+    last_scan: Optional[datetime] = None
+    refresh_error: str = ""
+
+    @property
+    def state(self) -> str:
+        if not self.online:
+            return "offline"
+        if self.stale:
+            return "stale"
+        return "online"
 
 
 class FileEntry:
@@ -144,6 +168,8 @@ class FileIndex(QObject):
         self._volumes: dict[str, NTFSVolume] = {}
         # Drives indexed via os.scandir (FAT/exFAT/ReFS or non-admin fallback)
         self._walked_drives: set[str] = set()
+        # Runtime online/offline/stale state for indexed or cached drives
+        self._drive_states: dict[str, DriveState] = {}
         # All entries flat list for search (rebuilt after indexing)
         self._all_entries: list[FileEntry] = []
         self._lock = threading.RLock()
@@ -184,6 +210,102 @@ class FileIndex(QObject):
     def set_external_source(self, source: str) -> None:
         self._last_index_source = source or "external source"
 
+    def _available_drive_info(self) -> dict[str, DriveInfo]:
+        return {d.letter.upper(): d for d in get_all_drives()}
+
+    def _state_for_drive(self, drive: str) -> DriveState:
+        drive = drive.upper()
+        state = self._drive_states.get(drive)
+        if state is None:
+            state = DriveState(letter=drive)
+            self._drive_states[drive] = state
+        return state
+
+    def _mark_drive_available(self, info: DriveInfo, *, stale: bool = False,
+                              reason: str = "") -> None:
+        state = self._state_for_drive(info.letter)
+        state.filesystem = info.filesystem
+        state.drive_type = info.drive_type
+        state.label = info.label
+        state.online = True
+        state.stale = stale
+        state.stale_reason = reason if stale else ""
+        state.last_seen = datetime.now()
+        state.refresh_error = ""
+
+    def _mark_drive_fresh(self, drive: str, info: Optional[DriveInfo] = None) -> None:
+        if info is None:
+            info = self._available_drive_info().get(drive.upper())
+        if info is not None:
+            self._mark_drive_available(info, stale=False)
+        else:
+            state = self._state_for_drive(drive)
+            state.online = True
+            state.stale = False
+            state.stale_reason = ""
+        self._state_for_drive(drive).last_scan = datetime.now()
+
+    def _mark_drive_stale(self, drive: str, reason: str, *,
+                          info: Optional[DriveInfo] = None,
+                          online: bool = False,
+                          error: str = "") -> None:
+        if info is not None:
+            self._mark_drive_available(info, stale=True, reason=reason)
+            state = self._state_for_drive(info.letter)
+            state.online = online
+        else:
+            state = self._state_for_drive(drive)
+            state.online = online
+            state.stale = True
+            state.stale_reason = reason
+        state.refresh_error = error
+
+    def _mark_cached_drive_states(self, drives: list[str]) -> None:
+        available = self._available_drive_info()
+        for drive in sorted({d.upper() for d in drives}):
+            info = available.get(drive)
+            if info:
+                self._mark_drive_stale(
+                    drive,
+                    "Loaded from cache; waiting for catchup or refresh",
+                    info=info,
+                    online=True,
+                )
+            else:
+                self._mark_drive_stale(
+                    drive,
+                    "Drive unavailable; cached results may be stale",
+                    online=False,
+                )
+
+    def _recount_stats(self) -> None:
+        total_files = 0
+        total_folders = 0
+        with self._lock:
+            for drive_entries in self._entries.values():
+                for frn, entry in drive_entries.items():
+                    if frn == NTFS_ROOT_FRN:
+                        continue
+                    if entry.is_dir:
+                        total_folders += 1
+                    else:
+                        total_files += 1
+        total = total_files + total_folders
+        self._stats.total_files = total_files
+        self._stats.total_folders = total_folders
+        self._stats.volumes_indexed = sorted(self._entries)
+        self._stats.last_update = datetime.now()
+        if self._stats.index_time_ms > 0:
+            self._stats.entries_per_sec = total / (self._stats.index_time_ms / 1000.0)
+
+    @staticmethod
+    def _drive_type_name(drive_type: int) -> str:
+        return {
+            2: "removable",
+            3: "fixed",
+            4: "remote",
+        }.get(drive_type, "unknown")
+
     def index_diagnostics(self) -> dict:
         """Return structured index state for UI diagnostics."""
         monitor_running = bool(self._monitor_thread and self._monitor_thread.isRunning())
@@ -202,6 +324,10 @@ class FileIndex(QObject):
             "monitor_running": monitor_running,
             "rescan_running": rescan_running,
             "pending_usn_catchup": pending_usn,
+            "drive_states": {
+                drive: state.state
+                for drive, state in sorted(self._drive_states.items())
+            },
             "drives": self.drive_diagnostics(),
         }
 
@@ -230,8 +356,19 @@ class FileIndex(QObject):
                 else:
                     mode = "cache"
 
+                state = self._state_for_drive(drive)
                 rows.append({
                     "drive": drive,
+                    "state": state.state,
+                    "online": state.online,
+                    "stale": state.stale,
+                    "stale_reason": state.stale_reason,
+                    "drive_type": self._drive_type_name(state.drive_type),
+                    "filesystem": state.filesystem,
+                    "label": state.label,
+                    "last_seen": state.last_seen.isoformat(timespec="seconds") if state.last_seen else "",
+                    "last_scan": state.last_scan.isoformat(timespec="seconds") if state.last_scan else "",
+                    "refresh_error": state.refresh_error,
                     "mode": mode,
                     "entries": files + folders,
                     "files": files,
@@ -343,8 +480,18 @@ class FileIndex(QObject):
         if usn_positions is None:
             return False
 
+        loaded_drives = sorted(self._entries)
         if drives is None:
-            drives = get_ntfs_drives()
+            drives = loaded_drives
+        else:
+            drives = [drive.upper() for drive in drives]
+        self._mark_cached_drive_states(loaded_drives)
+        for drive in sorted(set(drives) - set(loaded_drives)):
+            self._mark_drive_stale(
+                drive,
+                "Selected drive was not present in the cache",
+                online=False,
+            )
 
         # Count stats from cached data
         total_files = 0
@@ -364,7 +511,7 @@ class FileIndex(QObject):
         self._last_index_source = "SQLite cache"
         self._stats.total_files = total_files
         self._stats.total_folders = total_folders
-        self._stats.volumes_indexed = drives
+        self._stats.volumes_indexed = loaded_drives
         self._stats.index_time_ms = int(elapsed)
         self._stats.last_update = datetime.now()
         self._stats.entries_per_sec = (total / (elapsed / 1000.0)) if elapsed > 0 else 0
@@ -396,15 +543,24 @@ class FileIndex(QObject):
         total_changes = 0
         needs_reindex = []
         walked_updated = False
+        available = self._available_drive_info()
 
         for drive_letter in drives:
             if self._cancel_flag:
                 break
             if drive_letter not in self._entries:
                 continue
+            drive_info = available.get(drive_letter)
 
             # Non-NTFS drives: re-walk to detect changes
             if drive_letter in self._walked_drives:
+                if not drive_info:
+                    self._mark_drive_stale(
+                        drive_letter,
+                        "Drive unavailable; cached results may be stale",
+                        online=False,
+                    )
+                    continue
                 logger.info(f"Re-walking non-NTFS drive {drive_letter}: for catchup")
                 old_count = len(self._entries.get(drive_letter, {}))
                 self._walk_drive(drive_letter)
@@ -413,15 +569,28 @@ class FileIndex(QObject):
                 if diff > 0:
                     total_changes += diff
                     walked_updated = True
+                self._mark_drive_fresh(drive_letter, drive_info)
                 continue
 
             # NTFS drives: USN journal catchup
             vol = NTFSVolume(drive_letter)
             if not vol.open():
+                self._mark_drive_stale(
+                    drive_letter,
+                    "Drive unavailable; cached results may be stale",
+                    info=drive_info,
+                    online=drive_info is not None,
+                )
                 continue
 
             vol_info = vol.get_volume_info()
             if vol_info and vol_info.filesystem.upper() != 'NTFS':
+                self._mark_drive_stale(
+                    drive_letter,
+                    f"Drive filesystem changed to {vol_info.filesystem}; refresh required",
+                    info=drive_info,
+                    online=True,
+                )
                 vol.close()
                 continue
 
@@ -440,15 +609,24 @@ class FileIndex(QObject):
                     if changes:
                         self._apply_usn_changes(changes)
                         total_changes += len(changes)
+                    self._mark_drive_fresh(drive_letter, drive_info)
                 else:
                     logger.warning(f"USN journal recycled on {drive_letter}, full re-index needed")
                     needs_reindex.append((vol, drive_letter))
+            else:
+                self._mark_drive_stale(
+                    drive_letter,
+                    "USN journal unavailable; refresh required",
+                    info=drive_info,
+                    online=True,
+                )
 
         # Handle NTFS drives that need full re-index
         for vol, drive_letter in needs_reindex:
             if self._cancel_flag:
                 break
             self._reindex_drive(vol, drive_letter)
+            self._mark_drive_fresh(drive_letter, available.get(drive_letter))
 
         elapsed = (time.perf_counter() - start_time) * 1000
 
@@ -591,6 +769,14 @@ class FileIndex(QObject):
         """
         root = f"{drive_letter}:\\"
         logger.info(f"Walking drive {drive_letter}: via os.scandir...")
+        if not os.path.exists(root):
+            self._mark_drive_stale(
+                drive_letter,
+                "Drive unavailable; cached results may be stale",
+                online=False,
+            )
+            logger.warning(f"Skipping unavailable drive {drive_letter}: during os.scandir refresh")
+            return len(self._entries.get(drive_letter, {}))
 
         drive_entries: dict[int, FileEntry] = {}
         # Root entry
@@ -670,6 +856,7 @@ class FileIndex(QObject):
             self._entries[drive_letter] = drive_entries
             self._walked_drives.add(drive_letter)
 
+        self._mark_drive_fresh(drive_letter)
         logger.info(f"Walk complete on {drive_letter}: {total:,} entries")
         self.indexing_progress.emit(drive_letter, total)
         return total
@@ -690,6 +877,19 @@ class FileIndex(QObject):
 
         if drives is None:
             drives = [d.letter for d in all_drive_info.values()]
+        else:
+            drives = [drive.upper() for drive in drives]
+
+        for drive_letter in drives:
+            info = all_drive_info.get(drive_letter)
+            if info:
+                self._mark_drive_available(info, stale=True, reason="Index refresh in progress")
+            else:
+                self._mark_drive_stale(
+                    drive_letter,
+                    "Drive unavailable at startup; cached results may be stale",
+                    online=False,
+                )
 
         start_time = time.perf_counter()
         total_files = 0
@@ -751,7 +951,9 @@ class FileIndex(QObject):
                             self._entries[drive_letter] = drive_entries
                             if vol:
                                 self._volumes[drive_letter] = vol
+                            self._walked_drives.discard(drive_letter)
 
+                        self._mark_drive_fresh(drive_letter, all_drive_info.get(drive_letter))
                         total_files += files
                         total_folders += folders
                         self._rebuild_flat_list()
@@ -811,6 +1013,53 @@ class FileIndex(QObject):
             f" ({self._stats.entries_per_sec:,.0f} entries/sec)"
         )
         self.indexing_complete.emit(self._stats)
+
+    def refresh_drive(self, drive_letter: str) -> str:
+        """Refresh one indexed drive and update its stale/offline state."""
+        drive_letter = drive_letter.strip().upper().rstrip(":\\")
+        if not drive_letter:
+            raise ValueError("Drive letter is required")
+
+        available = self._available_drive_info()
+        info = available.get(drive_letter)
+        if not info:
+            self._mark_drive_stale(
+                drive_letter,
+                "Drive unavailable; cached results may be stale",
+                online=False,
+            )
+            return f"{drive_letter}: is offline; cached results kept as stale."
+
+        self._mark_drive_available(info, stale=True, reason="Refresh in progress")
+        old_count = len(self._entries.get(drive_letter, {}))
+
+        if info.needs_walk:
+            self._walk_drive(drive_letter)
+        else:
+            drive, drive_entries, vol, _files, _folders = self._index_single_ntfs_drive(drive_letter)
+            if drive_entries:
+                with self._lock:
+                    old_vol = self._volumes.get(drive)
+                    if old_vol and old_vol is not vol:
+                        try:
+                            old_vol.close()
+                        except Exception:
+                            pass
+                    self._entries[drive] = drive_entries
+                    if vol:
+                        self._volumes[drive] = vol
+                    self._walked_drives.discard(drive)
+                self._mark_drive_fresh(drive, info)
+            else:
+                self._walk_drive(drive_letter)
+
+        self._rebuild_flat_list()
+        new_count = len(self._entries.get(drive_letter, {}))
+        self._recount_stats()
+        self._last_index_source = f"Drive refresh: {drive_letter}:"
+        changes = abs(new_count - old_count)
+        self.index_updated.emit(changes)
+        return f"{drive_letter}: refreshed ({new_count:,} cached records)."
 
     def _should_exclude(self, entry: FileEntry) -> bool:
         """Check if an entry should be excluded based on attribute filters."""
@@ -1129,13 +1378,29 @@ class IndexWorker(QThread):
     cache_loaded = pyqtSignal()  # Emitted when cache is loaded (before USN catchup)
 
     def __init__(self, index: FileIndex, drives: Optional[list[str]] = None,
-                 use_cache: bool = True):
+                 use_cache: bool = True,
+                 startup_delay_seconds: int = 0):
         super().__init__()
         self._index = index
         self._drives = drives
         self._use_cache = use_cache
+        self._startup_delay_seconds = max(0, int(startup_delay_seconds or 0))
+
+    def _wait_for_startup_delay(self):
+        if self._startup_delay_seconds <= 0:
+            return
+        logger.info(
+            "Waiting %ss before drive discovery for late-mounted drives",
+            self._startup_delay_seconds,
+        )
+        deadline = time.monotonic() + self._startup_delay_seconds
+        while time.monotonic() < deadline:
+            if self._index._is_cancelled():
+                return
+            time.sleep(min(0.25, max(0.0, deadline - time.monotonic())))
 
     def run(self):
+        self._wait_for_startup_delay()
         if self._use_cache:
             loaded = self._index.load_from_cache(self._drives)
             if loaded:

@@ -41,6 +41,7 @@ class Settings:
     index_drives: list[str] = field(default_factory=list)  # Empty = all supported drives
     monitor_usn: bool = True
     usn_poll_interval_ms: int = 1000
+    drive_startup_delay_seconds: int = 0
     exclude_hidden: bool = False
     exclude_system: bool = False
 
@@ -260,6 +261,13 @@ class SettingsDialog(QDialog):
         drives_label = QLabel("Drives to index (NTFS uses MFT, FAT/exFAT/ReFS uses directory walk):")
         drives_layout.addWidget(drives_label)
 
+        delay_form = QFormLayout()
+        self._drive_startup_delay = QSpinBox()
+        self._drive_startup_delay.setRange(0, 120)
+        self._drive_startup_delay.setSuffix(" s")
+        delay_form.addRow("Startup drive delay:", self._drive_startup_delay)
+        drives_layout.addLayout(delay_form)
+
         self._drives_list = QListWidget()
         drives_layout.addWidget(self._drives_list)
 
@@ -414,6 +422,7 @@ class SettingsDialog(QDialog):
         self._index_startup.setChecked(s.index_on_startup)
         self._monitor_usn.setChecked(s.monitor_usn)
         self._usn_interval.setValue(s.usn_poll_interval_ms)
+        self._drive_startup_delay.setValue(s.drive_startup_delay_seconds)
         self._exclude_hidden.setChecked(s.exclude_hidden)
         self._exclude_system.setChecked(s.exclude_system)
         self._default_case.setChecked(s.default_match_case)
@@ -454,6 +463,7 @@ class SettingsDialog(QDialog):
         s.index_on_startup = self._index_startup.isChecked()
         s.monitor_usn = self._monitor_usn.isChecked()
         s.usn_poll_interval_ms = self._usn_interval.value()
+        s.drive_startup_delay_seconds = self._drive_startup_delay.value()
         s.exclude_hidden = self._exclude_hidden.isChecked()
         s.exclude_system = self._exclude_system.isChecked()
         s.default_match_case = self._default_case.isChecked()

@@ -8,7 +8,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import pytest
 import core.index as index_mod
 from core.index import FileEntry, FileIndex, NTFS_ROOT_FRN
-from core.ntfs import FILE_ATTRIBUTE_DIRECTORY
+from core.ntfs import DRIVE_FIXED, FILE_ATTRIBUTE_DIRECTORY, DriveInfo
 
 
 class TestIgnorePatterns:
@@ -94,3 +94,54 @@ class TestIndexMode:
         assert drives["C"]["next_usn"] == 99
         assert drives["E"]["mode"] == "os.scandir"
         assert drives["E"]["folders"] == 1
+
+    def test_cached_drive_states_mark_offline_drives_stale(self, monkeypatch):
+        index = FileIndex()
+        index._entries = {
+            "C": {
+                NTFS_ROOT_FRN: FileEntry(NTFS_ROOT_FRN, 0, "", "C", FILE_ATTRIBUTE_DIRECTORY),
+                10: FileEntry(10, NTFS_ROOT_FRN, "file.txt", "C"),
+            },
+            "E": {
+                NTFS_ROOT_FRN: FileEntry(NTFS_ROOT_FRN, 0, "", "E", FILE_ATTRIBUTE_DIRECTORY),
+                20: FileEntry(20, NTFS_ROOT_FRN, "offline.txt", "E"),
+            },
+        }
+        monkeypatch.setattr(
+            index_mod,
+            "get_all_drives",
+            lambda: [DriveInfo("C", "NTFS", DRIVE_FIXED, "System")],
+        )
+
+        index._mark_cached_drive_states(["C", "E"])
+
+        drives = {row["drive"]: row for row in index.drive_diagnostics()}
+        assert drives["C"]["state"] == "stale"
+        assert drives["C"]["online"] is True
+        assert drives["E"]["state"] == "offline"
+        assert drives["E"]["stale"] is True
+        assert "cached results" in drives["E"]["stale_reason"]
+
+    def test_walk_drive_preserves_cached_entries_when_drive_missing(self, monkeypatch):
+        index = FileIndex()
+        cached_entry = FileEntry(20, NTFS_ROOT_FRN, "offline.txt", "E")
+        index._entries = {
+            "E": {
+                NTFS_ROOT_FRN: FileEntry(NTFS_ROOT_FRN, 0, "", "E", FILE_ATTRIBUTE_DIRECTORY),
+                20: cached_entry,
+            }
+        }
+        index._all_entries = [cached_entry]
+        monkeypatch.setattr(
+            index_mod.os.path,
+            "exists",
+            lambda path: False if path == "E:\\" else True,
+        )
+
+        count = index._walk_drive("E")
+
+        assert count == 2
+        assert index._entries["E"][20] is cached_entry
+        drive = index.drive_diagnostics()[0]
+        assert drive["state"] == "offline"
+        assert drive["stale"] is True

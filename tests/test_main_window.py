@@ -1,6 +1,11 @@
 """Tests for main window status indicator state."""
 
-from gui.status_indicators import diagnostics_summary_rows, format_bytes, index_mode_indicator_state
+from gui.status_indicators import (
+    diagnostics_summary_rows,
+    drive_state_indicator_state,
+    format_bytes,
+    index_mode_indicator_state,
+)
 
 
 def test_index_mode_indicator_hides_for_mft_mode():
@@ -17,6 +22,38 @@ def test_index_mode_indicator_shows_non_admin_fallback():
     assert state.text == "Non-admin scan"
     assert state.visible is True
     assert "os.scandir fallback" in state.tooltip
+
+
+def test_drive_state_indicator_hides_when_all_drives_fresh():
+    state = drive_state_indicator_state([
+        {"drive": "C", "state": "online", "stale": False},
+    ])
+
+    assert state.text == ""
+    assert state.visible is False
+
+
+def test_drive_state_indicator_shows_offline_or_stale_drives():
+    state = drive_state_indicator_state([
+        {"drive": "C", "state": "online", "stale": False},
+        {
+            "drive": "E",
+            "state": "offline",
+            "stale": True,
+            "stale_reason": "Drive unavailable; cached results may be stale",
+        },
+        {
+            "drive": "F",
+            "state": "stale",
+            "stale": True,
+            "stale_reason": "Loaded from cache; waiting for catchup or refresh",
+        },
+    ])
+
+    assert state.text == "2 drives stale"
+    assert state.visible is True
+    assert "E: offline" in state.tooltip
+    assert "F: stale" in state.tooltip
 
 
 def test_diagnostics_summary_rows_include_cache_service_and_content():

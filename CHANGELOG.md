@@ -2,6 +2,13 @@
 
 All notable changes to QuickFind will be documented in this file.
 
+## [v0.8.11] - 2026-06-29
+
+- Added online/offline/stale drive state tracking for cached and indexed drives.
+- Preserved cached removable-drive results when a drive disappears, with status-bar stale badges and per-drive refresh in diagnostics.
+- Added a configurable startup drive delay for late-mounted removable or virtual drives.
+- Added stale-drive policy regression tests and expanded the passing suite to 222 tests.
+
 ## [v0.8.10] - 2026-06-29
 
 - Added ranked content-cache hits with snippets for cached `content:` searches.
