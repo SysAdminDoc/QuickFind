@@ -2,6 +2,12 @@
 
 All notable changes to QuickFind will be documented in this file.
 
+## [v0.8.22] - 2026-06-29
+
+- Added saved query slots so bookmark names or explicit slots expand from `@slot` aliases in GUI searches and `es.py`.
+- Added nested slot expansion with missing-slot passthrough and cycle protection.
+- Added query-slot parser/search/bookmark coverage and expanded the passing suite to 267 tests.
+
 ## [v0.8.21] - 2026-06-29
 
 - Highlighted matched `content:` preview context lines with full-width accent styling.

@@ -10,6 +10,7 @@ from pathlib import Path
 from datetime import datetime
 from typing import Any
 
+from core.query_slots import normalize_query_slot_name
 from core.utils import parse_size as _parse_size_str
 
 logger = logging.getLogger('QuickFind.EverythingImport')
@@ -127,6 +128,7 @@ def _normalize_bookmark_record(item: Any, label: str) -> dict:
     return {
         "name": name,
         "query": str(item.get("query", "")),
+        "slot": normalize_query_slot_name(str(item.get("slot", ""))),
         "filter_name": str(item.get("filter_name", "Everything") or "Everything"),
         "sort_column": _non_negative_int(item.get("sort_column", 0), "sort_column", label),
         "sort_ascending": _bool_value(item.get("sort_ascending", True)),

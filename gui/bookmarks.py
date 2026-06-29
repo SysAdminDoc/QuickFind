@@ -17,6 +17,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QAction, QIcon
 
+from core.query_slots import normalize_query_slot_name, query_slots_from_bookmarks
 from gui.theme import MOCHA, ACCENT
 
 logger = logging.getLogger('QuickFind.Bookmarks')
@@ -30,6 +31,7 @@ class Bookmark:
     """A saved search state."""
     name: str
     query: str
+    slot: str = ""
     filter_name: str = "Everything"
     sort_column: int = 0
     sort_ascending: bool = True
@@ -46,6 +48,7 @@ class Bookmark:
         return Bookmark(
             name=d.get('name', ''),
             query=d.get('query', ''),
+            slot=d.get('slot', ''),
             filter_name=d.get('filter_name', 'Everything'),
             sort_column=d.get('sort_column', 0),
             sort_ascending=d.get('sort_ascending', True),
@@ -116,6 +119,9 @@ class BookmarkManager:
     def get_by_folder(self, folder: str) -> list[Bookmark]:
         return [b for b in self._bookmarks if b.folder == folder]
 
+    def query_slots(self) -> dict[str, str]:
+        return query_slots_from_bookmarks(self._bookmarks)
+
 
 class BookmarkDialog(QDialog):
     """Dialog to add/edit a bookmark."""
@@ -137,6 +143,11 @@ class BookmarkDialog(QDialog):
         self._query_edit = QLineEdit(self._bookmark.query)
         form.addRow("Search:", self._query_edit)
 
+        slot = self._bookmark.slot or normalize_query_slot_name(self._bookmark.name)
+        self._slot_edit = QLineEdit(slot)
+        self._slot_edit.setPlaceholderText("Optional @slot name")
+        form.addRow("Slot:", self._slot_edit)
+
         self._folder_edit = QLineEdit(self._bookmark.folder)
         self._folder_edit.setPlaceholderText("Optional folder name")
         form.addRow("Folder:", self._folder_edit)
@@ -153,6 +164,7 @@ class BookmarkDialog(QDialog):
     def get_bookmark(self) -> Bookmark:
         self._bookmark.name = self._name_edit.text() or "Untitled"
         self._bookmark.query = self._query_edit.text()
+        self._bookmark.slot = normalize_query_slot_name(self._slot_edit.text())
         self._bookmark.folder = self._folder_edit.text()
         return self._bookmark
 
@@ -208,7 +220,7 @@ class BookmarksPanel(QWidget):
         for bm in no_folder:
             item = QTreeWidgetItem([bm.name])
             item.setData(0, Qt.ItemDataRole.UserRole, bm)
-            item.setToolTip(0, f"Search: {bm.query}")
+            item.setToolTip(0, _bookmark_tooltip(bm))
             self._tree.addTopLevelItem(item)
 
         # Add folders
@@ -220,7 +232,7 @@ class BookmarksPanel(QWidget):
             for bm in self._manager.get_by_folder(folder):
                 child = QTreeWidgetItem([bm.name])
                 child.setData(0, Qt.ItemDataRole.UserRole, bm)
-                child.setToolTip(0, f"Search: {bm.query}")
+                child.setToolTip(0, _bookmark_tooltip(bm))
                 folder_item.addChild(child)
 
             folder_item.setExpanded(True)
@@ -284,5 +296,12 @@ class BookmarksPanel(QWidget):
         """Build a bookmarks menu."""
         for bm in self._manager.bookmarks:
             action = menu.addAction(bm.name)
-            action.setToolTip(bm.query)
+            action.setToolTip(_bookmark_tooltip(bm))
             action.triggered.connect(lambda checked, b=bm: self.bookmark_activated.emit(b))
+
+
+def _bookmark_tooltip(bookmark: Bookmark) -> str:
+    slot = bookmark.slot or normalize_query_slot_name(bookmark.name)
+    if slot:
+        return f"@{slot}\nSearch: {bookmark.query}"
+    return f"Search: {bookmark.query}"

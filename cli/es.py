@@ -24,6 +24,7 @@ Examples:
     python es.py "*.py"
     python es.py -r "test.*\\.log$"
     python es.py -f ext:pdf
+    python es.py @logs error
     python es.py --csv size:>1mb ext:mp4
 """
 
@@ -39,6 +40,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from core.ntfs import get_all_drives
 from core.index import FileIndex, FileEntry
+from core.query_slots import load_saved_query_slots
 from core.search import SearchEngine, SearchOptions, SortField, SortOrder
 from core.cache import DB_FILE, load_entries_from_cache, close_all_connections
 
@@ -147,7 +149,11 @@ def main():
     )
 
     engine = SearchEngine(file_index)
-    results = engine.search(query, base_options=options)
+    results = engine.search(
+        query,
+        base_options=options,
+        query_slots=load_saved_query_slots(),
+    )
 
     # Apply offset
     if args.offset:

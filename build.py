@@ -113,8 +113,9 @@ def build(onefile=False):
 
     # Hidden imports for dynamic modules
     hidden = [
-        'core.ntfs', 'core.index', 'core.cache', 'core.search', 'core.archives',
-        'core.dialog_switch', 'core.network_shares',
+        'core.ntfs', 'core.index', 'core.cache', 'core.search',
+        'core.query_slots', 'core.archives', 'core.dialog_switch',
+        'core.network_shares',
         'core.content', 'core.content.adapters', 'core.content.indexer',
         'core.sqlite_compat',
         'gui.main_window', 'gui.results_view', 'gui.settings_dialog',

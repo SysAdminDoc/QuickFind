@@ -21,7 +21,8 @@ _QT_ATTRS = {
         'QStyledItemDelegate', 'QStyle',
         'QFileIconProvider', 'QDialog', 'QFormLayout', 'QCheckBox',
         'QSpinBox', 'QGroupBox', 'QPushButton', 'QDialogButtonBox',
-        'QListWidget', 'QListWidgetItem', 'QFileDialog',
+        'QListWidget', 'QListWidgetItem', 'QTreeWidget', 'QTreeWidgetItem',
+        'QFileDialog',
     ],
     'PyQt6.QtGui': [
         'QIcon', 'QPalette', 'QColor', 'QFont', 'QAction',

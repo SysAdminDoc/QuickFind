@@ -27,6 +27,7 @@ from core.search import (
     CASE_MODE_SENSITIVE, SearchEngine, SearchOptions, SearchFilter,
     BUILTIN_FILTERS, parse_query,
 )
+from core.query_slots import expand_query_slots
 from core.file_list import efu_source_key, load_efu
 from core.ntfs import FILE_ATTRIBUTE_DIRECTORY
 from core.version import VERSION, APP_TITLE
@@ -71,6 +72,7 @@ SYNTAX_HELP = """Search Syntax:
   dupe:name       Find duplicates by name/size
   regex:pattern   Regex search
   content:text    Content search (slow)
+  @slot           Expand a saved bookmark query slot
   "exact match"   Quoted exact phrase
   term1 term2     AND (both must match)
   term1 | term2   OR (either matches)
@@ -82,12 +84,13 @@ class SearchWorker(QThread):
     results_ready = pyqtSignal(list)
 
     def __init__(self, engine: SearchEngine, query: str,
-                 active_filter=None, options=None):
+                 active_filter=None, options=None, query_slots=None):
         super().__init__()
         self._engine = engine
         self._query = query
         self._filter = active_filter
         self._options = options
+        self._query_slots = query_slots or {}
         self._cancelled = False
 
     def cancel(self):
@@ -99,6 +102,7 @@ class SearchWorker(QThread):
             active_filter=self._filter,
             base_options=self._options,
             cancel_check=lambda: self._cancelled,
+            query_slots=self._query_slots,
         )
         if not self._cancelled:
             self.results_ready.emit(results)
@@ -862,11 +866,13 @@ class MainWindow(QMainWindow):
                 return
 
         query = self._search_input.text().strip()
+        query_slots = self._bookmark_manager.query_slots()
+        expanded_query = expand_query_slots(query, query_slots).expanded_query
         use_regex = self._regex_action.isChecked()
 
         # Validate regex syntax before searching
-        if use_regex and query:
-            regex_query = query
+        if use_regex and expanded_query:
+            regex_query = expanded_query
             # Strip regex: prefix if present
             if regex_query.lower().startswith('regex:'):
                 regex_query = regex_query[6:]
@@ -916,10 +922,10 @@ class MainWindow(QMainWindow):
                 )
 
         # Update result highlighting
-        tab.results_view.set_highlight(query)
+        tab.results_view.set_highlight(expanded_query)
 
         worker = SearchWorker(
-            self._search_engine, query, active_filter, options
+            self._search_engine, query, active_filter, options, query_slots
         )
         worker.results_ready.connect(self._on_search_results)
         tab.search_worker = worker
@@ -1342,7 +1348,12 @@ class MainWindow(QMainWindow):
             self._status_label.setText(path)
 
     def _current_content_preview_query(self) -> tuple[str, bool]:
-        parsed = parse_query(self._search_input.text().strip())
+        query = self._search_input.text().strip()
+        expanded_query = expand_query_slots(
+            query,
+            self._bookmark_manager.query_slots(),
+        ).expanded_query
+        parsed = parse_query(expanded_query)
         return parsed.content_search, parsed.options.match_case
 
     def _show_context_menu(self, pos):

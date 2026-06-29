@@ -105,6 +105,7 @@ def test_valid_bookmark_csv_imports_normalized_records(tmp_path):
         {
             "name": "Source",
             "query": "ext:py",
+            "slot": "",
             "filter_name": "Everything",
             "sort_column": 1,
             "sort_ascending": False,

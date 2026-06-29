@@ -4,7 +4,7 @@ Routes simple queries through SQLite for speed, falls back to in-memory for comp
 
 Supports: plain text, regex:, wildcards:, case:, path:, file:, folder:,
 wholeword:, wholefilename:, content:, size:, dm: (date modified),
-dc: (date created), ext:, attrib:, len:, parent:, dupe:, archive:
+dc: (date created), ext:, attrib:, len:, parent:, dupe:, archive:, @slot
 """
 
 import re
@@ -14,10 +14,11 @@ import logging
 from datetime import datetime, timedelta
 from dataclasses import dataclass, field, replace
 from enum import Enum, auto
-from typing import Optional, Callable
+from typing import Optional, Callable, Mapping
 
 from core.archives import is_supported_archive, iter_archive_entries
 from core.index import FileEntry, FileIndex
+from core.query_slots import expand_query_slots
 from core.utils import parse_size as _parse_size
 
 logger = logging.getLogger('QuickFind.Search')
@@ -227,8 +228,12 @@ ATTRIB_MAP = {
 }
 
 
-def parse_query(raw_query: str, base_options: Optional[SearchOptions] = None) -> ParsedQuery:
+def parse_query(raw_query: str, base_options: Optional[SearchOptions] = None,
+                query_slots: Optional[Mapping[str, str]] = None) -> ParsedQuery:
     """Parse a search query string into a ParsedQuery with modifiers extracted."""
+    if query_slots:
+        raw_query = expand_query_slots(raw_query, query_slots).expanded_query
+
     parsed = ParsedQuery()
     if base_options:
         parsed.options = SearchOptions(
@@ -618,9 +623,10 @@ class SearchEngine:
     def search(self, query: str, active_filter: Optional[SearchFilter] = None,
                base_options: Optional[SearchOptions] = None,
                cancel_check: Optional[Callable[[], bool]] = None,
-               max_results: int = 0) -> list[FileEntry]:
+               max_results: int = 0,
+               query_slots: Optional[Mapping[str, str]] = None) -> list[FileEntry]:
         """Execute a search and return matching FileEntry results."""
-        parsed = parse_query(query, base_options)
+        parsed = parse_query(query, base_options, query_slots=query_slots)
         if max_results:
             parsed.options.max_results = max_results
 

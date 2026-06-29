@@ -295,6 +295,16 @@ class TestParseQuery:
         assert parsed.content_search == "class"
         assert parsed.terms == ["hello"]
 
+    def test_query_slot_expands_before_modifier_parse(self):
+        parsed = parse_query(
+            "@logs error",
+            query_slots={"logs": "ext:log dm:today"},
+        )
+
+        assert parsed.ext_filter == ["log"]
+        assert parsed.date_mod_after is not None
+        assert parsed.terms == ["error"]
+
 
 class TestSmartCase:
     def test_lowercase_is_insensitive(self):
@@ -513,3 +523,20 @@ class TestDupeSearch:
 
         assert len(results) == 1
         assert results[0].name == "alpha.txt"
+
+
+class TestQuerySlotSearch:
+    def test_search_expands_query_slots_before_matching(self):
+        entries = [
+            _entry("app.log", 1),
+            _entry("app.txt", 2),
+        ]
+        engine = SearchEngine(FakeIndex(entries))
+
+        results = engine.search(
+            "@logs app",
+            base_options=SearchOptions(match_case=True),
+            query_slots={"logs": "ext:log"},
+        )
+
+        assert [entry.name for entry in results] == ["app.log"]
