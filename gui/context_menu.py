@@ -118,7 +118,8 @@ def build_context_menu(entries: list[FileEntry], file_index: FileIndex,
                        parent_widget=None,
                        hide_callback=None,
                        dialog_quick_switch_enabled: bool = False,
-                       status_callback=None) -> QMenu:
+                       status_callback=None,
+                       compare_callback=None) -> QMenu:
     """
     Build a context menu for the selected file entries.
     """
@@ -149,6 +150,12 @@ def build_context_menu(entries: list[FileEntry], file_index: FileIndex,
         open_path_action.triggered.connect(lambda: [
             _open_path(e.get_path(file_index)) for e in entries[:5]
         ])
+
+    if len(entries) == 2 and not any(e.is_dir for e in entries):
+        compare_action = menu.addAction("Compare Selected Files")
+        compare_action.triggered.connect(
+            lambda: compare_callback(entries) if compare_callback else None
+        )
 
     if single and dialog_quick_switch_enabled:
         target_dir = path if entry.is_dir else parent_dir

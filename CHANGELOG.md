@@ -2,6 +2,12 @@
 
 All notable changes to QuickFind will be documented in this file.
 
+## [v0.8.29] - 2026-06-29
+
+- Added an inline unified-diff dialog for comparing exactly two selected text files from result context menus.
+- Added bounded text reads and binary-file rejection for in-app comparisons.
+- Added diff helper and context-menu coverage, expanding the passing suite to 287 tests.
+
 ## [v0.8.28] - 2026-06-29
 
 - Added bookmark workspaces with semicolon-separated root sets that constrain searches across multiple roots.

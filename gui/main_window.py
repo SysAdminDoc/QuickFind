@@ -41,6 +41,7 @@ from core.workspaces import (
 from gui.theme import MOCHA, ACCENT
 from gui.results_view import ResultsView
 from gui.preview_pane import PreviewPane
+from gui.diff_dialog import DiffCompareDialog
 from gui.filters import FilterBar
 from gui.bookmarks import BookmarkManager, BookmarksPanel, Bookmark
 from gui.context_menu import build_context_menu
@@ -1493,8 +1494,16 @@ class MainWindow(QMainWindow):
             hide_callback=self._hide_path_from_results,
             dialog_quick_switch_enabled=self._settings.enable_dialog_quick_switch,
             status_callback=self._status_label.setText,
+            compare_callback=self._show_file_diff,
         )
         menu.exec(self._results_view.table_view.viewport().mapToGlobal(pos))
+
+    def _show_file_diff(self, entries):
+        if len(entries) != 2:
+            return
+        paths = [entry.get_path(self._file_index) for entry in entries]
+        dialog = DiffCompareDialog(paths[0], paths[1], self)
+        dialog.exec()
 
     def _copy_selected_paths(self):
         entries = self._results_view.selected_entries()

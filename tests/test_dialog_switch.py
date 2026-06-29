@@ -110,3 +110,19 @@ def test_context_menu_adds_quick_switch_action_when_enabled(monkeypatch):
         action.text() == "Quick Switch Open/Save Dialog Here"
         for action in menu.actions()
     )
+
+
+def test_context_menu_adds_compare_action_for_two_files(monkeypatch):
+    monkeypatch.setattr(context_menu, "QMenu", FakeMenu)
+    first = FileEntry(frn=10, parent_frn=NTFS_ROOT_FRN, name="a.txt", drive="C", attributes=0)
+    second = FileEntry(frn=11, parent_frn=NTFS_ROOT_FRN, name="b.txt", drive="C", attributes=0)
+    first._path = "C:\\docs\\a.txt"
+    second._path = "C:\\docs\\b.txt"
+
+    menu = build_context_menu(
+        [first, second],
+        TempIndex(),
+        compare_callback=lambda _entries: None,
+    )
+
+    assert any(action.text() == "Compare Selected Files" for action in menu.actions())
