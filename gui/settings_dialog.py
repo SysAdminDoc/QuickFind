@@ -38,6 +38,7 @@ from core.network_shares import (
     save_network_credential,
 )
 from core.localization import available_languages, tr
+from gui.accessibility import describe_widget
 from gui.theme import MOCHA, available_themes
 from gui.settings_validation import sanitize_settings_data
 
@@ -246,7 +247,8 @@ class SettingsDialog(QDialog):
     def _setup_ui(self):
         layout = QVBoxLayout(self)
 
-        tabs = QTabWidget()
+        self._tabs_widget = QTabWidget()
+        tabs = self._tabs_widget
         layout.addWidget(tabs)
 
         # -- General Tab -----------------------------------
@@ -411,12 +413,12 @@ class SettingsDialog(QDialog):
         share_layout.addWidget(self._network_list)
 
         share_buttons = QHBoxLayout()
-        add_share = QPushButton("Add/Update Share")
-        add_share.clicked.connect(self._add_network_share)
-        remove_share = QPushButton("Remove Share")
-        remove_share.clicked.connect(self._remove_network_share)
-        share_buttons.addWidget(add_share)
-        share_buttons.addWidget(remove_share)
+        self._add_share_btn = QPushButton("Add/Update Share")
+        self._add_share_btn.clicked.connect(self._add_network_share)
+        self._remove_share_btn = QPushButton("Remove Share")
+        self._remove_share_btn.clicked.connect(self._remove_network_share)
+        share_buttons.addWidget(self._add_share_btn)
+        share_buttons.addWidget(self._remove_share_btn)
         share_buttons.addStretch()
         share_layout.addLayout(share_buttons)
         drives_layout.addWidget(share_group)
@@ -453,12 +455,12 @@ class SettingsDialog(QDialog):
         efu_layout.addWidget(self._efu_list)
 
         efu_buttons = QHBoxLayout()
-        add_efu = QPushButton("Add EFU File")
-        add_efu.clicked.connect(self._add_efu)
-        remove_efu = QPushButton("Remove")
-        remove_efu.clicked.connect(self._remove_efu)
-        efu_buttons.addWidget(add_efu)
-        efu_buttons.addWidget(remove_efu)
+        self._add_efu_btn = QPushButton("Add EFU File")
+        self._add_efu_btn.clicked.connect(self._add_efu)
+        self._remove_efu_btn = QPushButton("Remove")
+        self._remove_efu_btn.clicked.connect(self._remove_efu)
+        efu_buttons.addWidget(self._add_efu_btn)
+        efu_buttons.addWidget(self._remove_efu_btn)
         efu_buttons.addStretch()
         efu_layout.addLayout(efu_buttons)
 
@@ -534,18 +536,18 @@ class SettingsDialog(QDialog):
 
         cert_row = QHBoxLayout()
         self._https_cert_file = QLineEdit()
-        cert_btn = QPushButton("Browse...")
-        cert_btn.clicked.connect(lambda: self._browse_file(self._https_cert_file, "Select TLS Certificate"))
+        self._https_cert_btn = QPushButton("Browse...")
+        self._https_cert_btn.clicked.connect(lambda: self._browse_file(self._https_cert_file, "Select TLS Certificate"))
         cert_row.addWidget(self._https_cert_file)
-        cert_row.addWidget(cert_btn)
+        cert_row.addWidget(self._https_cert_btn)
         http_form.addRow("TLS certificate:", cert_row)
 
         key_row = QHBoxLayout()
         self._https_key_file = QLineEdit()
-        key_btn = QPushButton("Browse...")
-        key_btn.clicked.connect(lambda: self._browse_file(self._https_key_file, "Select TLS Private Key"))
+        self._https_key_btn = QPushButton("Browse...")
+        self._https_key_btn.clicked.connect(lambda: self._browse_file(self._https_key_file, "Select TLS Private Key"))
         key_row.addWidget(self._https_key_file)
-        key_row.addWidget(key_btn)
+        key_row.addWidget(self._https_key_btn)
         http_form.addRow("TLS private key:", key_row)
 
         http_layout.addWidget(http_group)
@@ -555,25 +557,94 @@ class SettingsDialog(QDialog):
         # -- Export/Import + Dialog buttons ----------------
         bottom_layout = QHBoxLayout()
 
-        export_btn = QPushButton("Export Settings...")
-        export_btn.clicked.connect(self._export_settings)
-        import_btn = QPushButton("Import Settings...")
-        import_btn.clicked.connect(self._import_settings)
-        bottom_layout.addWidget(export_btn)
-        bottom_layout.addWidget(import_btn)
+        self._export_settings_btn = QPushButton("Export Settings...")
+        self._export_settings_btn.clicked.connect(self._export_settings)
+        self._import_settings_btn = QPushButton("Import Settings...")
+        self._import_settings_btn.clicked.connect(self._import_settings)
+        bottom_layout.addWidget(self._export_settings_btn)
+        bottom_layout.addWidget(self._import_settings_btn)
         bottom_layout.addStretch()
 
-        buttons = QDialogButtonBox(
+        self._dialog_buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok |
             QDialogButtonBox.StandardButton.Cancel |
             QDialogButtonBox.StandardButton.Apply
         )
-        buttons.accepted.connect(self._apply_and_accept)
-        buttons.rejected.connect(self.reject)
-        buttons.button(QDialogButtonBox.StandardButton.Apply).clicked.connect(self._apply)
-        bottom_layout.addWidget(buttons)
+        self._dialog_buttons.accepted.connect(self._apply_and_accept)
+        self._dialog_buttons.rejected.connect(self.reject)
+        self._dialog_buttons.button(QDialogButtonBox.StandardButton.Apply).clicked.connect(self._apply)
+        bottom_layout.addWidget(self._dialog_buttons)
 
         layout.addLayout(bottom_layout)
+        self._setup_accessibility()
+
+    def _setup_accessibility(self):
+        controls = [
+            (self._tabs_widget, "Settings sections", "Switch between QuickFind settings pages."),
+            (self._index_startup, "Index on startup", "Start indexing when QuickFind launches."),
+            (self._monitor_usn, "Monitor USN journal", "Monitor NTFS changes for real-time updates."),
+            (self._usn_interval, "USN poll interval", "Milliseconds between USN journal checks."),
+            (self._exclude_hidden, "Exclude hidden files", "Skip hidden files during indexing."),
+            (self._exclude_system, "Exclude system files", "Skip system files during indexing."),
+            (self._exclude_globs, "Exclude glob patterns", "Semicolon-separated glob rules to skip."),
+            (self._exclude_regexes, "Exclude regex patterns", "Semicolon-separated regular expressions to skip."),
+            (self._exclude_attributes, "Exclude attributes", "File attribute codes or masks to skip."),
+            (self._follow_reparse, "Follow symbolic links and junctions", "Follow reparse points in directory-walk indexes."),
+            (self._index_case_mode, "Index case mode", "Choose smart, insensitive, or sensitive baseline matching."),
+            (self._default_case, "Default match case", "Enable case-sensitive search by default."),
+            (self._default_regex, "Default regex", "Enable regex search by default."),
+            (self._max_results, "Default maximum results", "Limit results, or use unlimited."),
+            (self._search_delay, "Search delay", "Milliseconds to debounce typing before search runs."),
+            (self._show_preview, "Show preview pane", "Show the preview pane by default."),
+            (self._show_filters, "Show filter dropdown", "Show the file-type filter dropdown."),
+            (self._show_status, "Show status bar", "Show the application status bar."),
+            (self._theme_combo, "Theme", "Choose the active theme pack."),
+            (self._language_combo, "Language", "Choose the user interface language."),
+            (self._dialog_quick_switch, "Open Save dialog Quick Switch", "Allow selected folders to target the active file dialog."),
+            (self._start_min, "Start minimized", "Start QuickFind minimized."),
+            (self._min_tray, "Minimize to system tray", "Send QuickFind to the tray when minimized."),
+            (self._close_tray, "Close to system tray", "Keep QuickFind running in the tray when closed."),
+            (self._remember_size, "Remember window size", "Persist the window size between launches."),
+            (self._drive_startup_delay, "Startup drive delay", "Wait for late-mounted drives before indexing."),
+            (self._drives_list, "Drives to index", "Checked drives are included in indexing."),
+            (self._network_root, "Network share root", "UNC path for an SMB network share."),
+            (self._network_username, "Network username", "Optional username for the network share."),
+            (self._network_password, "Network password", "Optional password for the network share."),
+            (self._network_list, "Network shares", "Configured network share roots."),
+            (self._add_share_btn, "Add or update network share", "Save the network share root and optional credential."),
+            (self._remove_share_btn, "Remove network share", "Remove the selected network share."),
+            (self._efu_refresh_interval, "EFU refresh interval", "Minutes between external file-list refreshes."),
+            (self._efu_list, "EFU file lists", "Configured Everything file-list imports."),
+            (self._add_efu_btn, "Add EFU file", "Choose an Everything file-list import."),
+            (self._remove_efu_btn, "Remove EFU file", "Remove the selected file-list import."),
+            (self._content_index_enabled, "Enable content indexing", "Run background text extraction after file indexing."),
+            (self._content_index_roots, "Content index roots", "Optional roots for content indexing."),
+            (self._content_index_extensions, "Content index extensions", "Optional file extensions for content indexing."),
+            (self._content_index_max_cache, "Content cache quota", "Maximum content cache size in megabytes."),
+            (self._content_index_max_file, "Content max file size", "Maximum file size for content extraction."),
+            (self._content_adapter_status, "Content adapter status", "Availability of optional content extraction adapters."),
+            (self._enable_http, "Enable HTTP server", "Enable read-only remote browser search."),
+            (self._http_port, "HTTP port", "Port for the remote search server."),
+            (self._http_bind, "HTTP bind address", "Network interface for the remote search server."),
+            (self._http_auth_token, "HTTP authentication token", "Bearer, Basic, and browser session token."),
+            (self._http_use_https, "Enable HTTPS", "Use the configured TLS certificate and private key."),
+            (self._https_cert_file, "TLS certificate file", "Path to the HTTPS certificate file."),
+            (self._https_cert_btn, "Browse TLS certificate", "Choose the HTTPS certificate file."),
+            (self._https_key_file, "TLS private key file", "Path to the HTTPS private key file."),
+            (self._https_key_btn, "Browse TLS private key", "Choose the HTTPS private key file."),
+            (self._export_settings_btn, "Export settings", "Export settings to a JSON file."),
+            (self._import_settings_btn, "Import settings", "Import settings from a JSON file."),
+            (self._dialog_buttons, "Settings actions", "Apply, cancel, or save settings."),
+        ]
+        for widget, name, description in controls:
+            describe_widget(widget, name, description)
+
+        for col_name, cb in self._col_checks.items():
+            describe_widget(
+                cb,
+                f"{col_name.capitalize()} column visibility",
+                f"Show or hide the {col_name} results column.",
+            )
 
     def _load_values(self):
         s = self._settings

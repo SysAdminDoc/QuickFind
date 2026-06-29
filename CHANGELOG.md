@@ -2,6 +2,12 @@
 
 All notable changes to QuickFind will be documented in this file.
 
+## [v0.8.41] - 2026-06-29
+
+- Added narrator-friendly labels and descriptions for settings controls, result view modes, preview panes, and status surfaces.
+- Added explicit keyboard traversal from filter controls to workspace roots, search input, active result tabs, and results.
+- Added accessibility helper coverage, expanding the passing suite to 327 tests.
+
 ## [v0.8.40] - 2026-06-29
 
 - Added runtime UI localization with English and Spanish language packs for the main menu, search shell, and quick-preview status.

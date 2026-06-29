@@ -40,6 +40,7 @@ from core.workspaces import (
 )
 
 from gui.theme import MOCHA, ACCENT, apply_theme, set_active_theme
+from gui.accessibility import describe_widget
 from gui.results_view import ResultsView
 from gui.preview_pane import PreviewPane, QuickPreviewPopover
 from gui.diff_dialog import DiffCompareDialog
@@ -449,6 +450,7 @@ class MainWindow(QMainWindow):
         # Keep FilterBar reference for compatibility (hidden, manages custom filters)
         self._filter_bar = FilterBar()
         self._filter_bar.hide()
+        self._setup_accessibility()
 
     # ── Tab management ────────────────────────────────
 
@@ -474,6 +476,7 @@ class MainWindow(QMainWindow):
         tab.results_view.table_view.customContextMenuRequested.connect(
             self._show_context_menu
         )
+        self._setup_keyboard_flow(tab)
 
         self._tab_widget.setCurrentIndex(idx)
         return tab
@@ -572,7 +575,7 @@ class MainWindow(QMainWindow):
                 self._tab_widget.setCurrentIndex(item.data(Qt.ItemDataRole.UserRole))
 
     def _tab_switcher_label(self, index: int, tab: SearchTab) -> str:
-        query = tab.query.strip() or "Search"
+        query = tab.query.strip() or self._localized_search_title()
         count = tab.results_view.result_count
         return f"{index + 1}. {query[:48]} ({count:,})"
 
@@ -627,6 +630,92 @@ class MainWindow(QMainWindow):
 
         # Default to "Everything"
         self._filter_combo.setCurrentIndex(0)
+
+    def _setup_keyboard_flow(self, tab: Optional[SearchTab] = None):
+        tab = tab or self._current_tab()
+        result_focus = tab.results_view.table_view if tab else self._tab_widget
+        self._keyboard_flow = [
+            self._filter_combo,
+            self._workspace_roots_input,
+            self._search_input,
+            self._tab_widget,
+            result_focus,
+        ]
+        for current, next_widget in zip(self._keyboard_flow, self._keyboard_flow[1:]):
+            self.setTabOrder(current, next_widget)
+
+    def _setup_accessibility(self):
+        describe_widget(
+            self._splitter,
+            "Search workspace",
+            "Contains bookmarks, search results, and preview panes.",
+        )
+        describe_widget(
+            self._bookmarks_panel,
+            "Bookmarks panel",
+            "Saved searches, filters, and workspace roots.",
+        )
+        describe_widget(
+            self._preview_pane,
+            "Preview pane",
+            "Selected file preview shown beside results.",
+        )
+        describe_widget(
+            self._tab_widget,
+            "Search results tabs",
+            "Search result tabs with independent queries and filters.",
+        )
+        describe_widget(
+            self._result_count_label,
+            "Result count",
+            "Number of results in the active search tab.",
+        )
+        describe_widget(
+            self._status_label,
+            "Status message",
+            "Current indexing, search, or action status.",
+        )
+        describe_widget(
+            self._db_stats_label,
+            "Index statistics",
+            "Current indexed file and folder counts.",
+        )
+        describe_widget(
+            self._content_status_label,
+            "Content index status",
+            "Current content indexing status.",
+        )
+        describe_widget(
+            self._service_status_label,
+            "Service status",
+            "Background index service connection state.",
+        )
+        describe_widget(
+            self._perf_label,
+            "Search performance",
+            "Elapsed time for the latest search.",
+        )
+        describe_widget(
+            self._last_update_label,
+            "Last index update",
+            "Last successful index update time.",
+        )
+        describe_widget(
+            self._drive_state_label,
+            "Drive freshness",
+            "Online, offline, or stale drive state.",
+        )
+        describe_widget(
+            self._index_mode_label,
+            "Index mode",
+            "Active indexing mode and fallback state.",
+        )
+        describe_widget(
+            self._progress_bar,
+            "Indexing progress",
+            "Progress for active indexing work.",
+        )
+        self._setup_keyboard_flow()
 
     def _get_active_filter(self) -> Optional[SearchFilter]:
         """Get the currently selected filter from the dropdown."""

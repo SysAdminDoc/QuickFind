@@ -35,6 +35,7 @@ from core.ntfs import (
     FILE_ATTRIBUTE_REPARSE_POINT, FILE_ATTRIBUTE_SPARSE_FILE,
     FILE_ATTRIBUTE_SYSTEM, FILE_ATTRIBUTE_TEMPORARY,
 )
+from gui.accessibility import describe_widget
 from gui.theme import MOCHA
 
 logger = logging.getLogger('QuickFind.ResultsView')
@@ -1048,15 +1049,24 @@ class ResultsView(QWidget):
         layout.setSpacing(0)
 
         self.breadcrumb_header = BreadcrumbHeader()
+        describe_widget(
+            self.breadcrumb_header,
+            "Selected result path",
+            "Shows the full path for the selected search result.",
+        )
         layout.addWidget(self.breadcrumb_header)
 
         self._stack = QStackedWidget()
+        describe_widget(
+            self._stack,
+            "Results view mode",
+            "Contains details, path column, and thumbnail result views.",
+        )
         layout.addWidget(self._stack, 1)
 
         # Table view (index 0)
         self.table_view = ResultsTableView()
-        self.table_view.setAccessibleName("Search results")
-        self.table_view.setAccessibleDescription("File search results table")
+        describe_widget(self.table_view, "Search results", "File search results table.")
         self.table_view.set_model(self._model)
         self.table_view.item_activated.connect(self.item_activated)
         self.table_view.selection_changed.connect(self._on_child_selection_changed)
@@ -1069,8 +1079,11 @@ class ResultsView(QWidget):
 
         # Finder-style path columns (index 1)
         self.column_view = PathColumnView()
-        self.column_view.setAccessibleName("Path column results")
-        self.column_view.setAccessibleDescription("Search results displayed as path segments")
+        describe_widget(
+            self.column_view,
+            "Path column results",
+            "Search results displayed as path segments.",
+        )
         self.column_view.set_model(self._path_column_model)
         self.column_view.item_activated.connect(self.item_activated)
         self.column_view.selection_changed.connect(self._on_child_selection_changed)
@@ -1079,6 +1092,11 @@ class ResultsView(QWidget):
 
         # Thumbnail view (index 2)
         self.thumb_view = ThumbnailListView()
+        describe_widget(
+            self.thumb_view,
+            "Thumbnail results",
+            "Search results displayed as large icons and thumbnails.",
+        )
         self.thumb_view.set_model(self._model)
         self.thumb_view.item_activated.connect(self.item_activated)
         self.thumb_view.selection_changed.connect(self._on_child_selection_changed)

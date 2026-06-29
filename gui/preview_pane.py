@@ -18,6 +18,7 @@ from PyQt6.QtGui import (
 
 from core.index import FileEntry, FileIndex
 from core.content import matched_line_context
+from gui.accessibility import describe_widget
 from gui.theme import MOCHA
 from gui.results_view import format_size, format_datetime, format_attributes, format_reparse_tag
 
@@ -155,6 +156,11 @@ class PreviewPane(QWidget):
 
     def __init__(self, file_index: FileIndex, parent=None):
         super().__init__(parent)
+        describe_widget(
+            self,
+            "Preview pane",
+            "Shows a text, image, or metadata preview for the selected file.",
+        )
         self._file_index = file_index
         self._current_path: Optional[str] = None
         self._loader_thread: Optional[QThread] = None
@@ -169,6 +175,7 @@ class PreviewPane(QWidget):
 
         # Header
         self._header = QLabel("Preview")
+        describe_widget(self._header, "Preview header")
         self._header.setStyleSheet(f"""
             QLabel {{
                 background-color: {MOCHA['mantle']};
@@ -184,10 +191,12 @@ class PreviewPane(QWidget):
 
         # Stacked content area
         self._stack = QStackedWidget()
+        describe_widget(self._stack, "Preview content")
         layout.addWidget(self._stack)
 
         # Page 0: No selection / info
         self._info_label = QLabel("Select a file to preview")
+        describe_widget(self._info_label, "Preview empty state")
         self._info_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._info_label.setStyleSheet(f"color: {MOCHA['overlay0']}; font-size: 12px; padding: 24px;")
         self._info_label.setWordWrap(True)
@@ -195,6 +204,11 @@ class PreviewPane(QWidget):
 
         # Page 1: Text preview
         self._text_edit = QPlainTextEdit()
+        describe_widget(
+            self._text_edit,
+            "Text preview",
+            "Read-only text preview for the selected file.",
+        )
         self._text_edit.setReadOnly(True)
         self._text_edit.setFont(QFont("Cascadia Code", 10))
         self._text_edit.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
@@ -210,9 +224,11 @@ class PreviewPane(QWidget):
 
         # Page 2: Image preview
         self._image_scroll = QScrollArea()
+        describe_widget(self._image_scroll, "Image preview scroll area")
         self._image_scroll.setWidgetResizable(False)
         self._image_scroll.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._image_label = QLabel()
+        describe_widget(self._image_label, "Image preview")
         self._image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._image_label.setScaledContents(False)
         self._image_scroll.setWidget(self._image_label)
@@ -220,6 +236,7 @@ class PreviewPane(QWidget):
 
         # Page 3: File info panel
         self._file_info = QLabel()
+        describe_widget(self._file_info, "File metadata preview")
         self._file_info.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
         self._file_info.setWordWrap(True)
         self._file_info.setStyleSheet(f"padding: 12px; color: {MOCHA['text']}; font-size: 13px;")
@@ -467,6 +484,11 @@ class QuickPreviewPopover(QDialog):
         )
         self.setObjectName("quickPreviewPopover")
         self.setWindowTitle("Quick Preview")
+        describe_widget(
+            self,
+            "Quick preview popover",
+            "Floating preview for the selected search result.",
+        )
         self.setModal(False)
         self.setMinimumSize(QUICK_PREVIEW_MIN_SIZE)
         self.resize(760, 520)
