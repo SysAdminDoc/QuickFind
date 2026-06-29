@@ -30,6 +30,7 @@ STRING_FIELDS = {
 
 INDEX_CASE_MODES = {"smart", "insensitive", "sensitive"}
 THEME_NAMES = {"mocha", "macchiato", "frappe", "latte"}
+LANGUAGE_CODES = {"en", "es"}
 
 STRING_LIST_FIELDS = {
     "exclude_globs",
@@ -121,6 +122,11 @@ def sanitize_settings_data(
     if not isinstance(theme_name, str) or theme_name not in THEME_NAMES:
         sanitized["theme_name"] = defaults.get("theme_name", "mocha")
         warnings.append("theme_name reset because it must be a known theme pack.")
+
+    language = sanitized.get("language", defaults.get("language", "en"))
+    if not isinstance(language, str) or language not in LANGUAGE_CODES:
+        sanitized["language"] = defaults.get("language", "en")
+        warnings.append("language reset because it must be a known language.")
 
     if not sanitized["http_bind"]:
         sanitized["http_bind"] = defaults["http_bind"]

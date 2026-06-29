@@ -37,6 +37,7 @@ from core.network_shares import (
     normalize_network_root,
     save_network_credential,
 )
+from core.localization import available_languages, tr
 from gui.theme import MOCHA, available_themes
 from gui.settings_validation import sanitize_settings_data
 
@@ -140,6 +141,7 @@ class Settings:
     show_filter_bar: bool = True
     show_status_bar: bool = True
     theme_name: str = "mocha"
+    language: str = "en"
     start_minimized: bool = False
     minimize_to_tray: bool = True
     close_to_tray: bool = True
@@ -338,6 +340,11 @@ class SettingsDialog(QDialog):
         for value, label in available_themes():
             self._theme_combo.addItem(label, value)
         ui_form.addRow("Theme:", self._theme_combo)
+
+        self._language_combo = QComboBox()
+        for value, label in available_languages():
+            self._language_combo.addItem(label, value)
+        ui_form.addRow(tr("settings.language", "Language:"), self._language_combo)
 
         self._dialog_quick_switch = QCheckBox("Enable Open/Save dialog Quick Switch")
         ui_form.addRow(self._dialog_quick_switch)
@@ -591,6 +598,8 @@ class SettingsDialog(QDialog):
         self._show_status.setChecked(s.show_status_bar)
         theme_index = self._theme_combo.findData(s.theme_name)
         self._theme_combo.setCurrentIndex(max(0, theme_index))
+        language_index = self._language_combo.findData(s.language)
+        self._language_combo.setCurrentIndex(max(0, language_index))
         self._dialog_quick_switch.setChecked(s.enable_dialog_quick_switch)
         self._start_min.setChecked(s.start_minimized)
         self._min_tray.setChecked(s.minimize_to_tray)
@@ -649,6 +658,7 @@ class SettingsDialog(QDialog):
         s.show_filter_bar = self._show_filters.isChecked()
         s.show_status_bar = self._show_status.isChecked()
         s.theme_name = self._theme_combo.currentData() or "mocha"
+        s.language = self._language_combo.currentData() or "en"
         s.enable_dialog_quick_switch = self._dialog_quick_switch.isChecked()
         s.start_minimized = self._start_min.isChecked()
         s.minimize_to_tray = self._min_tray.isChecked()

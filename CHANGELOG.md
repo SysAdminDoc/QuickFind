@@ -2,6 +2,12 @@
 
 All notable changes to QuickFind will be documented in this file.
 
+## [v0.8.40] - 2026-06-29
+
+- Added runtime UI localization with English and Spanish language packs for the main menu, search shell, and quick-preview status.
+- Persisted the selected language in settings, validated unknown language codes, and applied language state at startup and live settings changes.
+- Added localization and language validation coverage, expanding the passing suite to 325 tests.
+
 ## [v0.8.39] - 2026-06-29
 
 - Added selectable theme packs for Catppuccin Mocha, Macchiato, Frappe, and Latte.

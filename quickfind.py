@@ -72,6 +72,7 @@ def _load_qt_modules(import_module=importlib.import_module):
 QApplication, QMessageBox, Qt, QTimer, QIcon, QFont = _load_qt_modules()
 
 from core.version import APP_NAME, VERSION
+from core.localization import set_language
 from core.sqlite_compat import fts5_gate_status
 
 # Crash logging
@@ -204,6 +205,7 @@ def main():
     from gui.theme import apply_theme, set_active_theme
     startup_settings = Settings.load()
     set_active_theme(startup_settings.theme_name)
+    set_language(startup_settings.language)
     apply_theme(app)
 
     from gui.main_window import MainWindow

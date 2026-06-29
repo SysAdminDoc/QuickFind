@@ -30,6 +30,7 @@ from core.search import (
 )
 from core.query_slots import expand_query_slots
 from core.file_list import efu_source_key, load_efu
+from core.localization import set_language, tr
 from core.ntfs import FILE_ATTRIBUTE_DIRECTORY
 from core.version import VERSION, APP_TITLE
 from core.workspaces import (
@@ -186,6 +187,7 @@ class MainWindow(QMainWindow):
         # Core components
         self._settings = Settings.load()
         set_active_theme(self._settings.theme_name)
+        set_language(self._settings.language)
         self._file_index = FileIndex()
         self._search_engine = SearchEngine(self._file_index)
         self._bookmark_manager = BookmarkManager()
@@ -294,7 +296,7 @@ class MainWindow(QMainWindow):
         self._search_input = QLineEdit()
         self._search_input.setFixedHeight(24)
         self._search_input.setClearButtonEnabled(True)
-        self._search_input.setPlaceholderText("Search files and folders…")
+        self._search_input.setPlaceholderText(tr("search.placeholder", "Search files and folders..."))
         self._search_input.setAccessibleName("Search input")
         self._search_input.setAccessibleDescription("Type to search files and folders. Use modifiers like ext:, size:, dm: for advanced queries.")
         self._search_input.setToolTip(SYNTAX_HELP)
@@ -362,7 +364,7 @@ class MainWindow(QMainWindow):
 
         # First search tab
         self._tabs: list[SearchTab] = []
-        self._add_new_tab("Search")
+        self._add_new_tab(self._localized_search_title())
 
         # Preview pane (right, hidden by default)
         self._preview_pane = PreviewPane(self._file_index)
@@ -450,10 +452,13 @@ class MainWindow(QMainWindow):
 
     # ── Tab management ────────────────────────────────
 
-    def _add_new_tab(self, title: str = "Search") -> SearchTab:
+    def _localized_search_title(self) -> str:
+        return tr("tab.search", "Search")
+
+    def _add_new_tab(self, title: str | None = None) -> SearchTab:
         tab = SearchTab(self._file_index)
         self._tabs.append(tab)
-        idx = self._tab_widget.addTab(tab.results_view, title)
+        idx = self._tab_widget.addTab(tab.results_view, title or self._localized_search_title())
 
         # Connect signals for the new tab's results view
         tab.results_view.item_activated.connect(self._on_item_activated)
@@ -641,202 +646,202 @@ class MainWindow(QMainWindow):
         menubar = self.menuBar()
 
         # ── File menu ───────────────────────────────
-        file_menu = menubar.addMenu("&File")
+        file_menu = menubar.addMenu(tr("menu.file", "&File"))
 
-        new_window = file_menu.addAction("New &Window")
+        new_window = file_menu.addAction(tr("menu.file.new_window", "New &Window"))
         new_window.setShortcut(QKeySequence("Ctrl+N"))
         new_window.triggered.connect(self._new_window)
 
-        new_tab = file_menu.addAction("New &Tab")
+        new_tab = file_menu.addAction(tr("menu.file.new_tab", "New &Tab"))
         new_tab.setShortcut(QKeySequence("Ctrl+T"))
-        new_tab.triggered.connect(lambda: self._add_new_tab("Search"))
+        new_tab.triggered.connect(lambda: self._add_new_tab())
 
-        close_tab = file_menu.addAction("&Close Tab")
+        close_tab = file_menu.addAction(tr("menu.file.close_tab", "&Close Tab"))
         close_tab.setShortcut(QKeySequence("Ctrl+W"))
         close_tab.triggered.connect(lambda: self._close_tab(self._tab_widget.currentIndex()))
 
-        switch_tab = file_menu.addAction("Switch &Tab...")
+        switch_tab = file_menu.addAction(tr("menu.search.tab_switcher", "Switch &Tab..."))
         switch_tab.triggered.connect(self._show_tab_switcher)
 
         file_menu.addSeparator()
 
-        open_efu = file_menu.addAction("Open File &List...")
+        open_efu = file_menu.addAction(tr("menu.file.open_efu", "Open File &List..."))
         open_efu.triggered.connect(self._open_efu)
 
-        export_efu = file_menu.addAction("&Export Results as EFU...")
+        export_efu = file_menu.addAction(tr("menu.file.export_efu", "&Export Results as EFU..."))
         export_efu.triggered.connect(self._export_efu)
 
         file_menu.addSeparator()
 
-        exit_action = file_menu.addAction("E&xit")
+        exit_action = file_menu.addAction(tr("menu.file.exit", "E&xit"))
         exit_action.setShortcut(QKeySequence("Alt+F4"))
         exit_action.triggered.connect(self._quit)
 
         # ── Edit menu ──────────────────────────────
-        edit_menu = menubar.addMenu("&Edit")
+        edit_menu = menubar.addMenu(tr("menu.edit", "&Edit"))
 
-        select_all = edit_menu.addAction("Select &All")
+        select_all = edit_menu.addAction(tr("menu.edit.select_all", "Select &All"))
         select_all.setShortcut(QKeySequence("Ctrl+A"))
         select_all.triggered.connect(lambda: self._results_view.table_view.select_all_results())
 
         edit_menu.addSeparator()
 
-        copy_path = edit_menu.addAction("&Copy Path")
+        copy_path = edit_menu.addAction(tr("menu.edit.copy_path", "&Copy Path"))
         copy_path.setShortcut(QKeySequence("Ctrl+C"))
         copy_path.triggered.connect(self._copy_selected_paths)
 
-        copy_name = edit_menu.addAction("Copy &Name")
+        copy_name = edit_menu.addAction(tr("menu.edit.copy_name", "Copy &Name"))
         copy_name.setShortcut(QKeySequence("Ctrl+Shift+C"))
         copy_name.triggered.connect(self._copy_selected_names)
 
         # ── View menu ───────────────────────────────
-        view_menu = menubar.addMenu("&View")
+        view_menu = menubar.addMenu(tr("menu.view", "&View"))
 
-        self._detail_view_action = view_menu.addAction("&Details")
+        self._detail_view_action = view_menu.addAction(tr("menu.view.details", "&Details"))
         self._detail_view_action.setCheckable(True)
         self._detail_view_action.setChecked(True)
         self._detail_view_action.triggered.connect(lambda: self._set_view_mode('details'))
 
-        self._thumb_view_action = view_menu.addAction("&Thumbnails")
+        self._thumb_view_action = view_menu.addAction(tr("menu.view.thumbnails", "&Thumbnails"))
         self._thumb_view_action.setCheckable(True)
         self._thumb_view_action.triggered.connect(lambda: self._set_view_mode('thumbnails'))
 
-        self._column_view_action = view_menu.addAction("&Columns")
+        self._column_view_action = view_menu.addAction(tr("menu.view.columns", "&Columns"))
         self._column_view_action.setCheckable(True)
         self._column_view_action.triggered.connect(lambda: self._set_view_mode('columns'))
 
         view_menu.addSeparator()
 
-        self._preview_action = view_menu.addAction("Preview &Pane")
+        self._preview_action = view_menu.addAction(tr("menu.view.preview_pane", "Preview &Pane"))
         self._preview_action.setCheckable(True)
         self._preview_action.setChecked(self._settings.show_preview_pane)
         self._preview_action.setShortcut(QKeySequence("Alt+V"))
         self._preview_action.toggled.connect(self._toggle_preview)
 
-        self._bookmarks_action = view_menu.addAction("&Bookmarks Panel")
+        self._bookmarks_action = view_menu.addAction(tr("menu.view.bookmarks", "&Bookmarks Panel"))
         self._bookmarks_action.setCheckable(True)
         self._bookmarks_action.setShortcut(QKeySequence("Ctrl+B"))
         self._bookmarks_action.toggled.connect(self._toggle_bookmarks)
 
-        self._status_bar_action = view_menu.addAction("&Status Bar")
+        self._status_bar_action = view_menu.addAction(tr("menu.view.status_bar", "&Status Bar"))
         self._status_bar_action.setCheckable(True)
         self._status_bar_action.setChecked(True)
         self._status_bar_action.toggled.connect(self._toggle_status_bar)
 
         # ── Search menu ─────────────────────────────
-        search_menu = menubar.addMenu("&Search")
+        search_menu = menubar.addMenu(tr("menu.search", "&Search"))
 
-        focus_search = search_menu.addAction("&Focus Search")
+        focus_search = search_menu.addAction(tr("menu.search.focus", "&Focus Search"))
         focus_search.setShortcut(QKeySequence("Ctrl+F"))
         focus_search.triggered.connect(self._focus_search)
 
         search_menu.addSeparator()
 
-        self._match_case_action = search_menu.addAction("Match &Case")
+        self._match_case_action = search_menu.addAction(tr("menu.search.match_case", "Match &Case"))
         self._match_case_action.setCheckable(True)
         self._match_case_action.setShortcut(QKeySequence("Alt+C"))
         self._match_case_action.toggled.connect(self._on_search_option_changed)
 
-        self._regex_action = search_menu.addAction("&Regex")
+        self._regex_action = search_menu.addAction(tr("menu.search.regex", "&Regex"))
         self._regex_action.setCheckable(True)
         self._regex_action.setShortcut(QKeySequence("Alt+R"))
         self._regex_action.toggled.connect(self._on_search_option_changed)
 
-        self._match_path_action = search_menu.addAction("Match &Path")
+        self._match_path_action = search_menu.addAction(tr("menu.search.match_path", "Match &Path"))
         self._match_path_action.setCheckable(True)
         self._match_path_action.setShortcut(QKeySequence("Alt+P"))
         self._match_path_action.toggled.connect(self._on_search_option_changed)
 
-        self._match_whole_action = search_menu.addAction("Match &Whole Word")
+        self._match_whole_action = search_menu.addAction(tr("menu.search.whole_word", "Match &Whole Word"))
         self._match_whole_action.setCheckable(True)
         self._match_whole_action.setShortcut(QKeySequence("Alt+W"))
         self._match_whole_action.toggled.connect(self._on_search_option_changed)
 
         search_menu.addSeparator()
 
-        clear_history = search_menu.addAction("Clear Search &History")
+        clear_history = search_menu.addAction(tr("menu.search.clear_history", "Clear Search &History"))
         clear_history.triggered.connect(self._clear_search_history)
 
         search_menu.addSeparator()
 
         # Filter submenu
-        filter_submenu = search_menu.addMenu("Fi&lter")
+        filter_submenu = search_menu.addMenu(tr("menu.search.filter", "Fi&lter"))
         for i, (name, factory) in enumerate(BUILTIN_FILTERS.items()):
             act = filter_submenu.addAction(name)
             act.triggered.connect(lambda checked, idx=i: self._filter_combo.setCurrentIndex(idx))
 
         search_menu.addSeparator()
 
-        manage_filters = search_menu.addAction("Manage &Filters...")
+        manage_filters = search_menu.addAction(tr("menu.search.manage_filters", "Manage &Filters..."))
         manage_filters.triggered.connect(self._show_manage_filters)
 
-        import_filters = search_menu.addAction("&Import Filters from Everything CSV...")
+        import_filters = search_menu.addAction(tr("menu.search.import_filters", "&Import Filters from Everything CSV..."))
         import_filters.triggered.connect(self._import_filters_csv)
 
-        export_filters = search_menu.addAction("&Export Filters as CSV...")
+        export_filters = search_menu.addAction(tr("menu.search.export_filters", "&Export Filters as CSV..."))
         export_filters.triggered.connect(self._export_filters_csv)
 
         # ── Bookmarks menu ──────────────────────────
-        self._bookmarks_menu = menubar.addMenu("&Bookmarks")
+        self._bookmarks_menu = menubar.addMenu(tr("menu.bookmarks", "&Bookmarks"))
 
-        add_bookmark = self._bookmarks_menu.addAction("&Add Bookmark")
+        add_bookmark = self._bookmarks_menu.addAction(tr("menu.bookmarks.add", "&Add Bookmark"))
         add_bookmark.setShortcut(QKeySequence("Ctrl+D"))
         add_bookmark.triggered.connect(self._add_bookmark)
 
-        manage_bookmarks = self._bookmarks_menu.addAction("&Manage Bookmarks")
+        manage_bookmarks = self._bookmarks_menu.addAction(tr("menu.bookmarks.manage", "&Manage Bookmarks"))
         manage_bookmarks.setShortcut(QKeySequence("Ctrl+Shift+B"))
         manage_bookmarks.triggered.connect(lambda: self._toggle_bookmarks(True))
 
         self._bookmarks_menu.addSeparator()
 
-        import_bookmarks = self._bookmarks_menu.addAction("&Import Bookmarks from Everything CSV...")
+        import_bookmarks = self._bookmarks_menu.addAction(tr("menu.bookmarks.import", "&Import Bookmarks from Everything CSV..."))
         import_bookmarks.triggered.connect(self._import_bookmarks_csv)
 
-        export_bookmarks = self._bookmarks_menu.addAction("&Export Bookmarks as CSV...")
+        export_bookmarks = self._bookmarks_menu.addAction(tr("menu.bookmarks.export", "&Export Bookmarks as CSV..."))
         export_bookmarks.triggered.connect(self._export_bookmarks_csv)
 
         self._bookmarks_menu.addSeparator()
         self._bookmarks_panel.build_menu(self._bookmarks_menu)
 
         # ── Tools menu ──────────────────────────────
-        tools_menu = menubar.addMenu("&Tools")
+        tools_menu = menubar.addMenu(tr("menu.tools", "&Tools"))
 
-        reindex = tools_menu.addAction("&Rebuild Index")
+        reindex = tools_menu.addAction(tr("menu.tools.rebuild_index", "&Rebuild Index"))
         reindex.setShortcut(QKeySequence("Ctrl+Shift+R"))
         reindex.triggered.connect(self._start_indexing)
 
         tools_menu.addSeparator()
 
-        content_index = tools_menu.addAction("Start Content Indexing")
+        content_index = tools_menu.addAction(tr("menu.tools.start_content_index", "Start Content Indexing"))
         content_index.triggered.connect(self._start_content_indexing)
 
-        stop_content_index = tools_menu.addAction("Stop Content Indexing")
+        stop_content_index = tools_menu.addAction(tr("menu.tools.stop_content_index", "Stop Content Indexing"))
         stop_content_index.triggered.connect(self._stop_content_indexing)
 
         tools_menu.addSeparator()
 
-        diagnostics = tools_menu.addAction("Index Diagnostics...")
+        diagnostics = tools_menu.addAction(tr("menu.tools.diagnostics", "Index Diagnostics..."))
         diagnostics.triggered.connect(self._show_diagnostics)
 
         tools_menu.addSeparator()
 
-        manage_hidden = tools_menu.addAction("Manage &Hidden Paths...")
+        manage_hidden = tools_menu.addAction(tr("menu.tools.hidden_paths", "Manage &Hidden Paths..."))
         manage_hidden.triggered.connect(self._show_manage_hidden_paths)
 
         tools_menu.addSeparator()
 
-        settings_action = tools_menu.addAction("&Settings...")
+        settings_action = tools_menu.addAction(tr("menu.tools.settings", "&Settings..."))
         settings_action.triggered.connect(self._show_settings)
 
         # ── Help menu ───────────────────────────────
-        help_menu = menubar.addMenu("&Help")
+        help_menu = menubar.addMenu(tr("menu.help", "&Help"))
 
-        syntax_help = help_menu.addAction("Search &Syntax")
+        syntax_help = help_menu.addAction(tr("menu.help.syntax", "Search &Syntax"))
         syntax_help.triggered.connect(self._show_syntax_help)
 
         help_menu.addSeparator()
 
-        about_action = help_menu.addAction("&About QuickFind")
+        about_action = help_menu.addAction(tr("menu.help.about", "&About QuickFind"))
         about_action.triggered.connect(self._show_about)
 
     def _setup_tray(self):
@@ -873,13 +878,28 @@ class MainWindow(QMainWindow):
         # Bookmarks
         self._bookmarks_panel.bookmark_activated.connect(self._on_bookmark_activated)
 
-    def _apply_settings(self):
+    def _retranslate_static_ui(self):
+        self._search_input.setPlaceholderText(tr("search.placeholder", "Search files and folders..."))
+        default_title = self._localized_search_title()
+        for idx, tab in enumerate(self._tabs):
+            if not tab.query.strip():
+                text = self._tab_widget.tabText(idx)
+                count_suffix = re.search(r" \([\d,]+\)$", text)
+                suffix = count_suffix.group(0) if count_suffix else ""
+                self._tab_widget.setTabText(idx, f"{default_title}{suffix}")
+
+    def _apply_settings(self, rebuild_menus: bool = False):
         """Apply current settings to the UI."""
         s = self._settings
         set_active_theme(s.theme_name)
+        set_language(s.language)
         app = QApplication.instance()
         if app:
             apply_theme(app)
+        self._retranslate_static_ui()
+        if rebuild_menus:
+            self.menuBar().clear()
+            self._setup_menus()
         self._preview_pane.setVisible(s.show_preview_pane)
         self._preview_action.setChecked(s.show_preview_pane)
         self._filter_combo.setVisible(s.show_filter_bar)
@@ -960,7 +980,7 @@ class MainWindow(QMainWindow):
             tab.query = text
             # Update tab title
             idx = self._tab_widget.currentIndex()
-            title = text[:20] if text.strip() else "Search"
+            title = text[:20] if text.strip() else self._localized_search_title()
             self._tab_widget.setTabText(idx, title)
         self._search_timer.start()
 
@@ -1082,7 +1102,7 @@ class MainWindow(QMainWindow):
         # Update tab title with result count
         idx = self._tabs.index(tab)
         query = tab.query.strip()
-        tab_label = query[:20] if query else "Search"
+        tab_label = query[:20] if query else self._localized_search_title()
         self._tab_widget.setTabText(idx, f"{tab_label} ({count:,})")
 
         if tab is not self._current_tab():
@@ -1516,7 +1536,7 @@ class MainWindow(QMainWindow):
     def _toggle_quick_preview(self):
         entries = self._results_view.selected_entries()
         if not entries:
-            self._status_label.setText("Select a result to preview")
+            self._status_label.setText(tr("status.select_result_preview", "Select a result to preview"))
             return
         if self._quick_preview.isVisible():
             self._quick_preview.hide()
@@ -1966,6 +1986,7 @@ class MainWindow(QMainWindow):
 
     def _on_settings_changed(self, new_settings: Settings):
         old_settings = self._settings
+        language_changed = old_settings.language != new_settings.language
         reparse_follow_changed = (
             old_settings.follow_reparse_points != new_settings.follow_reparse_points
         )
@@ -1984,7 +2005,7 @@ class MainWindow(QMainWindow):
         )
         self._settings = new_settings
         self._settings.save()
-        self._apply_settings()
+        self._apply_settings(rebuild_menus=language_changed)
 
         self._sync_file_index_settings()
         if hasattr(self, '_launcher_popup'):

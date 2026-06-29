@@ -30,6 +30,7 @@ DEFAULTS = {
     "network_share_roots": [],
     "efu_refresh_interval_minutes": 0,
     "theme_name": "mocha",
+    "language": "en",
 }
 
 
@@ -156,6 +157,16 @@ def test_invalid_theme_name_resets_to_default():
 
     assert sanitized["theme_name"] == "mocha"
     assert any("theme_name reset" in warning for warning in warnings)
+
+
+def test_invalid_language_resets_to_default():
+    sanitized, warnings = sanitize_settings_data(
+        {"language": "pirate"},
+        DEFAULTS,
+    )
+
+    assert sanitized["language"] == "en"
+    assert any("language reset" in warning for warning in warnings)
 
 
 def test_exclude_rule_settings_are_validated():

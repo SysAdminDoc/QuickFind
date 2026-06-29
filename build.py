@@ -356,6 +356,7 @@ def build(onefile=False):
     hidden = [
         'core.ntfs', 'core.index', 'core.cache', 'core.search',
         'core.query_slots', 'core.archives', 'core.dialog_switch',
+        'core.localization',
         'core.network_shares', 'core.platform_engines',
         'core.content', 'core.content.adapters', 'core.content.indexer',
         'core.sqlite_compat',
