@@ -2,6 +2,12 @@
 
 All notable changes to QuickFind will be documented in this file.
 
+## [v0.8.23] - 2026-06-29
+
+- Added nested boolean query parsing with parentheses and NOT > implicit AND > OR precedence.
+- Routed grouped `!()` expressions through the boolean matcher instead of the legacy flat exclude path.
+- Added boolean parser/search coverage and expanded the passing suite to 271 tests.
+
 ## [v0.8.22] - 2026-06-29
 
 - Added saved query slots so bookmark names or explicit slots expand from `@slot` aliases in GUI searches and `es.py`.

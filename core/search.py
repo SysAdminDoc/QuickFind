@@ -165,6 +165,19 @@ BUILTIN_FILTERS = {
 }
 
 
+@dataclass(frozen=True)
+class BooleanExpression:
+    """Boolean term expression for parenthesized search syntax."""
+    op: str
+    term: str = ""
+    children: tuple['BooleanExpression', ...] = ()
+
+
+BOOL_TERM = "TERM"
+BOOL_AND = "AND"
+BOOL_OR = "OR"
+BOOL_NOT = "NOT"
+
 
 def _parse_date(date_str: str) -> Optional[datetime]:
     """Parse a date string like 'today', 'yesterday', 'lastweek', or 'YYYY-MM-DD'."""
@@ -216,6 +229,7 @@ class ParsedQuery:
     content_search: str = ""
     dupe_mode: bool = False
     archive_mode: bool = False
+    boolean_expression: Optional[BooleanExpression] = None
     or_groups: list[list[str]] = field(default_factory=list)
     exclude_terms: list[str] = field(default_factory=list)
     _case_explicit: bool = False
@@ -226,6 +240,164 @@ ATTRIB_MAP = {
     'v': 0x40, 'n': 0x80, 't': 0x100, 'p': 0x200, 'l': 0x400,
     'c': 0x800, 'o': 0x1000, 'i': 0x2000, 'e': 0x4000,
 }
+
+
+def _tokenize_boolean_terms(terms: list[str], quoted_parts: list[str]) -> list[str]:
+    placeholder_re = re.compile(r'\x00QUOTED(\d+)\x00')
+    tokens: list[str] = []
+
+    def flush(buffer: list[str]):
+        if buffer:
+            tokens.append(''.join(buffer))
+            buffer.clear()
+
+    for term in terms:
+        buffer: list[str] = []
+        i = 0
+        while i < len(term):
+            placeholder = placeholder_re.match(term, i)
+            if placeholder:
+                flush(buffer)
+                quoted_index = int(placeholder.group(1))
+                tokens.append(quoted_parts[quoted_index])
+                i = placeholder.end()
+                continue
+
+            ch = term[i]
+            if ch in '()|':
+                flush(buffer)
+                tokens.append(ch)
+            elif ch == '!' and not buffer:
+                flush(buffer)
+                tokens.append(ch)
+            else:
+                buffer.append(ch)
+            i += 1
+        flush(buffer)
+    return [token for token in tokens if token]
+
+
+def _parse_boolean_expression(tokens: list[str]) -> Optional[BooleanExpression]:
+    if not any(token in {'|', '!', '(', ')'} for token in tokens):
+        return None
+
+    parser = _BooleanParser(tokens)
+    expression = parser.parse()
+    return expression
+
+
+class _BooleanParser:
+    def __init__(self, tokens: list[str]):
+        self._tokens = tokens
+        self._pos = 0
+
+    def parse(self) -> Optional[BooleanExpression]:
+        return self._parse_or()
+
+    def _parse_or(self) -> Optional[BooleanExpression]:
+        nodes = [self._parse_and()]
+        while self._peek() == '|':
+            self._pos += 1
+            nodes.append(self._parse_and())
+        nodes = [node for node in nodes if node is not None]
+        if not nodes:
+            return None
+        if len(nodes) == 1:
+            return nodes[0]
+        return BooleanExpression(BOOL_OR, children=tuple(nodes))
+
+    def _parse_and(self) -> Optional[BooleanExpression]:
+        nodes = []
+        while self._peek() is not None and self._peek() not in {')', '|'}:
+            node = self._parse_not()
+            if node is not None:
+                nodes.append(node)
+        if not nodes:
+            return None
+        if len(nodes) == 1:
+            return nodes[0]
+        return BooleanExpression(BOOL_AND, children=tuple(nodes))
+
+    def _parse_not(self) -> Optional[BooleanExpression]:
+        if self._peek() == '!':
+            self._pos += 1
+            node = self._parse_not()
+            if node is None:
+                return BooleanExpression(BOOL_TERM, term='!')
+            return BooleanExpression(BOOL_NOT, children=(node,))
+        return self._parse_primary()
+
+    def _parse_primary(self) -> Optional[BooleanExpression]:
+        token = self._peek()
+        if token is None:
+            return None
+        if token == '(':
+            self._pos += 1
+            node = self._parse_or()
+            if self._peek() == ')':
+                self._pos += 1
+            return node
+        if token == ')':
+            return None
+        self._pos += 1
+        return BooleanExpression(BOOL_TERM, term=token)
+
+    def _peek(self) -> Optional[str]:
+        if self._pos >= len(self._tokens):
+            return None
+        return self._tokens[self._pos]
+
+
+def _boolean_expression_terms(expression: Optional[BooleanExpression]) -> list[str]:
+    if expression is None:
+        return []
+    if expression.op == BOOL_TERM:
+        return [expression.term]
+    terms: list[str] = []
+    for child in expression.children:
+        terms.extend(_boolean_expression_terms(child))
+    return terms
+
+
+def _legacy_boolean_fields(expression: Optional[BooleanExpression]) -> tuple[list[str], list[str], list[list[str]]]:
+    if expression is None:
+        return [], [], []
+
+    positives: list[str] = []
+    excludes: list[str] = []
+
+    def collect_and_terms(node: BooleanExpression) -> bool:
+        if node.op == BOOL_TERM:
+            positives.append(node.term)
+            return True
+        if node.op == BOOL_NOT and len(node.children) == 1 and node.children[0].op == BOOL_TERM:
+            excludes.append(node.children[0].term)
+            return True
+        if node.op == BOOL_AND:
+            return all(collect_and_terms(child) for child in node.children)
+        return False
+
+    if collect_and_terms(expression):
+        return positives, excludes, []
+
+    or_group = _legacy_or_group(expression)
+    if or_group:
+        return [], [], [or_group]
+    return [], [], []
+
+
+def _legacy_or_group(expression: BooleanExpression) -> list[str]:
+    if expression.op == BOOL_TERM:
+        return [expression.term]
+    if expression.op == BOOL_OR:
+        terms: list[str] = []
+        for child in expression.children:
+            child_terms = _legacy_or_group(child)
+            if not child_terms:
+                return []
+            terms.extend(child_terms)
+        return terms
+    return []
 
 
 def parse_query(raw_query: str, base_options: Optional[SearchOptions] = None,
@@ -419,26 +591,23 @@ def parse_query(raw_query: str, base_options: Optional[SearchOptions] = None,
             i += 1; continue
 
         elif token.startswith('!') and len(token) > 1:
-            parsed.exclude_terms.append(token[1:])
+            remaining_terms.append(token)
             i += 1; continue
 
         else:
             remaining_terms.append(token)
             i += 1
 
-    for j, qp in enumerate(quoted_parts):
-        remaining_terms = [t.replace(f'\x00QUOTED{j}\x00', qp) for t in remaining_terms]
+    boolean_tokens = _tokenize_boolean_terms(remaining_terms, quoted_parts)
+    boolean_expression = _parse_boolean_expression(boolean_tokens)
 
-    final_terms = []
-    combined = ' '.join(remaining_terms)
-
-    if '|' in combined:
-        parts = [p.strip() for p in combined.split('|')]
-        parsed.or_groups.append(parts)
+    if boolean_expression is not None:
+        parsed.boolean_expression = boolean_expression
+        parsed.terms, parsed.exclude_terms, parsed.or_groups = _legacy_boolean_fields(boolean_expression)
     else:
-        final_terms = remaining_terms
-
-    parsed.terms = final_terms
+        for j, qp in enumerate(quoted_parts):
+            remaining_terms = [t.replace(f'\x00QUOTED{j}\x00', qp) for t in remaining_terms]
+        parsed.terms = remaining_terms
 
     if not parsed.options.use_regex:
         for term in parsed.terms:
@@ -452,7 +621,11 @@ def parse_query(raw_query: str, base_options: Optional[SearchOptions] = None,
         elif parsed.options.case_mode == CASE_MODE_INSENSITIVE:
             parsed.options.match_case = False
         elif not parsed.options.match_case:
-            all_text = ' '.join(parsed.terms + [t for g in parsed.or_groups for t in g])
+            all_text = ' '.join(
+                parsed.terms
+                + [t for g in parsed.or_groups for t in g]
+                + _boolean_expression_terms(parsed.boolean_expression)
+            )
             if any(c.isupper() for c in all_text):
                 parsed.options.match_case = True
 
@@ -520,6 +693,8 @@ class SearchEngine:
         if parsed.dupe_mode:
             return False
         if parsed.archive_mode:
+            return False
+        if parsed.boolean_expression:
             return False
         if parsed.or_groups:
             return False
@@ -668,11 +843,12 @@ class SearchEngine:
         term_matchers = self._compile_term_matchers(parsed)
         exclude_matchers = self._compile_exclude_matchers(parsed)
         or_matchers = self._compile_or_matchers(parsed)
+        boolean_matcher = self._compile_boolean_matcher(parsed)
 
         if parsed.archive_mode:
             return self._archive_search(
                 parsed, term_matchers, exclude_matchers, or_matchers,
-                filter_exclude_paths, cancel_check,
+                filter_exclude_paths, cancel_check, boolean_matcher,
             )
 
         results = []
@@ -705,7 +881,10 @@ class SearchEngine:
                 entry.content_snippet = ""
                 entry.content_rank = 0.0
 
-            if self._matches(entry, entry_parsed, term_matchers, exclude_matchers, or_matchers, filter_exclude_paths):
+            if self._matches(
+                entry, entry_parsed, term_matchers, exclude_matchers,
+                or_matchers, filter_exclude_paths, boolean_matcher,
+            ):
                 results.append(entry)
 
         if cancel_check and cancel_check():
@@ -772,7 +951,8 @@ class SearchEngine:
                         exclude_matchers: list,
                         or_matchers: list,
                         filter_exclude_paths: list[str],
-                        cancel_check: Optional[Callable[[], bool]] = None) -> list[FileEntry]:
+                        cancel_check: Optional[Callable[[], bool]] = None,
+                        boolean_matcher: Optional[Callable[[str], bool]] = None) -> list[FileEntry]:
         results = []
         limit = parsed.options.max_results or 0
 
@@ -798,7 +978,10 @@ class SearchEngine:
                 if limit and not parsed.dupe_mode and len(results) >= limit:
                     break
 
-                if self._matches(entry, parsed, term_matchers, exclude_matchers, or_matchers, []):
+                if self._matches(
+                    entry, parsed, term_matchers, exclude_matchers,
+                    or_matchers, [], boolean_matcher,
+                ):
                     results.append(entry)
 
         if cancel_check and cancel_check():
@@ -845,6 +1028,31 @@ class SearchEngine:
             if group_matchers:
                 groups.append(group_matchers)
         return groups
+
+    def _compile_boolean_matcher(self, parsed: ParsedQuery) -> Optional[Callable[[str], bool]]:
+        if parsed.boolean_expression is None:
+            return None
+        return self._compile_boolean_node(parsed.boolean_expression, parsed.options)
+
+    def _compile_boolean_node(self, expression: BooleanExpression,
+                              options: SearchOptions) -> Callable[[str], bool]:
+        if expression.op == BOOL_TERM:
+            return self._make_matcher(expression.term, options)
+        if expression.op == BOOL_NOT:
+            child = self._compile_boolean_node(expression.children[0], options)
+            return lambda text, child=child: not child(text)
+        if expression.op == BOOL_OR:
+            children = [
+                self._compile_boolean_node(child, options)
+                for child in expression.children
+            ]
+            return lambda text, children=children: any(child(text) for child in children)
+
+        children = [
+            self._compile_boolean_node(child, options)
+            for child in expression.children
+        ]
+        return lambda text, children=children: all(child(text) for child in children)
 
     def _make_matcher(self, term: str, options: SearchOptions):
         if options.use_regex:
@@ -893,7 +1101,8 @@ class SearchEngine:
     def _matches(self, entry: FileEntry, parsed: ParsedQuery,
                  term_matchers: list, exclude_matchers: list,
                  or_matchers: list,
-                 filter_exclude_paths: list[str] = None) -> bool:
+                 filter_exclude_paths: list[str] = None,
+                 boolean_matcher: Optional[Callable[[str], bool]] = None) -> bool:
 
         if filter_exclude_paths:
             path = entry.get_path(self._index).lower()
@@ -958,17 +1167,21 @@ class SearchEngine:
             if parsed.parent_filter.lower() not in parent_path.lower():
                 return False
 
-        for matcher in exclude_matchers:
-            if matcher(target):
+        if boolean_matcher is not None:
+            if not boolean_matcher(target):
                 return False
+        else:
+            for matcher in exclude_matchers:
+                if matcher(target):
+                    return False
 
-        for group in or_matchers:
-            if not any(matcher(target) for matcher in group):
-                return False
+            for group in or_matchers:
+                if not any(matcher(target) for matcher in group):
+                    return False
 
-        for matcher in term_matchers:
-            if not matcher(target):
-                return False
+            for matcher in term_matchers:
+                if not matcher(target):
+                    return False
 
         if parsed.content_search and not entry.is_dir:
             if not self.content_search(entry, parsed.content_search, parsed.options.match_case):

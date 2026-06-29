@@ -241,6 +241,14 @@ class TestParseQuery:
         parsed = parse_query("hello | world")
         assert parsed.or_groups == [["hello", "world"]]
         assert parsed.terms == []
+        assert parsed.boolean_expression is not None
+
+    def test_nested_parentheses_create_boolean_expression(self):
+        parsed = parse_query("alpha (beta | gamma) !tmp")
+
+        assert parsed.boolean_expression is not None
+        assert parsed.terms == []
+        assert parsed.exclude_terms == []
 
     def test_regex_invalid_pattern(self):
         parsed = parse_query("regex:[invalid")
@@ -540,3 +548,50 @@ class TestQuerySlotSearch:
         )
 
         assert [entry.name for entry in results] == ["app.log"]
+
+
+class TestBooleanExpressionSearch:
+    def test_nested_parentheses_apply_implicit_and(self):
+        entries = [
+            _entry("alpha-beta.txt", 1),
+            _entry("alpha-gamma.txt", 2),
+            _entry("beta-only.txt", 3),
+        ]
+        engine = SearchEngine(FakeIndex(entries))
+
+        results = engine.search(
+            "alpha (beta | gamma)",
+            base_options=SearchOptions(match_case=True),
+        )
+
+        assert [entry.name for entry in results] == ["alpha-beta.txt", "alpha-gamma.txt"]
+
+    def test_and_precedence_beats_or(self):
+        entries = [
+            _entry("alpha.txt", 1),
+            _entry("beta-gamma.txt", 2),
+            _entry("beta.txt", 3),
+        ]
+        engine = SearchEngine(FakeIndex(entries))
+
+        results = engine.search(
+            "alpha | beta gamma",
+            base_options=SearchOptions(match_case=True),
+        )
+
+        assert [entry.name for entry in results] == ["alpha.txt", "beta-gamma.txt"]
+
+    def test_not_excludes_parenthesized_group(self):
+        entries = [
+            _entry("alpha-report.txt", 1),
+            _entry("alpha-temp.txt", 2),
+            _entry("alpha-cache.txt", 3),
+        ]
+        engine = SearchEngine(FakeIndex(entries))
+
+        results = engine.search(
+            "alpha !(temp | cache)",
+            base_options=SearchOptions(match_case=True),
+        )
+
+        assert [entry.name for entry in results] == ["alpha-report.txt"]

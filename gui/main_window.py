@@ -76,6 +76,7 @@ SYNTAX_HELP = """Search Syntax:
   "exact match"   Quoted exact phrase
   term1 term2     AND (both must match)
   term1 | term2   OR (either matches)
+  (foo | bar) baz Nested boolean groups; NOT > AND > OR
   !term           NOT (exclude matches)"""
 
 
