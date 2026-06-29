@@ -44,6 +44,7 @@ class Settings:
     drive_startup_delay_seconds: int = 0
     exclude_hidden: bool = False
     exclude_system: bool = False
+    follow_reparse_points: bool = False
 
     # Search
     default_match_case: bool = False
@@ -184,6 +185,9 @@ class SettingsDialog(QDialog):
 
         self._exclude_system = QCheckBox("Exclude system files from index")
         idx_form.addRow(self._exclude_system)
+
+        self._follow_reparse = QCheckBox("Follow symbolic links and junctions")
+        idx_form.addRow(self._follow_reparse)
 
         general_layout.addWidget(idx_group)
 
@@ -429,6 +433,7 @@ class SettingsDialog(QDialog):
         self._drive_startup_delay.setValue(s.drive_startup_delay_seconds)
         self._exclude_hidden.setChecked(s.exclude_hidden)
         self._exclude_system.setChecked(s.exclude_system)
+        self._follow_reparse.setChecked(s.follow_reparse_points)
         self._default_case.setChecked(s.default_match_case)
         self._default_regex.setChecked(s.default_regex)
         self._max_results.setValue(s.default_max_results)
@@ -471,6 +476,7 @@ class SettingsDialog(QDialog):
         s.drive_startup_delay_seconds = self._drive_startup_delay.value()
         s.exclude_hidden = self._exclude_hidden.isChecked()
         s.exclude_system = self._exclude_system.isChecked()
+        s.follow_reparse_points = self._follow_reparse.isChecked()
         s.default_match_case = self._default_case.isChecked()
         s.default_regex = self._default_regex.isChecked()
         s.default_max_results = self._max_results.value()

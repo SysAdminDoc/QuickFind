@@ -25,7 +25,7 @@ from PyQt6.QtCore import QObject, pyqtSignal, QThread, QTimer
 from core.ntfs import (
     NTFSVolume, FileRecord, USNRecord, get_ntfs_drives, get_all_drives, DriveInfo,
     FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_ARCHIVE,
-    FILE_ATTRIBUTE_HIDDEN, FILE_ATTRIBUTE_SYSTEM,
+    FILE_ATTRIBUTE_HIDDEN, FILE_ATTRIBUTE_SYSTEM, FILE_ATTRIBUTE_REPARSE_POINT,
     USN_REASON_FILE_CREATE, USN_REASON_FILE_DELETE,
     USN_REASON_RENAME_OLD_NAME, USN_REASON_RENAME_NEW_NAME,
     USN_REASON_CLOSE, USN_REASON_BASIC_INFO_CHANGE,
@@ -184,6 +184,7 @@ class FileIndex(QObject):
         # Filtering options (set from settings before indexing)
         self._exclude_hidden: bool = False
         self._exclude_system: bool = False
+        self._follow_reparse_points: bool = False
         self._usn_poll_interval_ms: int = 1000
         self._drive_rescan_intervals: dict[str, int] = {}
 
@@ -762,6 +763,32 @@ class FileIndex(QObject):
                 return True
         return False
 
+    @staticmethod
+    def _directory_identity(path: str):
+        """Stable identity for loop-safe directory traversal."""
+        try:
+            st = os.stat(path)
+            dev = getattr(st, "st_dev", 0)
+            ino = getattr(st, "st_ino", 0)
+            if dev or ino:
+                return ("stat", dev, ino)
+        except (OSError, PermissionError):
+            pass
+        try:
+            resolved = os.path.realpath(path)
+        except (OSError, ValueError):
+            resolved = os.path.abspath(path)
+        return ("path", os.path.normcase(resolved))
+
+    @classmethod
+    def _reserve_directory_for_walk(cls, path: str, visited: set) -> bool:
+        """Return True once per resolved directory target."""
+        identity = cls._directory_identity(path)
+        if identity in visited:
+            return False
+        visited.add(identity)
+        return True
+
     def _walk_drive(self, drive_letter: str):
         """
         Index a non-NTFS drive (FAT32, exFAT, ReFS) or fallback drive via recursive os.scandir.
@@ -790,6 +817,8 @@ class FileIndex(QObject):
         # Entries are popped after processing so memory stays proportional
         # to current stack depth rather than total directory count.
         dir_frn_map: dict[str, int] = {root: root_frn}
+        visited_dirs = set()
+        self._reserve_directory_for_walk(root, visited_dirs)
         total = 0
         callback_interval = 10000
 
@@ -814,13 +843,28 @@ class FileIndex(QObject):
                             name = de.name
                             if ignore_patterns and self._matches_ignore(name, ignore_patterns):
                                 continue
-                            is_dir = de.is_dir(follow_symlinks=False)
                             st = de.stat(follow_symlinks=False)
+                            raw_attrs = getattr(st, "st_file_attributes", 0)
+                            is_reparse = bool(raw_attrs & FILE_ATTRIBUTE_REPARSE_POINT)
+                            try:
+                                is_reparse = is_reparse or de.is_symlink()
+                            except OSError:
+                                pass
+                            is_dir = bool(raw_attrs & FILE_ATTRIBUTE_DIRECTORY) if raw_attrs else de.is_dir(follow_symlinks=False)
+                            if is_reparse and self._follow_reparse_points:
+                                try:
+                                    is_dir = is_dir or de.is_dir(follow_symlinks=True)
+                                except OSError:
+                                    pass
 
                             self._next_synthetic_frn += 1
                             frn = self._next_synthetic_frn
 
-                            attrs = FILE_ATTRIBUTE_DIRECTORY if is_dir else FILE_ATTRIBUTE_ARCHIVE
+                            attrs = raw_attrs or (FILE_ATTRIBUTE_DIRECTORY if is_dir else FILE_ATTRIBUTE_ARCHIVE)
+                            if is_dir:
+                                attrs |= FILE_ATTRIBUTE_DIRECTORY
+                            elif not attrs:
+                                attrs = FILE_ATTRIBUTE_ARCHIVE
 
                             entry = FileEntry(
                                 frn=frn,
@@ -838,8 +882,14 @@ class FileIndex(QObject):
 
                             if is_dir:
                                 full_path = de.path
-                                dir_frn_map[full_path] = frn
-                                stack.append(full_path)
+                                should_descend = (
+                                    not is_reparse or self._follow_reparse_points
+                                )
+                                if should_descend and self._reserve_directory_for_walk(full_path, visited_dirs):
+                                    dir_frn_map[full_path] = frn
+                                    stack.append(full_path)
+                                elif is_reparse:
+                                    logger.debug("Skipped reparse directory during walk: %s", full_path)
 
                             if total % callback_interval == 0:
                                 self.indexing_progress.emit(drive_letter, total)

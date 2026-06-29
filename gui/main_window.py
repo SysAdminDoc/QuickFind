@@ -187,6 +187,7 @@ class MainWindow(QMainWindow):
         # Wire exclude/USN settings to FileIndex
         self._file_index._exclude_hidden = self._settings.exclude_hidden
         self._file_index._exclude_system = self._settings.exclude_system
+        self._file_index._follow_reparse_points = self._settings.follow_reparse_points
         self._file_index._usn_poll_interval_ms = self._settings.usn_poll_interval_ms
 
         # Start maximized
@@ -1674,6 +1675,9 @@ class MainWindow(QMainWindow):
         dialog.exec()
 
     def _on_settings_changed(self, new_settings: Settings):
+        reparse_follow_changed = (
+            self._settings.follow_reparse_points != new_settings.follow_reparse_points
+        )
         self._settings = new_settings
         self._settings.save()
         self._apply_settings()
@@ -1681,6 +1685,7 @@ class MainWindow(QMainWindow):
         # Sync exclude/USN settings to FileIndex
         self._file_index._exclude_hidden = self._settings.exclude_hidden
         self._file_index._exclude_system = self._settings.exclude_system
+        self._file_index._follow_reparse_points = self._settings.follow_reparse_points
         self._file_index._usn_poll_interval_ms = self._settings.usn_poll_interval_ms
         if hasattr(self, '_launcher_popup'):
             self._launcher_popup.set_dialog_quick_switch_enabled(
@@ -1688,6 +1693,9 @@ class MainWindow(QMainWindow):
             )
         self._file_index._rebuild_flat_list()
         self._trigger_search()
+        if reparse_follow_changed:
+            self._status_label.setText("Re-indexing to apply link traversal setting...")
+            self._start_indexing()
 
     # ── Window management ──────────────────────────────
 

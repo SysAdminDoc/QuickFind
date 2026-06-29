@@ -5,10 +5,75 @@ import os
 import tempfile
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import pytest
 import core.index as index_mod
 from core.index import FileEntry, FileIndex, NTFS_ROOT_FRN
-from core.ntfs import DRIVE_FIXED, FILE_ATTRIBUTE_DIRECTORY, DriveInfo
+from core.ntfs import (
+    DRIVE_FIXED, FILE_ATTRIBUTE_ARCHIVE, FILE_ATTRIBUTE_DIRECTORY,
+    FILE_ATTRIBUTE_REPARSE_POINT, DriveInfo,
+)
+
+
+class FakeStat:
+    def __init__(self, attrs: int, dev: int = 1, ino: int = 1, size: int = 0):
+        self.st_file_attributes = attrs
+        self.st_dev = dev
+        self.st_ino = ino
+        self.st_size = size
+        self.st_mtime = 1
+        self.st_ctime = 1
+
+
+class FakeDirEntry:
+    def __init__(self, name: str, path: str, attrs: int,
+                 entry_is_dir: bool, target_is_dir: bool, size: int = 0):
+        self.name = name
+        self.path = path
+        self._attrs = attrs
+        self._entry_is_dir = entry_is_dir
+        self._target_is_dir = target_is_dir
+        self._size = size
+
+    def is_dir(self, follow_symlinks: bool = True) -> bool:
+        return self._target_is_dir if follow_symlinks else self._entry_is_dir
+
+    def is_symlink(self) -> bool:
+        return bool(self._attrs & FILE_ATTRIBUTE_REPARSE_POINT)
+
+    def stat(self, follow_symlinks: bool = True) -> FakeStat:
+        return FakeStat(self._attrs, size=self._size)
+
+
+class FakeScandir:
+    def __init__(self, entries: list[FakeDirEntry]):
+        self._entries = entries
+
+    def __enter__(self):
+        return iter(self._entries)
+
+    def __exit__(self, _exc_type, _exc, _tb):
+        return False
+
+
+def install_fake_walk(monkeypatch, tree: dict[str, list[FakeDirEntry]],
+                      identities: dict[str, tuple[int, int]]):
+    monkeypatch.setattr(index_mod, "get_all_drives", lambda: [])
+    monkeypatch.setattr(
+        index_mod.FileIndex,
+        "_load_ignore_patterns",
+        staticmethod(lambda _path: []),
+    )
+    monkeypatch.setattr(index_mod.os.path, "exists", lambda path: path in tree)
+    monkeypatch.setattr(
+        index_mod.os,
+        "scandir",
+        lambda path: FakeScandir(tree.get(path, [])),
+    )
+
+    def fake_stat(path: str):
+        dev, ino = identities[path]
+        return FakeStat(FILE_ATTRIBUTE_DIRECTORY, dev=dev, ino=ino)
+
+    monkeypatch.setattr(index_mod.os, "stat", fake_stat)
 
 
 class TestIgnorePatterns:
@@ -145,3 +210,62 @@ class TestIndexMode:
         drive = index.drive_diagnostics()[0]
         assert drive["state"] == "offline"
         assert drive["stale"] is True
+
+    def test_walk_drive_skips_reparse_descendants_by_default(self, monkeypatch):
+        root = "E:\\"
+        link = "E:\\Link"
+        child = "E:\\Link\\child.txt"
+        reparse_dir = FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT
+        tree = {
+            root: [FakeDirEntry("Link", link, reparse_dir, True, True)],
+            link: [FakeDirEntry("child.txt", child, FILE_ATTRIBUTE_ARCHIVE, False, False, size=4)],
+        }
+        install_fake_walk(monkeypatch, tree, {root: (1, 1), link: (1, 2)})
+
+        index = FileIndex()
+        count = index._walk_drive("E")
+        names = {entry.name for entry in index._entries["E"].values()}
+
+        assert count == 1
+        assert "Link" in names
+        assert "child.txt" not in names
+
+    def test_walk_drive_follows_reparse_dirs_when_enabled(self, monkeypatch):
+        root = "E:\\"
+        link = "E:\\Link"
+        child = "E:\\Link\\child.txt"
+        reparse_dir = FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT
+        tree = {
+            root: [FakeDirEntry("Link", link, reparse_dir, True, True)],
+            link: [FakeDirEntry("child.txt", child, FILE_ATTRIBUTE_ARCHIVE, False, False, size=4)],
+        }
+        install_fake_walk(monkeypatch, tree, {root: (1, 1), link: (1, 2)})
+
+        index = FileIndex()
+        index._follow_reparse_points = True
+        count = index._walk_drive("E")
+        names = {entry.name for entry in index._entries["E"].values()}
+
+        assert count == 2
+        assert "Link" in names
+        assert "child.txt" in names
+
+    def test_walk_drive_does_not_follow_reparse_loops(self, monkeypatch):
+        root = "E:\\"
+        loop = "E:\\Loop"
+        child = "E:\\Loop\\child.txt"
+        reparse_dir = FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT
+        tree = {
+            root: [FakeDirEntry("Loop", loop, reparse_dir, True, True)],
+            loop: [FakeDirEntry("child.txt", child, FILE_ATTRIBUTE_ARCHIVE, False, False, size=4)],
+        }
+        install_fake_walk(monkeypatch, tree, {root: (1, 1), loop: (1, 1)})
+
+        index = FileIndex()
+        index._follow_reparse_points = True
+        count = index._walk_drive("E")
+        names = {entry.name for entry in index._entries["E"].values()}
+
+        assert count == 1
+        assert "Loop" in names
+        assert "child.txt" not in names

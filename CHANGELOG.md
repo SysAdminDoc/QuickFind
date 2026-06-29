@@ -2,6 +2,12 @@
 
 All notable changes to QuickFind will be documented in this file.
 
+## [v0.8.13] - 2026-06-29
+
+- Added an opt-in symbolic link and junction traversal setting for directory-walk indexing.
+- Added visited-target loop protection so followed links cannot recurse into already indexed directories.
+- Re-index automatically when the link traversal setting changes and expanded the passing suite to 229 tests.
+
 ## [v0.8.12] - 2026-06-29
 
 - Added an opt-in Open/Save dialog Quick Switch prototype for sending selected folders to the active common file dialog.
