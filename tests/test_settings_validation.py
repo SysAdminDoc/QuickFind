@@ -1,5 +1,7 @@
 """Tests for persisted settings validation."""
 
+from core.ntfs import FILE_ATTRIBUTE_HIDDEN, FILE_ATTRIBUTE_REPARSE_POINT
+from gui.settings_dialog import attribute_mask_to_text, attribute_text_to_mask, split_rule_text
 from gui.settings_validation import sanitize_settings_data
 
 
@@ -22,6 +24,9 @@ DEFAULTS = {
     "content_index_max_cache_mb": 512,
     "content_index_max_file_mb": 10,
     "index_case_mode": "smart",
+    "exclude_globs": [],
+    "exclude_regexes": [],
+    "exclude_attribute_mask": 0,
 }
 
 
@@ -128,3 +133,39 @@ def test_invalid_index_case_mode_resets_to_default():
 
     assert sanitized["index_case_mode"] == "smart"
     assert any("index_case_mode reset" in warning for warning in warnings)
+
+
+def test_exclude_rule_settings_are_validated():
+    sanitized, warnings = sanitize_settings_data(
+        {
+            "exclude_globs": [" *.tmp ", "", 7],
+            "exclude_regexes": [r"cache\d+", "(", None],
+            "exclude_attribute_mask": str(FILE_ATTRIBUTE_REPARSE_POINT),
+        },
+        DEFAULTS,
+    )
+
+    assert sanitized["exclude_globs"] == ["*.tmp"]
+    assert sanitized["exclude_regexes"] == [r"cache\d+"]
+    assert sanitized["exclude_attribute_mask"] == FILE_ATTRIBUTE_REPARSE_POINT
+    assert any("invalid exclude_globs entry" in warning for warning in warnings)
+    assert any("invalid exclude_regexes entry" in warning for warning in warnings)
+    assert any("Ignored invalid exclude_regexes entry" in warning for warning in warnings)
+
+
+def test_invalid_exclude_attribute_mask_resets_to_default():
+    sanitized, warnings = sanitize_settings_data(
+        {"exclude_attribute_mask": 0x1_0000_0000},
+        DEFAULTS,
+    )
+
+    assert sanitized["exclude_attribute_mask"] == 0
+    assert any("exclude_attribute_mask reset" in warning for warning in warnings)
+
+
+def test_exclude_attribute_text_round_trips_codes_and_numeric_masks():
+    mask = attribute_text_to_mask("H;L;0x20")
+
+    assert mask == FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_REPARSE_POINT | 0x20
+    assert split_rule_text(" *.tmp ;\ncache*;;") == ["*.tmp", "cache*"]
+    assert attribute_mask_to_text(FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_REPARSE_POINT) == "H;L"

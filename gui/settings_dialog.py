@@ -15,6 +15,23 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt, pyqtSignal
 
+from core.ntfs import (
+    FILE_ATTRIBUTE_ARCHIVE,
+    FILE_ATTRIBUTE_COMPRESSED,
+    FILE_ATTRIBUTE_DEVICE,
+    FILE_ATTRIBUTE_DIRECTORY,
+    FILE_ATTRIBUTE_EA,
+    FILE_ATTRIBUTE_ENCRYPTED,
+    FILE_ATTRIBUTE_HIDDEN,
+    FILE_ATTRIBUTE_NORMAL,
+    FILE_ATTRIBUTE_NOT_CONTENT_INDEXED,
+    FILE_ATTRIBUTE_OFFLINE,
+    FILE_ATTRIBUTE_READONLY,
+    FILE_ATTRIBUTE_REPARSE_POINT,
+    FILE_ATTRIBUTE_SPARSE_FILE,
+    FILE_ATTRIBUTE_SYSTEM,
+    FILE_ATTRIBUTE_TEMPORARY,
+)
 from gui.theme import MOCHA
 from gui.settings_validation import sanitize_settings_data
 
@@ -38,6 +55,57 @@ INDEX_CASE_MODE_CHOICES = [
     ("Case-sensitive", "sensitive"),
 ]
 
+ATTRIBUTE_CODE_TO_MASK = {
+    "R": FILE_ATTRIBUTE_READONLY,
+    "H": FILE_ATTRIBUTE_HIDDEN,
+    "S": FILE_ATTRIBUTE_SYSTEM,
+    "D": FILE_ATTRIBUTE_DIRECTORY,
+    "A": FILE_ATTRIBUTE_ARCHIVE,
+    "DEV": FILE_ATTRIBUTE_DEVICE,
+    "N": FILE_ATTRIBUTE_NORMAL,
+    "T": FILE_ATTRIBUTE_TEMPORARY,
+    "P": FILE_ATTRIBUTE_SPARSE_FILE,
+    "L": FILE_ATTRIBUTE_REPARSE_POINT,
+    "C": FILE_ATTRIBUTE_COMPRESSED,
+    "O": FILE_ATTRIBUTE_OFFLINE,
+    "I": FILE_ATTRIBUTE_NOT_CONTENT_INDEXED,
+    "E": FILE_ATTRIBUTE_ENCRYPTED,
+    "EA": FILE_ATTRIBUTE_EA,
+}
+
+
+def split_rule_text(text: str) -> list[str]:
+    return [part.strip() for part in text.replace("\n", ";").split(";") if part.strip()]
+
+
+def attribute_mask_to_text(mask: int) -> str:
+    remaining = int(mask or 0)
+    parts: list[str] = []
+    for code, value in ATTRIBUTE_CODE_TO_MASK.items():
+        if remaining & value:
+            parts.append(code)
+            remaining &= ~value
+    if remaining:
+        parts.append(hex(remaining))
+    return ";".join(parts)
+
+
+def attribute_text_to_mask(text: str) -> int:
+    mask = 0
+    for raw_token in text.replace(",", ";").split(";"):
+        token = raw_token.strip()
+        if not token:
+            continue
+        code = token.upper()
+        if code in ATTRIBUTE_CODE_TO_MASK:
+            mask |= ATTRIBUTE_CODE_TO_MASK[code]
+            continue
+        try:
+            mask |= int(token, 0)
+        except ValueError as exc:
+            raise ValueError(f"Unknown file attribute code: {token}") from exc
+    return mask
+
 
 @dataclass
 class Settings:
@@ -50,6 +118,9 @@ class Settings:
     drive_startup_delay_seconds: int = 0
     exclude_hidden: bool = False
     exclude_system: bool = False
+    exclude_globs: list[str] = field(default_factory=list)
+    exclude_regexes: list[str] = field(default_factory=list)
+    exclude_attribute_mask: int = 0
     follow_reparse_points: bool = False
     index_case_mode: str = "smart"
 
@@ -192,6 +263,18 @@ class SettingsDialog(QDialog):
 
         self._exclude_system = QCheckBox("Exclude system files from index")
         idx_form.addRow(self._exclude_system)
+
+        self._exclude_globs = QLineEdit()
+        self._exclude_globs.setPlaceholderText("Example: *.tmp;node_modules;*\\build\\*")
+        idx_form.addRow("Exclude globs:", self._exclude_globs)
+
+        self._exclude_regexes = QLineEdit()
+        self._exclude_regexes.setPlaceholderText("Semicolon-separated regex patterns")
+        idx_form.addRow("Exclude regexes:", self._exclude_regexes)
+
+        self._exclude_attributes = QLineEdit()
+        self._exclude_attributes.setPlaceholderText("Example: H;S;L or 0x400")
+        idx_form.addRow("Exclude attributes:", self._exclude_attributes)
 
         self._follow_reparse = QCheckBox("Follow symbolic links and junctions")
         idx_form.addRow(self._follow_reparse)
@@ -445,6 +528,9 @@ class SettingsDialog(QDialog):
         self._drive_startup_delay.setValue(s.drive_startup_delay_seconds)
         self._exclude_hidden.setChecked(s.exclude_hidden)
         self._exclude_system.setChecked(s.exclude_system)
+        self._exclude_globs.setText(";".join(s.exclude_globs))
+        self._exclude_regexes.setText(";".join(s.exclude_regexes))
+        self._exclude_attributes.setText(attribute_mask_to_text(s.exclude_attribute_mask))
         self._follow_reparse.setChecked(s.follow_reparse_points)
         mode_index = self._index_case_mode.findData(s.index_case_mode)
         self._index_case_mode.setCurrentIndex(max(0, mode_index))
@@ -490,6 +576,13 @@ class SettingsDialog(QDialog):
         s.drive_startup_delay_seconds = self._drive_startup_delay.value()
         s.exclude_hidden = self._exclude_hidden.isChecked()
         s.exclude_system = self._exclude_system.isChecked()
+        s.exclude_globs = split_rule_text(self._exclude_globs.text())
+        s.exclude_regexes = split_rule_text(self._exclude_regexes.text())
+        try:
+            s.exclude_attribute_mask = attribute_text_to_mask(self._exclude_attributes.text())
+        except ValueError as exc:
+            QMessageBox.warning(self, "Invalid Attribute Filter", str(exc))
+            return False
         s.follow_reparse_points = self._follow_reparse.isChecked()
         s.index_case_mode = self._index_case_mode.currentData() or "smart"
         s.default_match_case = self._default_case.isChecked()

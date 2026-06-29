@@ -9,7 +9,7 @@ import core.index as index_mod
 from core.index import FileEntry, FileIndex, NTFS_ROOT_FRN
 from core.ntfs import (
     DRIVE_FIXED, FILE_ATTRIBUTE_ARCHIVE, FILE_ATTRIBUTE_DIRECTORY,
-    FILE_ATTRIBUTE_REPARSE_POINT, DriveInfo,
+    FILE_ATTRIBUTE_HIDDEN, FILE_ATTRIBUTE_REPARSE_POINT, DriveInfo,
 )
 
 
@@ -108,6 +108,81 @@ class TestIgnorePatterns:
 
     def test_no_patterns(self):
         assert FileIndex._matches_ignore("anything", []) is False
+
+
+class TestExcludeRules:
+    def test_should_exclude_by_attribute_mask(self):
+        index = FileIndex()
+        index.set_exclude_rules(attribute_mask=FILE_ATTRIBUTE_REPARSE_POINT)
+        entry = FileEntry(
+            10,
+            NTFS_ROOT_FRN,
+            "Link",
+            "C",
+            FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT,
+        )
+
+        assert index._should_exclude(entry) is True
+
+    def test_should_exclude_by_glob_name_or_path(self):
+        index = FileIndex()
+        index.set_exclude_rules(globs=["*.tmp", "*\\build\\*"])
+
+        temp_entry = FileEntry(10, NTFS_ROOT_FRN, "scratch.tmp", "C")
+        path_entry = FileEntry(11, NTFS_ROOT_FRN, "main.py", "C")
+        path_entry._path = "C:\\repo\\build\\main.py"
+        keep_entry = FileEntry(12, NTFS_ROOT_FRN, "main.py", "C")
+        keep_entry._path = "C:\\repo\\src\\main.py"
+
+        assert index._should_exclude(temp_entry) is True
+        assert index._should_exclude(path_entry) is True
+        assert index._should_exclude(keep_entry) is False
+
+    def test_should_exclude_by_regex_name_or_path(self):
+        index = FileIndex()
+        index.set_exclude_rules(regexes=[r"cache\d+", r"\\Generated\\"])
+        cache_entry = FileEntry(10, NTFS_ROOT_FRN, "cache12.db", "C")
+        generated_entry = FileEntry(11, NTFS_ROOT_FRN, "model.cs", "C")
+        generated_entry._path = "C:\\repo\\Generated\\model.cs"
+
+        assert index._should_exclude(cache_entry) is True
+        assert index._should_exclude(generated_entry) is True
+
+    def test_rebuild_flat_list_removes_excluded_entries(self):
+        index = FileIndex()
+        hidden_entry = FileEntry(10, NTFS_ROOT_FRN, "secret.txt", "C", FILE_ATTRIBUTE_HIDDEN)
+        keep_entry = FileEntry(11, NTFS_ROOT_FRN, "visible.txt", "C", FILE_ATTRIBUTE_ARCHIVE)
+        index._entries = {
+            "C": {
+                NTFS_ROOT_FRN: FileEntry(NTFS_ROOT_FRN, 0, "", "C", FILE_ATTRIBUTE_DIRECTORY),
+                10: hidden_entry,
+                11: keep_entry,
+            }
+        }
+        index.set_exclude_rules(attribute_mask=FILE_ATTRIBUTE_HIDDEN)
+
+        index._rebuild_flat_list()
+
+        assert index._all_entries == [keep_entry]
+
+    def test_walk_drive_does_not_descend_excluded_directories(self, monkeypatch):
+        root = "E:\\"
+        build = "E:\\build"
+        child = "E:\\build\\child.txt"
+        tree = {
+            root: [FakeDirEntry("build", build, FILE_ATTRIBUTE_DIRECTORY, True, True)],
+            build: [FakeDirEntry("child.txt", child, FILE_ATTRIBUTE_ARCHIVE, False, False, size=4)],
+        }
+        install_fake_walk(monkeypatch, tree, {root: (1, 1)})
+
+        index = FileIndex()
+        index.set_exclude_rules(globs=["build"])
+        count = index._walk_drive("E")
+        names = {entry.name for entry in index._entries["E"].values()}
+
+        assert count == 0
+        assert "build" not in names
+        assert "child.txt" not in names
 
 
 class TestIndexMode:

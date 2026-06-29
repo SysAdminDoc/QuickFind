@@ -1,5 +1,6 @@
 """Validation helpers for persisted and imported settings data."""
 
+import re
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -14,6 +15,7 @@ INT_RANGES = {
     "window_height": (480, 10000),
     "content_index_max_cache_mb": (1, 102400),
     "content_index_max_file_mb": (1, 1024),
+    "exclude_attribute_mask": (0, 0xFFFFFFFF),
 }
 
 STRING_FIELDS = {
@@ -24,6 +26,11 @@ STRING_FIELDS = {
 }
 
 INDEX_CASE_MODES = {"smart", "insensitive", "sensitive"}
+
+STRING_LIST_FIELDS = {
+    "exclude_globs",
+    "exclude_regexes",
+}
 
 
 def _path_exists(path: str) -> bool:
@@ -44,6 +51,22 @@ def _coerce_int(name: str, value: Any, default: int, warnings: list[str]) -> int
     return coerced
 
 
+def _coerce_string_list(name: str, value: Any, warnings: list[str]) -> list[str]:
+    if not isinstance(value, list):
+        warnings.append(f"{name} reset because it was not a list.")
+        return []
+
+    cleaned: list[str] = []
+    for item in value:
+        if not isinstance(item, str):
+            warnings.append(f"Ignored an invalid {name} entry.")
+            continue
+        text = item.strip()
+        if text:
+            cleaned.append(text)
+    return cleaned
+
+
 def sanitize_settings_data(
     data: Mapping[str, Any],
     defaults: Mapping[str, Any],
@@ -62,6 +85,19 @@ def sanitize_settings_data(
     for name in STRING_FIELDS:
         value = sanitized.get(name, "")
         sanitized[name] = value.strip() if isinstance(value, str) else ""
+
+    for name in STRING_LIST_FIELDS:
+        sanitized[name] = _coerce_string_list(name, sanitized.get(name, []), warnings)
+
+    valid_regexes = []
+    for pattern in sanitized["exclude_regexes"]:
+        try:
+            re.compile(pattern)
+        except re.error as exc:
+            warnings.append(f"Ignored invalid exclude_regexes entry {pattern!r}: {exc}")
+            continue
+        valid_regexes.append(pattern)
+    sanitized["exclude_regexes"] = valid_regexes
 
     index_case_mode = sanitized.get("index_case_mode", defaults.get("index_case_mode", "smart"))
     if not isinstance(index_case_mode, str) or index_case_mode not in INDEX_CASE_MODES:

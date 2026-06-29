@@ -2,6 +2,12 @@
 
 All notable changes to QuickFind will be documented in this file.
 
+## [v0.8.16] - 2026-06-29
+
+- Added persisted global exclude rules for glob, regex, and NTFS attribute-mask filters.
+- Wired exclude rules into settings, index rebuilds, directory-walk traversal skips, and flat-result filtering.
+- Added exclude-rule validation/indexing coverage and expanded the passing suite to 246 tests.
+
 ## [v0.8.15] - 2026-06-29
 
 - Added reparse tag and NTFS extended-attribute metadata to `FileEntry` and cache records.

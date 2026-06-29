@@ -187,12 +187,7 @@ class MainWindow(QMainWindow):
         # Dark title bar
         _set_dark_title_bar(int(self.winId()))
 
-        # Wire exclude/USN settings to FileIndex
-        self._file_index._exclude_hidden = self._settings.exclude_hidden
-        self._file_index._exclude_system = self._settings.exclude_system
-        self._file_index._follow_reparse_points = self._settings.follow_reparse_points
-        self._file_index._index_case_mode = self._settings.index_case_mode
-        self._file_index._usn_poll_interval_ms = self._settings.usn_poll_interval_ms
+        self._sync_file_index_settings()
 
         # Start maximized
         if self._settings.start_maximized:
@@ -941,9 +936,21 @@ class MainWindow(QMainWindow):
             from core.cache import add_search_history
             add_search_history(query, count)
             # Refresh autocomplete
-            self._refresh_search_history()
         else:
             self.setWindowTitle(f"{count:,} objects - {APP_TITLE}")
+        self._refresh_search_history()
+
+    def _sync_file_index_settings(self):
+        self._file_index._exclude_hidden = self._settings.exclude_hidden
+        self._file_index._exclude_system = self._settings.exclude_system
+        self._file_index.set_exclude_rules(
+            globs=self._settings.exclude_globs,
+            regexes=self._settings.exclude_regexes,
+            attribute_mask=self._settings.exclude_attribute_mask,
+        )
+        self._file_index._follow_reparse_points = self._settings.follow_reparse_points
+        self._file_index._index_case_mode = self._settings.index_case_mode
+        self._file_index._usn_poll_interval_ms = self._settings.usn_poll_interval_ms
 
     def _refresh_search_history(self):
         """Refresh the search history autocomplete list."""
@@ -1685,27 +1692,30 @@ class MainWindow(QMainWindow):
         dialog.exec()
 
     def _on_settings_changed(self, new_settings: Settings):
+        old_settings = self._settings
         reparse_follow_changed = (
-            self._settings.follow_reparse_points != new_settings.follow_reparse_points
+            old_settings.follow_reparse_points != new_settings.follow_reparse_points
+        )
+        exclude_rules_changed = (
+            old_settings.exclude_hidden != new_settings.exclude_hidden
+            or old_settings.exclude_system != new_settings.exclude_system
+            or old_settings.exclude_globs != new_settings.exclude_globs
+            or old_settings.exclude_regexes != new_settings.exclude_regexes
+            or old_settings.exclude_attribute_mask != new_settings.exclude_attribute_mask
         )
         self._settings = new_settings
         self._settings.save()
         self._apply_settings()
 
-        # Sync exclude/USN settings to FileIndex
-        self._file_index._exclude_hidden = self._settings.exclude_hidden
-        self._file_index._exclude_system = self._settings.exclude_system
-        self._file_index._follow_reparse_points = self._settings.follow_reparse_points
-        self._file_index._index_case_mode = self._settings.index_case_mode
-        self._file_index._usn_poll_interval_ms = self._settings.usn_poll_interval_ms
+        self._sync_file_index_settings()
         if hasattr(self, '_launcher_popup'):
             self._launcher_popup.set_dialog_quick_switch_enabled(
                 self._settings.enable_dialog_quick_switch
             )
         self._file_index._rebuild_flat_list()
         self._trigger_search()
-        if reparse_follow_changed:
-            self._status_label.setText("Re-indexing to apply link traversal setting...")
+        if reparse_follow_changed or exclude_rules_changed:
+            self._status_label.setText("Re-indexing to apply traversal/exclude settings...")
             self._start_indexing()
 
     # ── Window management ──────────────────────────────

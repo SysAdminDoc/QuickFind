@@ -13,6 +13,7 @@ import time
 import fnmatch
 import logging
 import threading
+import re
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
@@ -190,6 +191,10 @@ class FileIndex(QObject):
         # Filtering options (set from settings before indexing)
         self._exclude_hidden: bool = False
         self._exclude_system: bool = False
+        self._exclude_globs: list[str] = []
+        self._exclude_regexes: list[str] = []
+        self._exclude_regex_objects: list[re.Pattern] = []
+        self._exclude_attribute_mask: int = 0
         self._follow_reparse_points: bool = False
         self._index_case_mode: str = "smart"
         self._usn_poll_interval_ms: int = 1000
@@ -217,6 +222,19 @@ class FileIndex(QObject):
 
     def set_external_source(self, source: str) -> None:
         self._last_index_source = source or "external source"
+
+    def set_exclude_rules(self, globs: Optional[list[str]] = None,
+                          regexes: Optional[list[str]] = None,
+                          attribute_mask: int = 0) -> None:
+        self._exclude_globs = [p.strip() for p in (globs or []) if p and p.strip()]
+        self._exclude_regexes = [p.strip() for p in (regexes or []) if p and p.strip()]
+        self._exclude_attribute_mask = int(attribute_mask or 0)
+        self._exclude_regex_objects = []
+        for pattern in self._exclude_regexes:
+            try:
+                self._exclude_regex_objects.append(re.compile(pattern, re.IGNORECASE))
+            except re.error as exc:
+                logger.warning("Ignoring invalid exclude regex %r: %s", pattern, exc)
 
     def _available_drive_info(self) -> dict[str, DriveInfo]:
         return {d.letter.upper(): d for d in get_all_drives()}
@@ -892,6 +910,14 @@ class FileIndex(QObject):
                                 has_extended_attributes=bool(raw_attrs & FILE_ATTRIBUTE_EA),
                             )
                             entry._stat_loaded = True
+                            entry._path = de.path
+
+                            excluded = self._should_exclude(entry)
+                            if excluded:
+                                if is_dir:
+                                    logger.debug("Skipped excluded directory during walk: %s", de.path)
+                                continue
+
                             drive_entries[frn] = entry
                             total += 1
 
@@ -1132,6 +1158,28 @@ class FileIndex(QObject):
             return True
         if self._exclude_system and (entry.attributes & FILE_ATTRIBUTE_SYSTEM):
             return True
+        if self._exclude_attribute_mask and (entry.attributes & self._exclude_attribute_mask):
+            return True
+        if self._exclude_globs or self._exclude_regex_objects:
+            try:
+                path = entry._path or entry.get_path(self)
+            except Exception as exc:
+                logger.debug("Could not resolve path for exclude rules: %s", exc)
+                path = entry.name
+            path_lower = path.lower()
+            name_lower = entry.name.lower()
+            for pattern in self._exclude_globs:
+                pattern_lower = pattern.lower()
+                if (
+                    fnmatch.fnmatch(entry.name, pattern)
+                    or fnmatch.fnmatch(path, pattern)
+                    or fnmatch.fnmatch(name_lower, pattern_lower)
+                    or fnmatch.fnmatch(path_lower, pattern_lower)
+                ):
+                    return True
+            for regex in self._exclude_regex_objects:
+                if regex.search(entry.name) or regex.search(path):
+                    return True
         return False
 
     def _rebuild_flat_list(self):
