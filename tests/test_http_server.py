@@ -4,7 +4,10 @@ import base64
 from io import BytesIO
 from unittest.mock import MagicMock, patch
 
+from core.index import FileEntry
+from core.ntfs import FILE_ATTRIBUTE_DIRECTORY
 from server.http_server import QuickFindHTTPServer, SearchHandler, _SESSION_COOKIE_NAME
+from server.http_server import _query_with_remote_filters
 
 
 def _handler(headers=None) -> SearchHandler:
@@ -140,6 +143,42 @@ def test_api_search_omits_wildcard_cors_header():
     header_calls = [call.args for call in handler.send_header.call_args_list]
     assert ("Access-Control-Allow-Origin", "*") not in header_calls
     assert ("Content-Type", "application/json") in header_calls
+
+
+def test_remote_type_filter_rewrites_query_for_existing_search_engine():
+    assert _query_with_remote_filters("report", "files") == "file: report"
+    assert _query_with_remote_filters("report", "folders") == "folder: report"
+    assert _query_with_remote_filters("report", "all") == "report"
+
+
+def test_result_cards_escape_paths_and_include_badges():
+    handler = _handler()
+    entry = FileEntry(10, 5, "alpha <report>.txt", "C")
+    entry._path = "C:\\docs\\alpha <report>.txt"
+    handler.file_index.resolve_parent_path.return_value = "C:\\docs"
+
+    html = handler._build_result_cards([entry])
+
+    assert 'class="result-card"' in html
+    assert "alpha &lt;report&gt;.txt" in html
+    assert "TXT file" in html
+    assert "<tr>" not in html
+
+
+def test_api_search_returns_card_payload_and_applies_filters():
+    handler = _handler()
+    folder = FileEntry(11, 5, "Docs", "C", attributes=FILE_ATTRIBUTE_DIRECTORY)
+    folder._path = "C:\\Docs"
+    handler.search_engine.search.return_value = [folder]
+    handler.file_index.resolve_parent_path.return_value = "C:\\"
+
+    handler._handle_api_search({"q": ["docs"], "type": ["folders"], "max": ["25"]})
+
+    handler.search_engine.search.assert_called_once_with("folder: docs", max_results=25)
+    body = handler.wfile.getvalue().decode("utf-8")
+    assert '"cards"' in body
+    assert '"rows"' in body
+    assert "result-card" in body
 
 
 def test_unauthorized_response_includes_basic_challenge():

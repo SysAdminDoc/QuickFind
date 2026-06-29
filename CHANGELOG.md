@@ -2,6 +2,12 @@
 
 All notable changes to QuickFind will be documented in this file.
 
+## [v0.8.33] - 2026-06-29
+
+- Reworked the remote read-only web UI from a table into responsive result cards.
+- Added remote web filters for all/files/folders and maximum result count while keeping search read-only.
+- Added remote card rendering and filter coverage, expanding the passing suite to 297 tests.
+
 ## [v0.8.32] - 2026-06-29
 
 - Added HTTP Basic authentication for remote search, using the existing auth token as the Basic password.

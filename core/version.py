@@ -1,5 +1,5 @@
 """Single source for QuickFind application identity."""
 
 APP_NAME = "QuickFind"
-VERSION = "0.8.32"
+VERSION = "0.8.33"
 APP_TITLE = f"{APP_NAME} v{VERSION}"

@@ -75,6 +75,20 @@ body {{
 }}
 .search-box:focus {{ border-color: {accent}; }}
 .search-box::placeholder {{ color: {overlay0}; }}
+.controls {{
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}}
+select, .max-input {{
+    background: {surface0};
+    border: 1px solid {surface1};
+    border-radius: 6px;
+    color: {text};
+    font-size: 13px;
+    padding: 8px 10px;
+}}
+.max-input {{ width: 86px; }}
 .meta-bar {{
     color: {subtext0};
     font-size: 12px;
@@ -85,39 +99,43 @@ body {{
     align-items: center;
     gap: 12px;
 }}
-table {{
-    width: 100%;
-    border-collapse: collapse;
+.results {{
+    display: grid;
+    gap: 8px;
+    padding: 12px 16px 24px;
 }}
-th {{
-    background: {mantle};
-    color: {subtext0};
+.result-card {{
+    background: rgba(49,50,68,0.55);
+    border: 1px solid {surface0};
+    border-radius: 8px;
+    padding: 10px 12px;
+}}
+.result-title {{
+    color: {text};
+    font-size: 14px;
     font-weight: 600;
+    overflow-wrap: anywhere;
+}}
+.result-path {{
+    color: {subtext0};
+    font-size: 12px;
+    margin-top: 4px;
+    overflow-wrap: anywhere;
+}}
+.result-meta {{
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 8px;
+    color: {overlay0};
     font-size: 11px;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    text-align: left;
-    padding: 8px 14px;
-    border-bottom: 1px solid {surface0};
-    position: sticky;
-    top: 49px;
-    z-index: 5;
 }}
-td {{
-    padding: 7px 14px;
-    border-bottom: 1px solid {surface0};
-    font-size: 13px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    max-width: 420px;
+.badge {{
+    border: 1px solid {surface1};
+    border-radius: 999px;
+    padding: 2px 7px;
+    color: {subtext0};
 }}
-tr {{ transition: background 0.1s ease; }}
-tr:hover {{ background: {surface0}; }}
-tr:nth-child(even) {{ background: rgba(24,24,37,0.4); }}
-tr:nth-child(even):hover {{ background: {surface0}; }}
-.size {{ text-align: right; font-variant-numeric: tabular-nums; }}
-.date {{ font-variant-numeric: tabular-nums; color: {subtext0}; }}
 .empty {{ padding: 48px 24px; text-align: center; color: {overlay0}; font-size: 14px; }}
 </style>
 </head>
@@ -126,31 +144,46 @@ tr:nth-child(even):hover {{ background: {surface0}; }}
     <h1>QuickFind</h1>
     <input class="search-box" type="text" id="search" placeholder="Search files and folders…"
            value="{query}" autofocus aria-label="Search">
+    <div class="controls" aria-label="Filters">
+        <select id="typeFilter" aria-label="Result type filter">
+            <option value="all" {type_all}>All</option>
+            <option value="files" {type_files}>Files</option>
+            <option value="folders" {type_folders}>Folders</option>
+        </select>
+        <input class="max-input" id="maxResults" type="number" min="1" max="10000"
+               value="{max_results}" aria-label="Maximum results">
+    </div>
 </div>
 <div class="meta-bar" id="count">{count} results</div>
-<table>
-<thead><tr><th>Name</th><th>Path</th><th class="size">Size</th><th>Modified</th></tr></thead>
-<tbody id="results">{rows}</tbody>
-</table>
+<main class="results" id="results">{cards}</main>
 <script>
 let timer;
 const search = document.getElementById('search');
 const countEl = document.getElementById('count');
-search.addEventListener('input', () => {{
+const typeFilter = document.getElementById('typeFilter');
+const maxResults = document.getElementById('maxResults');
+function runSearch() {{
     clearTimeout(timer);
     countEl.textContent = 'Searching…';
     timer = setTimeout(() => {{
-        const params = new URLSearchParams({{q: search.value}});
+        const params = new URLSearchParams({{
+            q: search.value,
+            type: typeFilter.value,
+            max: maxResults.value
+        }});
         fetch('/api/search?' + params, {{ credentials: 'same-origin' }})
             .then(r => r.json())
             .then(data => {{
                 const n = data.count;
                 countEl.textContent = n + ' result' + (n !== 1 ? 's' : '');
-                document.getElementById('results').innerHTML = data.rows;
+                document.getElementById('results').innerHTML = data.cards;
             }})
             .catch(() => {{ countEl.textContent = 'Search failed'; }});
     }}, 200);
-}});
+}}
+search.addEventListener('input', runSearch);
+typeFilter.addEventListener('change', runSearch);
+maxResults.addEventListener('change', runSearch);
 search.select();
 </script>
 </body>
@@ -217,6 +250,15 @@ def _format_size(size):
     if size < 1048576: return f"{size/1024:.1f} KB"
     if size < 1073741824: return f"{size/1048576:.1f} MB"
     return f"{size/1073741824:.2f} GB"
+
+
+def _query_with_remote_filters(query: str, type_filter: str) -> str:
+    clean_query = (query or "").strip()
+    if type_filter == "files":
+        return f"file: {clean_query}".strip()
+    if type_filter == "folders":
+        return f"folder: {clean_query}".strip()
+    return clean_query
 
 
 class _RateLimiter:
@@ -398,20 +440,23 @@ class SearchHandler(BaseHTTPRequestHandler):
     def _handle_api_search(self, params):
         """JSON API for AJAX search."""
         query = params.get('q', [''])[0]
+        type_filter = params.get('type', ['all'])[0]
         try:
             max_results = int(params.get('max', ['1000'])[0])
         except (ValueError, IndexError):
             max_results = 1000
 
+        search_query = _query_with_remote_filters(query, type_filter)
         results = self.search_engine.search(
-            query, max_results=min(max_results, 10000)
+            search_query, max_results=min(max_results, 10000)
         )
 
-        rows_html = self._build_rows(results)
+        cards_html = self._build_result_cards(results)
 
         response = json.dumps({
             'count': len(results),
-            'rows': rows_html,
+            'cards': cards_html,
+            'rows': cards_html,
         })
 
         self.send_response(200)
@@ -423,9 +468,18 @@ class SearchHandler(BaseHTTPRequestHandler):
     def _handle_page(self, params):
         """Serve the main search page."""
         query = params.get('q', [''])[0]
+        type_filter = params.get('type', ['all'])[0]
+        try:
+            max_results = int(params.get('max', ['1000'])[0])
+        except (ValueError, IndexError):
+            max_results = 1000
 
-        results = self.search_engine.search(query, max_results=1000) if query else []
-        rows_html = self._build_rows(results)
+        search_query = _query_with_remote_filters(query, type_filter)
+        results = self.search_engine.search(
+            search_query,
+            max_results=min(max_results, 10000),
+        ) if search_query else []
+        cards_html = self._build_result_cards(results)
 
         page_html = HTML_TEMPLATE.format(
             bg=MOCHA['base'], text=MOCHA['text'], mantle=MOCHA['mantle'],
@@ -433,8 +487,12 @@ class SearchHandler(BaseHTTPRequestHandler):
             subtext0=MOCHA['subtext0'], overlay0=MOCHA['overlay0'],
             accent=MOCHA['blue'],
             query=html.escape(query, quote=True),
+            type_all='selected' if type_filter not in ('files', 'folders') else '',
+            type_files='selected' if type_filter == 'files' else '',
+            type_folders='selected' if type_filter == 'folders' else '',
+            max_results=max(1, min(max_results, 10000)),
             count=len(results),
-            rows=rows_html,
+            cards=cards_html,
         )
 
         self.send_response(200)
@@ -457,12 +515,12 @@ class SearchHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(page_html.encode('utf-8'))
 
-    def _build_rows(self, results):
-        """Build HTML table rows from search results."""
+    def _build_result_cards(self, results):
+        """Build read-only result cards from search results."""
         if not results:
-            return '<tr><td colspan="4" class="empty">Type a query to search your files</td></tr>'
+            return '<div class="empty">Type a query to search your files</div>'
 
-        rows = []
+        cards = []
         for entry in results[:1000]:
             path = self.file_index.resolve_parent_path(entry.drive, entry.parent_frn)
             full_path = entry.get_path(self.file_index)
@@ -476,16 +534,25 @@ class SearchHandler(BaseHTTPRequestHandler):
                     pass
 
             dm = entry.date_modified.strftime('%Y-%m-%d %H:%M') if entry.date_modified else ''
+            kind = "Folder" if entry.is_dir else (entry.extension.upper() + " file" if entry.extension else "File")
 
-            name_escaped = html.escape(entry.name)
-            path_escaped = html.escape(path)
+            name_escaped = html.escape(entry.name, quote=True)
+            path_escaped = html.escape(path, quote=True)
+            full_path_escaped = html.escape(full_path, quote=True)
+            kind_escaped = html.escape(kind, quote=True)
+            size_badge = f'<span class="badge">{html.escape(size)}</span>' if size else ''
+            date_badge = f'<span class="badge">{html.escape(dm)}</span>' if dm else ''
 
-            rows.append(
-                f'<tr><td>{name_escaped}</td><td>{path_escaped}</td>'
-                f'<td class="size">{size}</td><td class="date">{dm}</td></tr>'
+            cards.append(
+                '<article class="result-card">'
+                f'<div class="result-title">{name_escaped}</div>'
+                f'<div class="result-path" title="{full_path_escaped}">{path_escaped}</div>'
+                '<div class="result-meta">'
+                f'<span class="badge">{kind_escaped}</span>{size_badge}{date_badge}'
+                '</div></article>'
             )
 
-        return '\n'.join(rows)
+        return '\n'.join(cards)
 
 
 class QuickFindHTTPServer:
