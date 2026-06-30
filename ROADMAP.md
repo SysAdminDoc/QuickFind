@@ -95,6 +95,20 @@ NTFS-MFT-backed instant file search (PyQt6 + SQLite FTS5). Voidtools Everything 
   Acceptance: Recycle actions emit status/toast/log feedback with count/path summary, report SHFileOperation errors visibly, refresh affected result rows, and expose a non-modal recovery hint without adding confirmation dialogs.
   Complexity: S
 
+- [ ] P1 — Add dependency advisory and SBOM release gate
+  Why: The release matrix records pinned dependency versions, but there is no local advisory/license/SBOM check for the PyQt/PyInstaller/pdfplumber/py7zr/watchdog stack before packaging.
+  Evidence: `requirements.txt`, `build.py:36`, `build.py:66`, pip-audit, CycloneDX, PyInstaller and py7zr changelogs.
+  Touches: `requirements.txt`, `build.py`, `tests/test_version.py`, `README.md`
+  Acceptance: A local release/audit command reads pinned requirements, emits dependency version/license/advisory/SBOM output, fails on unwaived high/critical advisories with expiring allowlist entries, and has tests with mocked advisory data.
+  Complexity: M
+
+- [ ] P1 — Add privacy-preserving remote access audit log
+  Why: The remote server has auth, rate limiting, and OpenAPI docs, but no durable redacted audit trail for auth failures, rate limits, search volume, or future denied ACL decisions.
+  Evidence: `server/http_server.py:548`, `server/http_server.py:615`, `server/http_server.py:646`, OWASP logging guidance, FileLocator/Copernic enterprise support patterns.
+  Touches: `server/http_server.py`, `quickfind.py`, `gui/diagnostics_dialog.py`, `tests/test_http_server.py`
+  Acceptance: Remote auth failures, rate limits, searches, and denied path/ACL events write structured audit records with timestamps, endpoint, client hash, result count/query hash where relevant, and tests prove tokens, passwords, raw queries, and full paths are not logged.
+  Complexity: M
+
 ### P2 - Search Depth and Workflow Expansion
 
 - [ ] P2 — Package and discover modifier plugins safely
