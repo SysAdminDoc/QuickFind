@@ -4,6 +4,7 @@ from PyQt6.QtWidgets import QDialog, QDialogButtonBox, QTextEdit, QVBoxLayout
 
 from core.version import APP_TITLE
 from gui.accessibility import describe_widget
+from gui.theme import MOCHA
 
 
 SEARCH_MODIFIERS = (
@@ -45,7 +46,8 @@ def _rows(items: tuple[tuple[str, str], ...]) -> str:
 
 
 def build_offline_help_html(app_title: str = APP_TITLE) -> str:
-    """Return the offline help HTML shown from the Help menu."""
+    """Return the offline help HTML styled with the active theme palette."""
+    border = MOCHA['surface1']
     return f"""<!doctype html>
 <html>
 <head>
@@ -54,7 +56,7 @@ def build_offline_help_html(app_title: str = APP_TITLE) -> str:
     body {{ font-family: Segoe UI, sans-serif; line-height: 1.45; }}
     h1, h2 {{ margin-bottom: 0.35rem; }}
     table {{ border-collapse: collapse; width: 100%; margin: 0.5rem 0 1rem; }}
-    td {{ border-bottom: 1px solid #45475a; padding: 0.35rem 0.45rem; vertical-align: top; }}
+    td {{ border-bottom: 1px solid {border}; padding: 0.35rem 0.45rem; vertical-align: top; }}
     code {{ font-family: Cascadia Code, Consolas, monospace; }}
   </style>
 </head>

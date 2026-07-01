@@ -19,3 +19,15 @@ def test_offline_help_is_self_contained():
     assert "http://" not in html
     assert "https://" not in html
     assert "does not require network access" in html
+
+
+def test_offline_help_uses_active_theme_colors():
+    from gui.theme import MOCHA, set_active_theme, active_theme_name
+    original = active_theme_name()
+    try:
+        set_active_theme("latte")
+        html = build_offline_help_html()
+        assert "#bcc0cc" in html
+        assert "#45475a" not in html
+    finally:
+        set_active_theme(original)

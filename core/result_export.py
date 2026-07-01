@@ -67,8 +67,16 @@ def export_json(results: Sequence[ExportableResult], metadata: ExportMetadata | 
     return json.dumps(payload, indent=2, ensure_ascii=False)
 
 
-def export_html(results: Sequence[ExportableResult], metadata: ExportMetadata | None = None) -> str:
+_DEFAULT_THEME = {
+    'base': '#1e1e2e', 'text': '#cdd6f4', 'blue': '#89b4fa',
+    'subtext0': '#a6adc8', 'surface1': '#45475a', 'surface0': '#313244',
+}
+
+
+def export_html(results: Sequence[ExportableResult], metadata: ExportMetadata | None = None,
+                theme: dict[str, str] | None = None) -> str:
     meta = metadata or ExportMetadata()
+    t = theme or _DEFAULT_THEME
     query_escaped = html.escape(meta.query, quote=True)
     has_snippets = any(r.content_snippet for r in results)
     rows = []
@@ -91,13 +99,13 @@ def export_html(results: Sequence[ExportableResult], metadata: ExportMetadata | 
 <meta charset="UTF-8">
 <title>QuickFind Export</title>
 <style>
-body {{ font-family: Segoe UI, sans-serif; margin: 24px; background: #1e1e2e; color: #cdd6f4; }}
-h1 {{ font-size: 18px; color: #89b4fa; }}
-.meta {{ color: #a6adc8; font-size: 13px; margin-bottom: 16px; }}
+body {{ font-family: Segoe UI, sans-serif; margin: 24px; background: {t['base']}; color: {t['text']}; }}
+h1 {{ font-size: 18px; color: {t['blue']}; }}
+.meta {{ color: {t['subtext0']}; font-size: 13px; margin-bottom: 16px; }}
 table {{ border-collapse: collapse; width: 100%; }}
-th, td {{ border: 1px solid #45475a; padding: 6px 10px; text-align: left; font-size: 13px; }}
-th {{ background: #313244; color: #cdd6f4; }}
-tr:nth-child(even) {{ background: rgba(49,50,68,0.4); }}
+th, td {{ border: 1px solid {t['surface1']}; padding: 6px 10px; text-align: left; font-size: 13px; }}
+th {{ background: {t['surface0']}; color: {t['text']}; }}
+tr:nth-child(even) {{ background: {t['surface0']}40; }}
 </style>
 </head>
 <body>

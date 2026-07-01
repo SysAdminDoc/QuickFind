@@ -5,8 +5,10 @@ All notable changes to QuickFind will be documented in this file.
 ## [v0.8.54] - 2026-07-01
 
 - Title bar now switches between dark and light mode when the theme changes, fixing dark title bar on Latte (light) theme.
+- Help docs HTML now uses active theme palette colors instead of hardcoded Mocha hex values.
+- HTML result export now accepts a theme dict parameter; GUI export passes the active palette for correct Latte/Frappe/Macchiato styling.
 - Added `is_dark_theme()` helper to theme module for runtime dark/light detection.
-- Added theme dark-mode detection test, expanding the suite to 509 tests.
+- Added 3 theme-aware rendering tests, expanding the suite to 511 tests.
 
 ## [v0.8.53] - 2026-07-01
 

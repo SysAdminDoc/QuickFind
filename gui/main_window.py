@@ -1970,7 +1970,7 @@ class MainWindow(QMainWindow):
             if lower.endswith(".json"):
                 content = export_json(results, meta)
             elif lower.endswith(".html") or lower.endswith(".htm"):
-                content = export_html(results, meta)
+                content = export_html(results, meta, theme=MOCHA)
             else:
                 content = export_csv(results, meta)
 

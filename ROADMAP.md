@@ -36,14 +36,6 @@ NTFS-MFT-backed instant file search (PyQt6 + SQLite FTS5). Voidtools Everything 
 
 ### P3 — Larger Features
 
-- [ ] P2 — Reverse dark title bar for Latte (light) theme
-  Why: `_set_dark_title_bar` is called once at init; switching to Latte produces a dark title bar on a light window body. Needs `DwmSetWindowAttribute` with value 0 on theme change.
-  Where: `gui/main_window.py` lines 271, 1029-1054
-
-- [ ] P2 — Hardcoded Mocha colors in help_docs HTML and result_export HTML
-  Why: `#45475a` border and other hex literals in `help_docs.py:57` and `result_export.py:96-102` are wrong under non-Mocha themes. Needs parameterized theme tokens.
-  Where: `gui/help_docs.py`, `core/result_export.py`
-
 - [ ] P2 — Plugin loader has no sandboxing or signature verification
   Why: `exec_module` runs arbitrary Python with full privileges. Path traversal is now blocked, but any plugin in the plugin directory gets unrestricted code execution with no audit hook or hash pinning.
   Where: `core/plugin_loader.py` lines 126-133
