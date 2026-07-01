@@ -18,7 +18,8 @@ All notable changes to QuickFind will be documented in this file.
 - Added duplicate review workflow with name/size grouping, configurable keep rules, remediation preview, and safe Recycle Bin batch actions with skip/fail tracking.
 - Added PWA manifest, service worker with offline shell, and theme-color meta for installable mobile-ready remote search UI.
 - Added portable/cloud-profile mode with machine-scoped cache identity stamps, `.quickfind-portable` marker detection, and profile diagnostics.
-- Added 120 tests across all new features, expanding the passing suite to 483 tests.
+- Added shared read-only search server prototype with per-token ACL boundaries, path filtering, config validation, and denied-path tracking (disabled by default).
+- Added 137 tests across all new features, expanding the passing suite to 500 tests.
 
 ## [v0.8.51] - 2026-07-01
 

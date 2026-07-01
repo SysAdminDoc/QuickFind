@@ -36,9 +36,3 @@ NTFS-MFT-backed instant file search (PyQt6 + SQLite FTS5). Voidtools Everything 
 
 ### P3 — Larger Features
 
-- [ ] P3 — Prototype shared read-only search server with explicit ACL boundary
-  Why: Commercial and Recoll-style web deployments show demand for shared indexes, but exposing personal filesystem results requires an explicit access-control model before multi-user use.
-  Evidence: `server/http_server.py`, `service/windows_service.py`, Recoll web/Python API docs, FileLocator/Copernic enterprise search patterns.
-  Touches: `server/http_server.py`, `service/windows_service.py`, `core/index.py`, `gui/settings_dialog.py`, `README.md`, `tests/test_http_server.py`
-  Acceptance: A prototype supports named read-only indexes and per-token allowed roots, denies paths outside token roots, logs denied requests, and documents that shared mode is disabled by default.
-  Complexity: XL
