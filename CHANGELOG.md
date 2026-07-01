@@ -2,6 +2,12 @@
 
 All notable changes to QuickFind will be documented in this file.
 
+## [v0.8.48] - 2026-07-01
+
+- Added schema-versioned settings migrations with legacy-profile upgrade, validation, and future-version rejection.
+- Added automatic settings backups before persisted profile replacement and rollback behavior for invalid imports.
+- Added settings migration coverage, expanding the passing suite to 353 tests.
+
 ## [v0.8.47] - 2026-07-01
 
 - Added a redacted diagnostics support bundle export from Tools > Index Diagnostics with runtime, cache, drive, service, content-adapter, settings, and log-tail data.

@@ -4,8 +4,10 @@ Settings dialog for QuickFind configuration.
 
 import json
 import logging
+import shutil
 from pathlib import Path
 from dataclasses import dataclass, asdict, field
+from datetime import datetime
 
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QTabWidget, QWidget,
@@ -40,7 +42,11 @@ from core.network_shares import (
 from core.localization import available_languages, tr
 from gui.accessibility import describe_widget
 from gui.theme import MOCHA, available_themes
-from gui.settings_validation import sanitize_settings_data
+from gui.settings_validation import (
+    SETTINGS_SCHEMA_VERSION,
+    migrate_settings_data,
+    sanitize_settings_data,
+)
 
 logger = logging.getLogger('QuickFind.Settings')
 
@@ -117,6 +123,8 @@ def attribute_text_to_mask(text: str) -> int:
 @dataclass
 class Settings:
     """Application settings."""
+    schema_version: int = SETTINGS_SCHEMA_VERSION
+
     # Indexing
     index_on_startup: bool = True
     index_drives: list[str] = field(default_factory=list)  # Empty = all supported drives
@@ -175,21 +183,17 @@ class Settings:
     content_index_max_file_mb: int = 10
 
     def sanitize(self) -> list[str]:
-        data, warnings = sanitize_settings_data(asdict(self), asdict(Settings()))
+        data, warnings = migrate_settings_data(asdict(self), asdict(Settings()))
         for k, v in data.items():
             if hasattr(self, k):
                 setattr(self, k, v)
         return warnings
 
     def save(self):
-        CONFIG_DIR.mkdir(exist_ok=True)
         try:
             for warning in self.sanitize():
                 logger.warning(warning)
-            tmp = SETTINGS_FILE.with_suffix('.tmp')
-            with open(tmp, 'w') as f:
-                json.dump(asdict(self), f, indent=2)
-            tmp.replace(SETTINGS_FILE)
+            _write_settings_file(self, SETTINGS_FILE, backup_existing=True)
         except Exception as e:
             logger.error(f"Failed to save settings: {e}")
 
@@ -200,16 +204,26 @@ class Settings:
         try:
             with open(SETTINGS_FILE, 'r') as f:
                 data = json.load(f)
-            s = Settings()
-            for k, v in data.items():
-                if hasattr(s, k):
-                    setattr(s, k, v)
-            for warning in s.sanitize():
+            s, warnings = Settings.from_mapping(data)
+            original_version = data.get("schema_version", 0)
+            should_rewrite = original_version != SETTINGS_SCHEMA_VERSION
+            if should_rewrite:
+                _write_settings_file(s, SETTINGS_FILE, backup_existing=True)
+            for warning in warnings:
                 logger.warning(warning)
             return s
         except Exception as e:
             logger.error(f"Failed to load settings: {e}")
             return Settings()
+
+    @staticmethod
+    def from_mapping(data: dict) -> tuple['Settings', list[str]]:
+        migrated, warnings = migrate_settings_data(data, asdict(Settings()))
+        s = Settings()
+        for k, v in migrated.items():
+            if hasattr(s, k):
+                setattr(s, k, v)
+        return s, warnings
 
     def export_to_file(self, path: str):
         """Export settings to a JSON file."""
@@ -221,13 +235,42 @@ class Settings:
         """Import settings from a JSON file."""
         with open(path, 'r') as f:
             data = json.load(f)
-        s = Settings()
-        for k, v in data.items():
-            if hasattr(s, k):
-                setattr(s, k, v)
-        for warning in s.sanitize():
+        s, warnings = Settings.from_mapping(data)
+        for warning in warnings:
             logger.warning(warning)
         return s
+
+    @staticmethod
+    def import_with_rollback(path: str, current: 'Settings') -> tuple['Settings', list[str]]:
+        previous = Settings(**asdict(current))
+        try:
+            return Settings.import_from_file(path), []
+        except Exception as exc:
+            logger.error(f"Settings import failed; keeping previous profile: {exc}")
+            return previous, [str(exc)]
+
+
+def _settings_backup_path(path: Path) -> Path:
+    stamp = datetime.now().strftime("%Y%m%d%H%M%S")
+    return path.with_name(f"{path.name}.{stamp}.bak")
+
+
+def _write_settings_file(settings: Settings, path: Path, backup_existing: bool = True) -> Path | None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    backup = None
+    if backup_existing and path.exists():
+        backup = _settings_backup_path(path)
+        counter = 1
+        while backup.exists():
+            backup = path.with_name(f"{path.name}.{datetime.now().strftime('%Y%m%d%H%M%S')}.{counter}.bak")
+            counter += 1
+        shutil.copy2(path, backup)
+
+    tmp = path.with_suffix('.tmp')
+    with open(tmp, 'w') as f:
+        json.dump(asdict(settings), f, indent=2)
+    tmp.replace(path)
+    return backup
 
 
 class SettingsDialog(QDialog):
@@ -884,12 +927,11 @@ class SettingsDialog(QDialog):
             "JSON Files (*.json);;All Files (*)"
         )
         if path:
-            try:
-                imported = Settings.import_from_file(path)
-                self._settings = imported
-                self._load_values()
-            except Exception as e:
-                QMessageBox.critical(self, "Import Failed", str(e))
+            imported, errors = Settings.import_with_rollback(path, self._settings)
+            self._settings = imported
+            self._load_values()
+            if errors:
+                QMessageBox.critical(self, "Import Failed", "\n".join(errors))
 
     def get_settings(self) -> Settings:
         return self._settings

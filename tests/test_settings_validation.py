@@ -1,11 +1,27 @@
 """Tests for persisted settings validation."""
 
+import json
+
+import pytest
+
 from core.ntfs import FILE_ATTRIBUTE_HIDDEN, FILE_ATTRIBUTE_REPARSE_POINT
-from gui.settings_dialog import attribute_mask_to_text, attribute_text_to_mask, split_rule_text
-from gui.settings_validation import sanitize_settings_data
+import gui.settings_dialog as settings_dialog
+from gui.settings_dialog import (
+    Settings,
+    attribute_mask_to_text,
+    attribute_text_to_mask,
+    split_rule_text,
+)
+from gui.settings_validation import (
+    SETTINGS_SCHEMA_VERSION,
+    SettingsMigrationError,
+    migrate_settings_data,
+    sanitize_settings_data,
+)
 
 
 DEFAULTS = {
+    "schema_version": SETTINGS_SCHEMA_VERSION,
     "http_port": 8080,
     "usn_poll_interval_ms": 1000,
     "drive_startup_delay_seconds": 0,
@@ -219,3 +235,74 @@ def test_network_share_roots_are_normalized_without_online_check():
 
     assert sanitized["network_share_roots"] == ["\\\\server\\share\\folder"]
     assert any("invalid network_share_roots entry" in warning for warning in warnings)
+
+
+def test_migrate_legacy_settings_adds_schema_version():
+    migrated, warnings = migrate_settings_data({"http_port": 9090}, DEFAULTS)
+
+    assert migrated["schema_version"] == SETTINGS_SCHEMA_VERSION
+    assert migrated["http_port"] == 9090
+    assert any("schema version" in warning for warning in warnings)
+
+
+def test_future_settings_schema_is_rejected():
+    with pytest.raises(SettingsMigrationError):
+        migrate_settings_data({"schema_version": SETTINGS_SCHEMA_VERSION + 1}, DEFAULTS)
+
+
+def test_settings_export_includes_schema_version(tmp_path):
+    settings = Settings(http_port=9090)
+    target = tmp_path / "settings.json"
+
+    settings.export_to_file(str(target))
+
+    data = json.loads(target.read_text(encoding="utf-8"))
+    assert data["schema_version"] == SETTINGS_SCHEMA_VERSION
+    assert data["http_port"] == 9090
+
+
+def test_settings_load_migrates_legacy_file_with_backup(monkeypatch, tmp_path):
+    settings_file = tmp_path / "settings.json"
+    settings_file.write_text(json.dumps({"http_port": 9090}), encoding="utf-8")
+    monkeypatch.setattr(settings_dialog, "CONFIG_DIR", tmp_path)
+    monkeypatch.setattr(settings_dialog, "SETTINGS_FILE", settings_file)
+
+    loaded = Settings.load()
+
+    migrated = json.loads(settings_file.read_text(encoding="utf-8"))
+    backups = list(tmp_path.glob("settings.json.*.bak"))
+    assert loaded.schema_version == SETTINGS_SCHEMA_VERSION
+    assert loaded.http_port == 9090
+    assert migrated["schema_version"] == SETTINGS_SCHEMA_VERSION
+    assert len(backups) == 1
+    assert json.loads(backups[0].read_text(encoding="utf-8")) == {"http_port": 9090}
+
+
+def test_settings_save_backs_up_existing_profile(monkeypatch, tmp_path):
+    settings_file = tmp_path / "settings.json"
+    settings_file.write_text(json.dumps({"schema_version": SETTINGS_SCHEMA_VERSION, "http_port": 8080}), encoding="utf-8")
+    monkeypatch.setattr(settings_dialog, "CONFIG_DIR", tmp_path)
+    monkeypatch.setattr(settings_dialog, "SETTINGS_FILE", settings_file)
+
+    Settings(http_port=9090).save()
+
+    backups = list(tmp_path.glob("settings.json.*.bak"))
+    saved = json.loads(settings_file.read_text(encoding="utf-8"))
+    assert len(backups) == 1
+    assert json.loads(backups[0].read_text(encoding="utf-8"))["http_port"] == 8080
+    assert saved["http_port"] == 9090
+
+
+def test_settings_import_rolls_back_on_invalid_profile(tmp_path):
+    current = Settings(http_port=9090, http_bind="127.0.0.2")
+    incoming = tmp_path / "future.json"
+    incoming.write_text(
+        json.dumps({"schema_version": SETTINGS_SCHEMA_VERSION + 1, "http_port": 7070}),
+        encoding="utf-8",
+    )
+
+    restored, errors = Settings.import_with_rollback(str(incoming), current)
+
+    assert restored.http_port == 9090
+    assert restored.http_bind == "127.0.0.2"
+    assert errors

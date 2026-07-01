@@ -6,6 +6,9 @@ from typing import Any, Mapping
 
 from core.network_shares import normalize_network_root
 
+SETTINGS_SCHEMA_VERSION = 1
+SCHEMA_VERSION_KEY = "schema_version"
+
 
 INT_RANGES = {
     "http_port": (1, 65535),
@@ -37,6 +40,10 @@ STRING_LIST_FIELDS = {
     "exclude_regexes",
     "network_share_roots",
 }
+
+
+class SettingsMigrationError(ValueError):
+    """Raised when a settings profile cannot be safely migrated."""
 
 
 def _path_exists(path: str) -> bool:
@@ -191,3 +198,57 @@ def sanitize_settings_data(
     sanitized["content_index_extensions"] = sorted(set(valid_extensions))
 
     return sanitized, warnings
+
+
+def migrate_settings_data(
+    data: Mapping[str, Any],
+    defaults: Mapping[str, Any],
+) -> tuple[dict[str, Any], list[str]]:
+    """Migrate persisted settings through known schema steps, then validate."""
+    if not isinstance(data, Mapping):
+        raise SettingsMigrationError("Settings profile must be a JSON object.")
+
+    version = _settings_schema_version(data.get(SCHEMA_VERSION_KEY, 0))
+    if version > SETTINGS_SCHEMA_VERSION:
+        raise SettingsMigrationError(
+            f"Settings schema version {version} is newer than supported version "
+            f"{SETTINGS_SCHEMA_VERSION}."
+        )
+
+    migrated = dict(data)
+    warnings: list[str] = []
+    while version < SETTINGS_SCHEMA_VERSION:
+        step = _MIGRATIONS.get(version)
+        if step is None:
+            raise SettingsMigrationError(f"No migration path from settings schema {version}.")
+        migrated = step(migrated)
+        version += 1
+        migrated[SCHEMA_VERSION_KEY] = version
+        warnings.append(f"Settings migrated to schema version {version}.")
+
+    sanitized, validation_warnings = sanitize_settings_data(migrated, defaults)
+    sanitized[SCHEMA_VERSION_KEY] = SETTINGS_SCHEMA_VERSION
+    return sanitized, warnings + validation_warnings
+
+
+def _settings_schema_version(value: Any) -> int:
+    if value in ("", None):
+        return 0
+    try:
+        version = int(value)
+    except (TypeError, ValueError) as exc:
+        raise SettingsMigrationError(f"Invalid settings schema version: {value!r}.") from exc
+    if version < 0:
+        raise SettingsMigrationError(f"Invalid settings schema version: {version}.")
+    return version
+
+
+def _migrate_legacy_to_v1(data: dict[str, Any]) -> dict[str, Any]:
+    migrated = dict(data)
+    migrated[SCHEMA_VERSION_KEY] = 1
+    return migrated
+
+
+_MIGRATIONS = {
+    0: _migrate_legacy_to_v1,
+}
