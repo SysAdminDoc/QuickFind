@@ -10,6 +10,7 @@ from PyQt6.QtWidgets import (
     QHeaderView,
     QHBoxLayout,
     QLabel,
+    QFileDialog,
     QPushButton,
     QTableWidget,
     QTableWidgetItem,
@@ -17,6 +18,7 @@ from PyQt6.QtWidgets import (
 )
 
 from core.cache import cache_diagnostics
+from core.support_bundle import default_support_bundle_name
 from gui.status_indicators import diagnostics_summary_rows, yes_no
 from gui.theme import MOCHA
 from service.ipc import service_health
@@ -85,6 +87,14 @@ class DiagnosticsDialog(QDialog):
         self._stop_service_button = QPushButton("Stop Service")
         self._stop_service_button.clicked.connect(lambda: self._run_action("stop_service"))
         action_row.addWidget(self._stop_service_button)
+
+        self._export_bundle_button = QPushButton("Export Support Bundle")
+        self._export_bundle_button.setAccessibleName("Export support bundle")
+        self._export_bundle_button.setAccessibleDescription(
+            "Save a redacted diagnostics bundle for troubleshooting."
+        )
+        self._export_bundle_button.clicked.connect(self._export_support_bundle)
+        action_row.addWidget(self._export_bundle_button)
 
         action_row.addStretch(1)
         layout.addLayout(action_row)
@@ -179,3 +189,14 @@ class DiagnosticsDialog(QDialog):
         except Exception as exc:
             self._message.setText(f"Action failed: {exc}")
         self.refresh()
+
+    def _export_support_bundle(self) -> None:
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Export Support Bundle",
+            default_support_bundle_name(),
+            "QuickFind Support Bundle (*.zip);;JSON Files (*.json);;All Files (*)",
+        )
+        if not path:
+            return
+        self._run_action("support_bundle", path)

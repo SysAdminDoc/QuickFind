@@ -2,6 +2,12 @@
 
 All notable changes to QuickFind will be documented in this file.
 
+## [v0.8.47] - 2026-07-01
+
+- Added a redacted diagnostics support bundle export from Tools > Index Diagnostics with runtime, cache, drive, service, content-adapter, settings, and log-tail data.
+- Reused the runtime matrix for support diagnostics so support bundles and release checks report the same dependency fingerprints.
+- Added support bundle redaction coverage, expanding the passing suite to 347 tests.
+
 ## [v0.8.46] - 2026-07-01
 
 - Hardened remote browser authentication with `Secure` HTTPS session cookies and same-origin Origin/Referer checks on `/auth`.

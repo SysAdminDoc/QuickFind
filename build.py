@@ -12,7 +12,6 @@ Usage:
 """
 
 import importlib
-from importlib import metadata as importlib_metadata
 from dataclasses import dataclass, field
 import hashlib
 import os
@@ -21,7 +20,6 @@ import re
 import subprocess
 import sys
 import shutil
-import sqlite3
 import stat
 import urllib.error
 import urllib.request
@@ -30,7 +28,7 @@ import zipfile
 from pathlib import Path
 
 from core.version import APP_NAME, VERSION
-from core.sqlite_compat import fts5_gate_status
+from core.runtime_info import RUNTIME_PACKAGES, runtime_matrix
 
 ROOT = Path(__file__).parent
 DIST = ROOT / 'dist'
@@ -48,20 +46,6 @@ PUBLISHER = "CN=SysAdminDoc"
 PUBLISHER_DISPLAY = "SysAdminDoc"
 MSIX_NAME = f"{APP_NAME}.msix"
 APPINSTALLER_NAME = f"{APP_NAME}.appinstaller"
-
-RUNTIME_PACKAGES = [
-    ("PyQt6", "PyQt6"),
-    ("PyQt6-Qt6", "PyQt6-Qt6"),
-    ("PyQt6-sip", "PyQt6-sip"),
-    ("PyInstaller", "pyinstaller"),
-    ("pywin32", "pywin32"),
-    ("pdfplumber", "pdfplumber"),
-    ("py7zr", "py7zr"),
-    ("python-docx", "python-docx"),
-    ("python-pptx", "python-pptx"),
-    ("watchdog", "watchdog"),
-]
-
 
 @dataclass
 class ReleaseCheckReport:
@@ -81,26 +65,6 @@ class ReleaseCheckReport:
 
     def fail(self, message: str) -> None:
         self.errors.append(message)
-
-
-def _package_version(distribution: str) -> str:
-    try:
-        return importlib_metadata.version(distribution)
-    except importlib_metadata.PackageNotFoundError:
-        return "missing"
-
-
-def runtime_matrix() -> dict[str, str]:
-    """Return the build/runtime versions that affect release reproducibility."""
-    matrix = {
-        "Python": sys.version.split()[0],
-        "Platform": platform.platform(),
-        "SQLite": sqlite3.sqlite_version,
-        "SQLite FTS5": fts5_gate_status(sqlite3.sqlite_version),
-    }
-    for label, distribution in RUNTIME_PACKAGES:
-        matrix[label] = _package_version(distribution)
-    return matrix
 
 
 def print_runtime_matrix() -> None:
@@ -629,6 +593,7 @@ def build(onefile=False):
         'core.network_shares', 'core.platform_engines',
         'core.content', 'core.content.adapters', 'core.content.indexer',
         'core.content.sandbox', 'core.worker_isolation', 'core.sqlite_compat',
+        'core.runtime_info', 'core.support_bundle',
         'gui.main_window', 'gui.results_view', 'gui.settings_dialog',
         'gui.diagnostics_dialog',
         'gui.theme', 'gui.tray', 'gui.accessibility', 'gui.help_docs',

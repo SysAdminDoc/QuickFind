@@ -2035,6 +2035,7 @@ class MainWindow(QMainWindow):
                 "refresh_drive": self._diagnostics_refresh_drive,
                 "start_service": lambda: self._diagnostics_service_action("start"),
                 "stop_service": lambda: self._diagnostics_service_action("stop"),
+                "support_bundle": self._diagnostics_export_support_bundle,
             },
             self,
         )
@@ -2056,6 +2057,19 @@ class MainWindow(QMainWindow):
         self._file_index.save_to_cache()
         self._trigger_search()
         self._refresh_status_bar()
+        self._status_label.setText(message)
+        return message
+
+    def _diagnostics_export_support_bundle(self, path: str) -> str:
+        from core.support_bundle import write_support_bundle
+
+        output = write_support_bundle(
+            path,
+            index=self._file_index,
+            settings=self._settings,
+            content_index_stats=self._content_index_stats,
+        )
+        message = f"Support bundle exported to {os.path.basename(str(output))}"
         self._status_label.setText(message)
         return message
 
