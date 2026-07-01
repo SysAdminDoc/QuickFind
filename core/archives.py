@@ -185,7 +185,17 @@ def _make_virtual_entry(archive_entry: FileEntry, archive_path: str,
 
 
 def _normalize_member_path(member_path: str) -> str:
-    return member_path.replace('/', '\\').strip('\\')
+    # Drop drive/device prefixes, "." and ".." components so a crafted member
+    # name (e.g. "..\..\Users\x\evil.exe") cannot make the virtual entry's path
+    # lexically resolve to a real file outside the archive when opened.
+    normalized = member_path.replace('/', '\\').strip('\\')
+    parts = []
+    for part in normalized.split('\\'):
+        part = part.strip()
+        if not part or part in ('.', '..') or ':' in part:
+            continue
+        parts.append(part)
+    return '\\'.join(parts)
 
 
 def _member_name(member_path: str) -> str:

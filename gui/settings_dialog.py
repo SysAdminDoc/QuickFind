@@ -760,6 +760,18 @@ class SettingsDialog(QDialog):
             item = QListWidgetItem(root)
             item.setData(Qt.ItemDataRole.UserRole, root)
             self._network_list.addItem(item)
+
+        # Restore the drive selection (empty index_drives is the "all drives"
+        # sentinel); without this, reopening Settings re-checks every drive and
+        # any OK silently overwrites the user's choice.
+        selected_drives = set(s.index_drives)
+        for i in range(self._drives_list.count()):
+            item = self._drives_list.item(i)
+            letter = item.data(Qt.ItemDataRole.UserRole)
+            checked = (not selected_drives) or (letter in selected_drives)
+            item.setCheckState(
+                Qt.CheckState.Checked if checked else Qt.CheckState.Unchecked
+            )
         self._content_index_enabled.setChecked(s.content_index_enabled)
         self._content_index_roots.setText(";".join(s.content_index_roots))
         self._content_index_extensions.setText(";".join(s.content_index_extensions))
@@ -819,12 +831,19 @@ class SettingsDialog(QDialog):
                     drives.append(letter)
         s.index_drives = drives
 
-        # Network shares
+        # Network shares — defer credential deletion until commit so a removal
+        # that the user then cancels does not permanently destroy the credential.
+        previous_roots = set(s.network_share_roots)
         s.network_share_roots = []
         for i in range(self._network_list.count()):
             root = self._network_list.item(i).data(Qt.ItemDataRole.UserRole)
             if root:
                 s.network_share_roots.append(root)
+        for removed_root in previous_roots - set(s.network_share_roots):
+            try:
+                delete_network_credential(removed_root)
+            except Exception:
+                pass
 
         # EFU files
         s.efu_files = []
@@ -854,7 +873,10 @@ class SettingsDialog(QDialog):
             )
             return False
 
-        self.settings_changed.emit(s)
+        # Emit a distinct snapshot each time: the main window keeps a reference to
+        # the emitted object, and if we handed it our own mutable settings the next
+        # Apply would mutate it in place, making all change-detection compares equal.
+        self.settings_changed.emit(Settings(**asdict(s)))
         return True
 
     def _apply_and_accept(self):
@@ -913,10 +935,8 @@ class SettingsDialog(QDialog):
         row = self._network_list.currentRow()
         if row < 0:
             return
-        item = self._network_list.item(row)
-        root = item.data(Qt.ItemDataRole.UserRole)
-        if root:
-            delete_network_credential(root)
+        # Only remove from the list; the stored credential is deleted on commit
+        # (Apply/OK) so cancelling leaves it intact.
         self._network_list.takeItem(row)
 
     def _refresh_content_cache_status(self):

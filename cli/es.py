@@ -179,6 +179,17 @@ def _output_text(results, index):
         print(entry.get_path(index))
 
 
+_CSV_INJECTION_PREFIXES = ('=', '+', '-', '@', '\t', '\r')
+
+
+def _csv_safe(value):
+    """Neutralize spreadsheet formula/DDE injection from attacker-controlled
+    filenames by prefixing risky leading characters with a single quote."""
+    if isinstance(value, str) and value and value[0] in _CSV_INJECTION_PREFIXES:
+        return "'" + value
+    return value
+
+
 def _output_csv(results, index):
     """CSV output with headers."""
     writer = csv.writer(sys.stdout)
@@ -191,8 +202,8 @@ def _output_csv(results, index):
         ftype = 'Folder' if entry.is_dir else (f'{ext.upper()} File' if ext else 'File')
 
         writer.writerow([
-            entry.name, path, entry.size, dm, ftype,
-            _format_attrs(entry.attributes)
+            _csv_safe(entry.name), _csv_safe(path), entry.size, dm,
+            _csv_safe(ftype), _format_attrs(entry.attributes)
         ])
 
 

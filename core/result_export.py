@@ -31,16 +31,28 @@ class ExportMetadata:
     app_version: str = ""
 
 
+_CSV_INJECTION_PREFIXES = ('=', '+', '-', '@', '\t', '\r')
+
+
+def _csv_safe(value):
+    """Neutralize spreadsheet formula/DDE injection from attacker-controlled
+    filenames by prefixing risky leading characters with a single quote."""
+    if isinstance(value, str) and value and value[0] in _CSV_INJECTION_PREFIXES:
+        return "'" + value
+    return value
+
+
 def export_csv(results: Sequence[ExportableResult], metadata: ExportMetadata | None = None) -> str:
     buf = io.StringIO()
     writer = csv.writer(buf)
     writer.writerow(["Name", "Path", "Parent", "Type", "Extension", "Size", "Modified", "Snippet"])
     for r in results:
         writer.writerow([
-            r.name, r.path, r.parent_path, r.kind, r.extension,
+            _csv_safe(r.name), _csv_safe(r.path), _csv_safe(r.parent_path),
+            _csv_safe(r.kind), _csv_safe(r.extension),
             r.size_bytes if r.size_bytes is not None else "",
-            r.date_modified,
-            r.content_snippet,
+            _csv_safe(r.date_modified),
+            _csv_safe(r.content_snippet),
         ])
     return buf.getvalue()
 

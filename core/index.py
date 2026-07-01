@@ -1985,7 +1985,14 @@ class USNMonitorThread(QThread):
         while self._running:
             all_changes = []
 
-            for drive, vol in self._index._volumes.items():
+            # Snapshot under the lock: other threads (catchup, refresh_drive)
+            # insert into _volumes, and iterating it live raises "dictionary
+            # changed size during iteration", which would kill this thread and
+            # silently stop all real-time index updates for the session.
+            with self._index._lock:
+                volumes = list(self._index._volumes.items())
+
+            for drive, vol in volumes:
                 try:
                     records = vol.read_usn_journal()
                     for rec in records:
