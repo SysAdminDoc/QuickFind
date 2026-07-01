@@ -24,7 +24,7 @@ def test_index_mode_indicator_shows_non_admin_fallback():
 
     assert state.text == "Non-admin scan"
     assert state.visible is True
-    assert "os.scandir fallback" in state.tooltip
+    assert "MFT access is unavailable" in state.tooltip
 
 
 def test_drive_state_indicator_hides_when_all_drives_fresh():
@@ -53,7 +53,7 @@ def test_drive_state_indicator_shows_offline_or_stale_drives():
         },
     ])
 
-    assert state.text == "2 drives stale"
+    assert state.text == "2 drives need attention"
     assert state.visible is True
     assert "E: offline" in state.tooltip
     assert "F: stale" in state.tooltip

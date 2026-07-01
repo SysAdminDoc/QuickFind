@@ -212,6 +212,10 @@ class HighlightDelegate(QStyledItemDelegate):
     def set_highlight(self, text: str):
         self._highlight_text = text.lower()
 
+    def refresh_theme(self):
+        """Re-read the accent color after a theme switch (it is cached here)."""
+        self._accent_color = QColor(MOCHA['blue'])
+
     def paint(self, painter: QPainter, option, index):
         # Draw background (selection, alternating rows)
         self.initStyleOption(option, index)
@@ -1108,6 +1112,16 @@ class ResultsView(QWidget):
     @property
     def model(self) -> ResultsTableModel:
         return self._model
+
+    def refresh_theme(self):
+        """Refresh cached theme colors and repaint after a theme switch."""
+        delegate = getattr(self.table_view, "_highlight_delegate", None)
+        if delegate is not None and hasattr(delegate, "refresh_theme"):
+            delegate.refresh_theme()
+        for view in (self.table_view, self.column_view, self.thumb_view):
+            viewport = view.viewport()
+            if viewport is not None:
+                viewport.update()
 
     def set_results(self, entries: list[FileEntry]):
         self._model.set_results(entries)

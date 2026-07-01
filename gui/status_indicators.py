@@ -22,8 +22,8 @@ def index_mode_indicator_state(is_admin_mode: bool) -> IndexModeIndicator:
     return IndexModeIndicator(
         text="Non-admin scan",
         tooltip=(
-            "MFT access is unavailable; QuickFind is using os.scandir fallback. "
-            "Indexing and updates may be slower."
+            "MFT access is unavailable, so QuickFind is scanning folders directly. "
+            "Indexing and updates may be slower. Run as administrator for full speed."
         ),
         visible=True,
     )
@@ -45,7 +45,17 @@ def drive_state_indicator_state(drive_rows: list[dict]) -> IndexModeIndicator:
     if not affected:
         return IndexModeIndicator(text="", tooltip="", visible=False)
 
-    label = "Drive stale" if len(affected) == 1 else f"{len(affected)} drives stale"
+    offline_set = {drive for drive in offline if drive}
+    count = len(affected)
+    if offline_set >= set(affected):
+        # Every affected drive is offline.
+        label = "Drive offline" if count == 1 else f"{count} drives offline"
+    elif not offline_set:
+        # None offline — all merely stale.
+        label = "Drive stale" if count == 1 else f"{count} drives stale"
+    else:
+        # A mix of offline and stale drives.
+        label = "Drive needs attention" if count == 1 else f"{count} drives need attention"
     reasons = []
     for row in drive_rows:
         drive = str(row.get("drive", ""))

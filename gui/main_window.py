@@ -300,14 +300,9 @@ class MainWindow(QMainWindow):
 
         # ── Search row (Everything-style: single compact row) ──
         search_row = QWidget()
+        self._search_row = search_row
         search_row.setObjectName("searchRow")
         search_row.setFixedHeight(30)
-        search_row.setStyleSheet(f"""
-            #searchRow {{
-                background-color: {MOCHA['mantle']};
-                border-bottom: 1px solid {MOCHA['surface0']};
-            }}
-        """)
         search_layout = QHBoxLayout(search_row)
         search_layout.setContentsMargins(4, 3, 4, 3)
         search_layout.setSpacing(6)
@@ -369,36 +364,7 @@ class MainWindow(QMainWindow):
         # Keep self._tabs aligned with the visual order when tabs are dragged;
         # every index lookup assumes self._tabs[i] is the tab at widget index i.
         self._tab_widget.tabBar().tabMoved.connect(self._on_tab_moved)
-        self._tab_widget.setStyleSheet(f"""
-            QTabWidget::pane {{
-                border: none;
-            }}
-            QTabBar::tab {{
-                background: {MOCHA['surface0']};
-                color: {MOCHA['subtext0']};
-                padding: 5px 14px;
-                border: none;
-                border-right: 1px solid {MOCHA['base']};
-                min-width: 80px;
-            }}
-            QTabBar::tab:selected {{
-                background: {MOCHA['base']};
-                color: {MOCHA['text']};
-                border-bottom: 2px solid {MOCHA['blue']};
-            }}
-            QTabBar::tab:hover:!selected {{
-                background: {MOCHA['surface1']};
-                color: {MOCHA['subtext1']};
-            }}
-            QTabBar::close-button {{
-                subcontrol-position: right;
-                padding: 2px;
-                border-radius: 3px;
-            }}
-            QTabBar::close-button:hover {{
-                background: {MOCHA['surface2']};
-            }}
-        """)
+        self._tab_widget.setStyleSheet(self._tab_widget_stylesheet())
 
         # ── Main content area (results dominate) ──
         self._splitter = QSplitter(Qt.Orientation.Horizontal)
@@ -496,6 +462,7 @@ class MainWindow(QMainWindow):
         # Keep FilterBar reference for compatibility (hidden, manages custom filters)
         self._filter_bar = FilterBar()
         self._filter_bar.hide()
+        self._apply_theme_styles()
         self._setup_accessibility()
 
     # ── Tab management ────────────────────────────────
@@ -1035,6 +1002,70 @@ class MainWindow(QMainWindow):
                 suffix = count_suffix.group(0) if count_suffix else ""
                 self._tab_widget.setTabText(idx, f"{default_title}{suffix}")
 
+    def _tab_widget_stylesheet(self) -> str:
+        return f"""
+            QTabWidget::pane {{
+                border: none;
+            }}
+            QTabBar::tab {{
+                background: {MOCHA['surface0']};
+                color: {MOCHA['subtext0']};
+                padding: 5px 14px;
+                border: none;
+                border-right: 1px solid {MOCHA['base']};
+                min-width: 80px;
+            }}
+            QTabBar::tab:selected {{
+                background: {MOCHA['base']};
+                color: {MOCHA['text']};
+                border-bottom: 2px solid {MOCHA['blue']};
+            }}
+            QTabBar::tab:hover:!selected {{
+                background: {MOCHA['surface1']};
+                color: {MOCHA['subtext1']};
+            }}
+            QTabBar::close-button {{
+                subcontrol-position: right;
+                padding: 2px;
+                border-radius: 3px;
+            }}
+            QTabBar::close-button:hover {{
+                background: {MOCHA['surface2']};
+            }}
+        """
+
+    def _apply_theme_styles(self):
+        """Re-apply the per-widget stylesheets that bake theme colors so a runtime
+        theme switch does not leave the chrome painted in the previous palette."""
+        self._search_row.setStyleSheet(
+            f"#searchRow {{ background-color: {MOCHA['mantle']}; "
+            f"border-bottom: 1px solid {MOCHA['surface0']}; }}"
+        )
+        self._tab_widget.setStyleSheet(self._tab_widget_stylesheet())
+        self._result_count_label.setStyleSheet(
+            f"color: {MOCHA['subtext1']}; font-size: 11px; font-weight: 500; padding: 0 6px;"
+        )
+        self._status_label.setStyleSheet(f"color: {MOCHA['overlay0']}; font-size: 11px;")
+        self._db_stats_label.setStyleSheet(f"color: {MOCHA['overlay0']}; font-size: 11px; padding: 0 8px;")
+        self._content_status_label.setStyleSheet(f"color: {MOCHA['mauve']}; font-size: 11px; padding: 0 8px;")
+        self._service_status_label.setStyleSheet(f"color: {MOCHA['blue']}; font-size: 11px; padding: 0 8px;")
+        self._perf_label.setStyleSheet(f"color: {MOCHA['overlay0']}; font-size: 11px; padding: 0 8px;")
+        self._last_update_label.setStyleSheet(f"color: {MOCHA['overlay0']}; font-size: 11px; padding: 0 8px;")
+        self._drive_state_label.setStyleSheet(
+            f"color: {MOCHA['yellow']}; font-size: 11px; font-weight: 600; "
+            f"padding: 1px 6px; border: 1px solid {MOCHA['surface1']}; border-radius: 4px;"
+        )
+        self._index_mode_label.setStyleSheet(
+            f"color: {MOCHA['peach']}; font-size: 11px; font-weight: 600; "
+            f"padding: 1px 6px; border: 1px solid {MOCHA['surface1']}; border-radius: 4px;"
+        )
+        self._index_status.setStyleSheet(f"color: {MOCHA['subtext0']}; font-size: 11px; padding: 0 6px;")
+        # Let each results view refresh its cached highlight accent color.
+        for tab in self._tabs:
+            refresh = getattr(tab.results_view, "refresh_theme", None)
+            if callable(refresh):
+                refresh()
+
     def _apply_settings(self, rebuild_menus: bool = False):
         """Apply current settings to the UI."""
         s = self._settings
@@ -1043,6 +1074,7 @@ class MainWindow(QMainWindow):
         app = QApplication.instance()
         if app:
             apply_theme(app)
+        self._apply_theme_styles()
         _set_title_bar_dark_mode(int(self.winId()), dark=is_dark_theme())
         self._retranslate_static_ui()
         if rebuild_menus:
