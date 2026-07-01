@@ -20,6 +20,11 @@ All notable changes to QuickFind will be documented in this file.
 - Fixed service worker intercepting API calls with HTML fallback, breaking AJAX search when offline.
 - Fixed `purge_content_cache_by_root` SQL LIKE pattern matching paths with `%` or `_` characters.
 - Fixed settings dialog purge confirmation being immediately overwritten by cache status refresh.
+- Fixed stale ACCENT color binding after theme switch: filters, tab bar, and tray icon now read from MOCHA dict at render time.
+- Fixed THEME_PACKS storing non-mocha palettes by reference instead of defensive copy, preventing mutation corruption.
+- Fixed SQLite connection leak on health-check failure and PRAGMA initialization failure in `_get_connection`.
+- Fixed worker isolation catching `BaseException` (swallowing `SystemExit`/`KeyboardInterrupt`) — narrowed to `Exception`.
+- Removed unused ACCENT imports from bookmarks, launcher_popup modules.
 - Added 8 regression tests for the above fixes, expanding the suite to 508 tests.
 
 ## [v0.8.52] - 2026-07-01

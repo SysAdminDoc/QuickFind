@@ -51,15 +51,23 @@ def _get_connection() -> sqlite3.Connection:
             conn.execute("SELECT 1")
             return conn
         except Exception:
-            conn = None
+            try:
+                conn.close()
+            except Exception:
+                pass
+            _local.conn = None
 
     CONFIG_DIR.mkdir(exist_ok=True)
     conn = sqlite3.connect(str(DB_FILE), timeout=10)
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA synchronous=NORMAL")
-    conn.execute("PRAGMA cache_size=-16000")  # 16MB cache
-    conn.execute("PRAGMA temp_store=MEMORY")
-    conn.execute("PRAGMA mmap_size=268435456")  # 256MB mmap
+    try:
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA synchronous=NORMAL")
+        conn.execute("PRAGMA cache_size=-16000")
+        conn.execute("PRAGMA temp_store=MEMORY")
+        conn.execute("PRAGMA mmap_size=268435456")
+    except Exception:
+        conn.close()
+        raise
     _local.conn = conn
     return conn
 

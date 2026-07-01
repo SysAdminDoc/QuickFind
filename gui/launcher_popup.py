@@ -14,7 +14,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QPropertyAnimation, QEasingCurve
 from PyQt6.QtGui import QFont, QColor, QKeyEvent
 
-from gui.theme import MOCHA, ACCENT
+from gui.theme import MOCHA
 from core.dialog_switch import switch_dialog_to_folder
 from core.search import SearchEngine, SearchOptions
 

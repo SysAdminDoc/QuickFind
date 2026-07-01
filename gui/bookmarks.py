@@ -19,7 +19,7 @@ from PyQt6.QtGui import QAction, QIcon
 
 from core.query_slots import normalize_query_slot_name, query_slots_from_bookmarks
 from core.workspaces import parse_workspace_roots, workspace_roots_text
-from gui.theme import MOCHA, ACCENT
+from gui.theme import MOCHA
 
 logger = logging.getLogger('QuickFind.Bookmarks')
 

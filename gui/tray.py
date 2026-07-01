@@ -15,7 +15,7 @@ from PyQt6.QtWidgets import QSystemTrayIcon, QMenu, QApplication
 from PyQt6.QtGui import QIcon, QPixmap, QPainter, QColor, QFont, QAction, QImage
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QObject, QBuffer, QIODevice
 
-from gui.theme import MOCHA, ACCENT
+from gui.theme import MOCHA
 
 logger = logging.getLogger('QuickFind.Tray')
 
@@ -106,7 +106,7 @@ def _render_icon_pixmap(size: int) -> QPixmap:
     painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
     margin = max(1, size // 16)
-    painter.setBrush(QColor(ACCENT))
+    painter.setBrush(QColor(MOCHA['blue']))
     painter.setPen(Qt.PenStyle.NoPen)
     painter.drawEllipse(margin, margin, size - margin * 2, size - margin * 2)
 

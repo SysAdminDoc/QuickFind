@@ -17,7 +17,7 @@ from PyQt6.QtCore import Qt, pyqtSignal, QSize
 from PyQt6.QtGui import QIcon, QFont
 
 from core.search import SearchFilter, BUILTIN_FILTERS
-from gui.theme import MOCHA, ACCENT
+from gui.theme import MOCHA
 
 logger = logging.getLogger('QuickFind.Filters')
 
@@ -50,7 +50,7 @@ class FilterButton(QToolButton):
             }}
             QToolButton:checked {{
                 background-color: {MOCHA['surface1']};
-                color: {ACCENT};
+                color: {MOCHA['blue']};
                 font-weight: 600;
             }}
         """)

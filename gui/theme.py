@@ -75,9 +75,9 @@ LATTE = {
 
 THEME_PACKS = {
     'mocha': dict(MOCHA),
-    'macchiato': MACCHIATO,
-    'frappe': FRAPPE,
-    'latte': LATTE,
+    'macchiato': dict(MACCHIATO),
+    'frappe': dict(FRAPPE),
+    'latte': dict(LATTE),
 }
 THEME_LABELS = {
     'mocha': 'Catppuccin Mocha',

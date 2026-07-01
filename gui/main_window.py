@@ -39,7 +39,7 @@ from core.workspaces import (
     workspace_roots_text,
 )
 
-from gui.theme import MOCHA, ACCENT, apply_theme, set_active_theme
+from gui.theme import MOCHA, apply_theme, set_active_theme
 from gui.accessibility import describe_widget
 from gui.results_view import ResultsView
 from gui.preview_pane import PreviewPane, QuickPreviewPopover
@@ -381,7 +381,7 @@ class MainWindow(QMainWindow):
             QTabBar::tab:selected {{
                 background: {MOCHA['base']};
                 color: {MOCHA['text']};
-                border-bottom: 2px solid {ACCENT};
+                border-bottom: 2px solid {MOCHA['blue']};
             }}
             QTabBar::tab:hover:!selected {{
                 background: {MOCHA['surface1']};

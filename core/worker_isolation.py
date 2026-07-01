@@ -79,7 +79,7 @@ def _worker_entrypoint(
 ) -> None:
     try:
         result_queue.put(("ok", target(*args, **kwargs)))
-    except BaseException as exc:
+    except Exception as exc:
         result_queue.put((
             "error",
             f"{type(exc).__name__}: {exc}\n{traceback.format_exc(limit=5)}",
