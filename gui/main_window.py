@@ -39,7 +39,7 @@ from core.workspaces import (
     workspace_roots_text,
 )
 
-from gui.theme import MOCHA, apply_theme, set_active_theme
+from gui.theme import MOCHA, apply_theme, is_dark_theme, set_active_theme
 from gui.accessibility import describe_widget
 from gui.results_view import ResultsView
 from gui.preview_pane import PreviewPane, QuickPreviewPopover
@@ -96,11 +96,11 @@ def _delete_feedback_message(results: list[RecycleResult], removed_count: int = 
     return ". ".join(parts) if parts else "No files were moved to Recycle Bin"
 
 
-def _set_dark_title_bar(hwnd):
-    """Enable dark title bar on Windows 10/11 via DwmSetWindowAttribute."""
+def _set_title_bar_dark_mode(hwnd, dark: bool = True):
+    """Set title bar to dark or light mode on Windows 10/11 via DwmSetWindowAttribute."""
     try:
         DWMWA_USE_IMMERSIVE_DARK_MODE = 20
-        value = ctypes.c_int(1)
+        value = ctypes.c_int(1 if dark else 0)
         ctypes.windll.dwmapi.DwmSetWindowAttribute(
             hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE,
             ctypes.byref(value), ctypes.sizeof(value)
@@ -268,7 +268,7 @@ class MainWindow(QMainWindow):
         self._apply_settings()
 
         # Dark title bar
-        _set_dark_title_bar(int(self.winId()))
+        _set_title_bar_dark_mode(int(self.winId()), dark=is_dark_theme())
 
         self._sync_file_index_settings()
 
@@ -1034,6 +1034,7 @@ class MainWindow(QMainWindow):
         app = QApplication.instance()
         if app:
             apply_theme(app)
+        _set_title_bar_dark_mode(int(self.winId()), dark=is_dark_theme())
         self._retranslate_static_ui()
         if rebuild_menus:
             self.menuBar().clear()

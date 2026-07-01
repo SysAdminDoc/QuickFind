@@ -5,6 +5,7 @@ from gui.theme import (
     active_theme_name,
     available_themes,
     build_stylesheet,
+    is_dark_theme,
     set_active_theme,
 )
 
@@ -34,3 +35,16 @@ def test_available_themes_include_dark_and_light_packs():
 
     assert themes["mocha"] == "Catppuccin Mocha"
     assert themes["latte"] == "Catppuccin Latte"
+
+
+def test_is_dark_theme_reflects_active_theme():
+    original = active_theme_name()
+    try:
+        set_active_theme("mocha")
+        assert is_dark_theme() is True
+        set_active_theme("macchiato")
+        assert is_dark_theme() is True
+        set_active_theme("latte")
+        assert is_dark_theme() is False
+    finally:
+        set_active_theme(original)

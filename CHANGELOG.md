@@ -2,6 +2,12 @@
 
 All notable changes to QuickFind will be documented in this file.
 
+## [v0.8.54] - 2026-07-01
+
+- Title bar now switches between dark and light mode when the theme changes, fixing dark title bar on Latte (light) theme.
+- Added `is_dark_theme()` helper to theme module for runtime dark/light detection.
+- Added theme dark-mode detection test, expanding the suite to 509 tests.
+
 ## [v0.8.53] - 2026-07-01
 
 - Fixed path traversal in plugin loader: entry points that escape the plugin directory are now blocked.

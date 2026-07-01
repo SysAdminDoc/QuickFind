@@ -122,6 +122,10 @@ def active_theme_name() -> str:
     return ACTIVE_THEME
 
 
+def is_dark_theme() -> bool:
+    return ACTIVE_THEME != 'latte'
+
+
 def build_stylesheet() -> str:
     return f"""
 /* ── Global ───────────────────────────────────────────── */
