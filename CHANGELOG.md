@@ -2,6 +2,39 @@
 
 All notable changes to QuickFind will be documented in this file.
 
+## [v0.8.57] - 2026-07-01
+
+Deep audit pass — correctness, security, UX, theming, and packaging.
+
+### Correctness & data integrity
+- Cache: the FTS5 rebuild is now committed instead of being left in an uncommitted implicit transaction, which previously rolled the rebuild back at process exit and made the next batch write fail with "cannot start a transaction within a transaction".
+- Cache: `save_cache` rolls back on failure so a partial wipe can no longer be committed by a later unrelated commit.
+- Search: 1–2 character queries fall back to LIKE (the trigram tokenizer needs 3+ characters and silently matched nothing); `path:` filters combined with a term or multiple includes now use the in-memory engine that applies them.
+- Index: the USN monitor snapshots the volume map under the lock, preventing a "dictionary changed size during iteration" crash that silently stopped real-time updates.
+- Filters: the Manage Filters dialog no longer wipes `exclude_paths` on OK.
+- Preview: a still-running preview loader is retained until it finishes instead of being garbage-collected mid-run (which aborted the process on slow/dead I/O).
+- Main window: tab drag reordering keeps internal tab state aligned; quit cancels the index and search workers before closing volume handles.
+- Results view: genuinely empty files show "0 B" instead of a blank size cell.
+- CLI `es`: defaults to ascending sort like Everything's `es.exe`, with `-r/--reverse`; `ext:` drops empty segments from a trailing semicolon.
+
+### Security
+- Server: rejects negative `Content-Length` (bypassed the request-body size cap).
+- Export: neutralizes CSV formula/DDE injection from attacker-controlled filenames in both the report exporter and the CLI.
+- Cache: LIKE `%`/`_` wildcards in name/path/exclude filters are escaped so a filename with an underscore no longer matches unrelated files.
+- Archives: member paths are stripped of drive and `..` components so a crafted archive entry cannot resolve to a real file outside the archive.
+
+### UX, theming, and microcopy
+- Runtime theme switch re-applies the baked chrome stylesheets (search row, tab bar, status bar) and the results highlight accent, so switching Catppuccin variants no longer leaves half the window in the previous palette.
+- Remote web UI: PWA manifest/service-worker/icon load before auth and under a corrected CSP so install and offline shell work; search fetch checks response status and surfaces 401/429; hardcoded Mocha surfaces and the pill badge use theme tokens.
+- Context menu: Open PowerShell here works via the working directory; Properties uses `ShellExecuteEx` (the shell verb is unsupported by `ShellExecuteW`).
+- Settings: reopening restores the drive selection (was re-checking all drives and overwriting on OK); repeated Apply detects changes; a cancelled network-share removal no longer deletes the stored credential.
+- Status bar: the non-admin tooltip drops internal jargon; offline drives are labelled offline, mixed states as needs-attention.
+- Spanish catalog: restored missing diacritics throughout.
+
+### Build & packaging
+- `build.py --sbom` no longer crashes on a missing `json` import.
+- Version strings synced to 0.8.57 across `core/version.py`, README badges/matrix, CHANGELOG, and the winget manifests; README test count corrected to 526.
+
 ## [v0.8.56] - 2026-07-01
 
 - Fixed active search filter silently overwriting user's explicit `ext:` modifier; user's query-level extension now takes precedence over the filter bar.
