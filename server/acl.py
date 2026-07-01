@@ -51,13 +51,15 @@ def path_within_roots(path: str, roots: Sequence[str]) -> bool:
     """Check if a resolved path falls within any of the allowed roots."""
     if not roots:
         return True
-    norm_path = os.path.normcase(os.path.realpath(path))
+    from pathlib import PurePath
+    resolved = PurePath(os.path.normcase(os.path.realpath(path)))
     for root in roots:
-        norm_root = os.path.normcase(os.path.realpath(root))
-        if not norm_root.endswith(os.sep):
-            norm_root += os.sep
-        if norm_path.startswith(norm_root) or norm_path == norm_root.rstrip(os.sep):
+        root_resolved = PurePath(os.path.normcase(os.path.realpath(root)))
+        try:
+            resolved.relative_to(root_resolved)
             return True
+        except ValueError:
+            continue
     return False
 
 
