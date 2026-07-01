@@ -15,7 +15,8 @@ All notable changes to QuickFind will be documented in this file.
 - Added visual query builder with modifier chip extraction, composition, validation, and round-trip to raw query strings for all built-in modifiers.
 - Added plugin discovery from `~/.quickfind/plugins/` with manifest validation, Python entry-point loading, disabled/quarantine support, and plugin summary for settings/help.
 - Added incremental content-cache refresh queue for file-change events with bounded capacity, batch processing, rename/delete handling, and queue diagnostics.
-- Added 95 tests covering advisory/SBOM/audit/purge/localization/benchmark/export/chips/plugins/refresh scenarios, expanding the passing suite to 458 tests.
+- Added duplicate review workflow with name/size grouping, configurable keep rules, remediation preview, and safe Recycle Bin batch actions with skip/fail tracking.
+- Added 106 tests across all new features, expanding the passing suite to 469 tests.
 
 ## [v0.8.51] - 2026-07-01
 

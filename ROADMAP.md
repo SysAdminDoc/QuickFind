@@ -34,13 +34,6 @@ NTFS-MFT-backed instant file search (PyQt6 + SQLite FTS5). Voidtools Everything 
 
 ### P2 - Search Depth and Workflow Expansion
 
-- [ ] P2 — Add duplicate review workflow with safe remediation
-  Why: `dupe:` and `dupe:hash` identify duplicates, but there is no grouped review surface, keep-rule preview, or safe batch action.
-  Evidence: `core/search.py:1142`, `gui/results_view.py`, UltraSearch/WizFile duplicate and hardlink features.
-  Touches: `core/search.py`, `gui/main_window.py`, `gui/results_view.py`, `gui/context_menu.py`, `tests/test_search.py`, `tests/test_main_window.py`
-  Acceptance: Duplicate results can be grouped by duplicate set/hash, users can preview keep/delete candidates, safe actions move only selected duplicates to Recycle Bin with feedback, and tests cover folders, hardlinks, and missing files.
-  Complexity: L
-
 ### P3 — Larger Features
 
 - [ ] P3 — Add portable/cloud-profile mode with machine-scoped caches
