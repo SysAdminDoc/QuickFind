@@ -1,9 +1,9 @@
 PackageIdentifier: SysAdminDoc.QuickFind
-PackageVersion: 0.8.50
+PackageVersion: 0.8.51
 InstallerType: msix
 Installers:
 - Architecture: x64
-  InstallerUrl: https://github.com/SysAdminDoc/QuickFind/releases/download/v0.8.50/QuickFind.msix
-  InstallerSha256: 320C7CDD16E24DF4EEEBEF003D0F8E41BC1C9739C5CEB41A7A74063B03F87F18
+  InstallerUrl: https://github.com/SysAdminDoc/QuickFind/releases/download/v0.8.51/QuickFind.msix
+  InstallerSha256: 6C4CEEF773364454B0E82D841B2674D305A3AFF8286796A47C81824DB90B6913
 ManifestType: installer
 ManifestVersion: 1.9.0

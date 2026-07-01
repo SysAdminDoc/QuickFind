@@ -1114,6 +1114,26 @@ class ResultsView(QWidget):
             self.column_view.setColumnWidth(column, 180 if column else 120)
         self.breadcrumb_header.set_path("")
 
+    def remove_paths(self, paths: list[str]) -> int:
+        keys = {_normalized_result_path(path) for path in paths}
+        if not keys:
+            return 0
+        remaining = []
+        removed = 0
+        for entry in self._model.entries:
+            try:
+                entry_key = _normalized_result_path(entry.get_path(self._file_index))
+            except Exception:
+                remaining.append(entry)
+                continue
+            if entry_key in keys:
+                removed += 1
+            else:
+                remaining.append(entry)
+        if removed:
+            self.set_results(remaining)
+        return removed
+
     def set_highlight(self, text: str):
         self.table_view.set_highlight(text)
 
@@ -1148,3 +1168,7 @@ class ResultsView(QWidget):
         else:
             self.breadcrumb_header.set_path(entry.get_path(self._file_index))
         self.selection_changed.emit(entry)
+
+
+def _normalized_result_path(path: str) -> str:
+    return os.path.normcase(os.path.abspath(path))

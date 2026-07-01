@@ -645,7 +645,23 @@ def main():
     parser.add_argument('--release-check', action='store_true', help='Validate local release artifacts and metadata')
     parser.add_argument('--skip-remote', action='store_true', help='Skip GitHub release asset checks during --release-check')
     parser.add_argument('--allow-unsigned', action='store_true', help='Allow unsigned MSIX packages during --release-check')
+    parser.add_argument('--dep-audit', action='store_true', help='Run dependency advisory, license, and SBOM check')
+    parser.add_argument('--sbom', action='store_true', help='Emit CycloneDX SBOM JSON alongside --dep-audit')
     args = parser.parse_args()
+
+    if args.dep_audit:
+        from core.dep_audit import run_audit, format_report, sbom_json
+        audit = run_audit()
+        print(format_report(audit))
+        if args.sbom:
+            sbom = sbom_json(audit)
+            sbom_path = DIST / "sbom.json"
+            DIST.mkdir(parents=True, exist_ok=True)
+            sbom_path.write_text(json.dumps(sbom, indent=2), encoding="utf-8")
+            print(f"\n[+] SBOM written to {sbom_path}")
+        if not audit.passed:
+            sys.exit(1)
+        return
 
     if args.release_check:
         report = release_check(

@@ -2,6 +2,18 @@
 
 All notable changes to QuickFind will be documented in this file.
 
+## [v0.8.52] - 2026-07-01
+
+- Added dependency advisory, license, and SBOM release gate via `python build.py --dep-audit` with optional `--sbom` CycloneDX JSON output.
+- Advisory checks fail on unwaived high/critical vulnerabilities; waivers support expiry dates via `dep_waivers.json`.
+- Added 15 tests with mocked advisory data covering pass/fail/waiver/expiry/SBOM scenarios, expanding the passing suite to 378 tests.
+
+## [v0.8.51] - 2026-07-01
+
+- Added status-bar, tray, log, and recovery-hint feedback for Delete-to-Recycle actions from both context menus and keyboard Delete.
+- Removed successfully recycled files from visible result rows across open tabs so the current search view updates immediately.
+- Added recycle-result and feedback-message coverage, expanding the passing suite to 363 tests.
+
 ## [v0.8.50] - 2026-07-01
 
 - Added an optional Windows IFilter/property-handler content adapter through Windows Search COM APIs for installed legacy Office, PDF, email, and metadata extractors.

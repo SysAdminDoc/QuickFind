@@ -47,13 +47,53 @@ from gui.diff_dialog import DiffCompareDialog
 from gui.filters import FilterBar
 from gui.bookmarks import BookmarkManager, BookmarksPanel, Bookmark
 from gui.help_docs import OfflineHelpDialog
-from gui.context_menu import build_context_menu
+from gui.context_menu import RecycleResult, build_context_menu
 from gui.tray import SystemTray
 from gui.settings_dialog import Settings, SettingsDialog
 from gui.status_indicators import drive_state_indicator_state, index_mode_indicator_state
 from core.hidden_paths import HiddenPathsManager
 
 logger = logging.getLogger('QuickFind.MainWindow')
+
+
+def _item_count_label(count: int) -> str:
+    return f"{count:,} item" if count == 1 else f"{count:,} items"
+
+
+def _path_summary(paths: list[str]) -> str:
+    if not paths:
+        return ""
+    if len(paths) == 1:
+        return _path_label(paths[0])
+    return f"{_path_label(paths[0])} + {len(paths) - 1:,} more"
+
+
+def _path_label(path: str) -> str:
+    cleaned = path.rstrip("\\/")
+    return os.path.basename(cleaned) or cleaned or path
+
+
+def _delete_feedback_message(results: list[RecycleResult], removed_count: int = 0) -> str:
+    successes = [result for result in results if result.ok]
+    failures = [result for result in results if not result.ok]
+    parts = []
+    if failures:
+        first_error = failures[0].error or (
+            f"error code {failures[0].error_code}" if failures[0].error_code else "unknown error"
+        )
+        parts.append(
+            f"Recycle failed for {_item_count_label(len(failures))}: "
+            f"{_path_summary([result.path for result in failures])} ({first_error})"
+        )
+    if successes:
+        parts.append(
+            f"Moved {_item_count_label(len(successes))} to Recycle Bin: "
+            f"{_path_summary([result.path for result in successes])}"
+        )
+        if removed_count:
+            parts.append(f"Removed {_item_count_label(removed_count)} from current results")
+        parts.append("Restore from Windows Recycle Bin if needed")
+    return ". ".join(parts) if parts else "No files were moved to Recycle Bin"
 
 
 def _set_dark_title_bar(hwnd):
@@ -182,6 +222,7 @@ class SearchTab:
 
 class MainWindow(QMainWindow):
     """Main application window."""
+    _delete_completed = pyqtSignal(object)
 
     def __init__(self):
         super().__init__()
@@ -198,6 +239,7 @@ class MainWindow(QMainWindow):
         self._http_server_config = None
         self._content_index_worker: Optional[ContentIndexWorker] = None
         self._content_index_stats = None
+        self._delete_completed.connect(self._on_delete_completed)
 
         # State
         self._search_worker: Optional[SearchWorker] = None
@@ -1576,11 +1618,74 @@ class MainWindow(QMainWindow):
         """Delete selected entries to recycle bin in a background thread."""
         import threading
         from gui.context_menu import _delete_to_recycle
-        paths = [entry.get_path(self._file_index) for entry in entries]
+
+        paths = []
+        for entry in entries:
+            try:
+                paths.append(entry.get_path(self._file_index))
+            except Exception as exc:
+                logger.warning("Unable to resolve delete target for %s: %s", entry, exc)
+        if not paths:
+            self._status_label.setText("No valid delete targets selected")
+            return
+
+        self._status_label.setText(f"Moving {_item_count_label(len(paths))} to Recycle Bin...")
+        logger.info("Recycle requested for %s: %s", _item_count_label(len(paths)), _path_summary(paths))
+
         def _do_delete():
-            for path in paths:
-                _delete_to_recycle(path)
+            results = [_delete_to_recycle(path) for path in paths]
+            self._delete_completed.emit(results)
         threading.Thread(target=_do_delete, daemon=True).start()
+
+    @pyqtSlot(object)
+    def _on_delete_completed(self, results):
+        results = list(results or [])
+        success_paths = [result.path for result in results if result.ok]
+        removed_count = self._remove_deleted_result_paths(success_paths)
+        message = _delete_feedback_message(results, removed_count)
+        self._status_label.setText(message)
+        failures = [result for result in results if not result.ok]
+        if failures:
+            logger.warning("Recycle completed with failures: %s", message)
+        else:
+            logger.info("Recycle completed: %s", message)
+        self._show_recycle_notification(message, failed=bool(failures))
+
+    def _remove_deleted_result_paths(self, paths: list[str]) -> int:
+        removed = 0
+        if not paths:
+            return removed
+        for tab in self._tabs:
+            removed_from_tab = tab.results_view.remove_paths(paths)
+            if removed_from_tab:
+                removed += removed_from_tab
+                self._refresh_tab_result_count(tab)
+        return removed
+
+    def _refresh_tab_result_count(self, tab: SearchTab) -> None:
+        if tab not in self._tabs:
+            return
+        count = tab.results_view.result_count
+        idx = self._tabs.index(tab)
+        query = tab.query.strip()
+        tab_label = query[:20] if query else self._localized_search_title()
+        self._tab_widget.setTabText(idx, f"{tab_label} ({count:,})")
+        if tab is self._current_tab():
+            self._result_count_label.setText(f"{count:,} object{'s' if count != 1 else ''}")
+            if query:
+                self.setWindowTitle(f"{query} - {count:,} objects - {APP_TITLE}")
+            else:
+                self.setWindowTitle(f"{count:,} objects - {APP_TITLE}")
+
+    def _show_recycle_notification(self, message: str, failed: bool = False) -> None:
+        tray = getattr(self, "_tray", None)
+        if not tray or not tray.isVisible():
+            return
+        title = "QuickFind delete failed" if failed else "QuickFind delete"
+        try:
+            tray.showMessage(title, message)
+        except Exception as exc:
+            logger.debug("Unable to show recycle notification: %s", exc)
 
     def _on_rename_requested(self, entry: FileEntry):
         """Rename a file (F2). Opens explorer rename dialog."""
@@ -1623,6 +1728,7 @@ class MainWindow(QMainWindow):
             dialog_quick_switch_enabled=self._settings.enable_dialog_quick_switch,
             status_callback=self._status_label.setText,
             compare_callback=self._show_file_diff,
+            delete_callback=self._on_delete_requested,
         )
         menu.exec(self._results_view.table_view.viewport().mapToGlobal(pos))
 

@@ -1,5 +1,8 @@
 """Tests for main window status indicator state."""
 
+import gui.context_menu as context_menu
+from gui.context_menu import RecycleResult, _delete_to_recycle
+from gui.main_window import _delete_feedback_message
 from gui.status_indicators import (
     diagnostics_summary_rows,
     drive_state_indicator_state,
@@ -96,3 +99,55 @@ def test_format_bytes_uses_compact_units():
     assert format_bytes(512) == "512 B"
     assert format_bytes(2048) == "2 KB"
     assert format_bytes(2 * 1024 * 1024) == "2.0 MB"
+
+
+def test_delete_feedback_message_reports_success_and_recovery_hint():
+    message = _delete_feedback_message(
+        [
+            RecycleResult("C:\\docs\\report.txt", True),
+            RecycleResult("C:\\docs\\notes.txt", True),
+        ],
+        removed_count=2,
+    )
+
+    assert "Moved 2 items to Recycle Bin: report.txt + 1 more" in message
+    assert "Removed 2 items from current results" in message
+    assert "Restore from Windows Recycle Bin if needed" in message
+
+
+def test_delete_feedback_message_reports_shell_errors():
+    message = _delete_feedback_message([
+        RecycleResult("C:\\docs\\blocked.txt", False, error_code=5, error="SHFileOperationW returned 5"),
+    ])
+
+    assert "Recycle failed for 1 item: blocked.txt" in message
+    assert "SHFileOperationW returned 5" in message
+    assert "Restore from Windows Recycle Bin" not in message
+
+
+def test_delete_to_recycle_returns_success(monkeypatch):
+    class FakeShell:
+        def SHFileOperationW(self, operation):
+            operation._obj.fAnyOperationsAborted = 0
+            return 0
+
+    monkeypatch.setattr(context_menu, "shell32", FakeShell())
+
+    result = _delete_to_recycle("C:\\docs\\report.txt")
+
+    assert result == RecycleResult("C:\\docs\\report.txt", True)
+
+
+def test_delete_to_recycle_returns_shell_error(monkeypatch):
+    class FakeShell:
+        def SHFileOperationW(self, operation):
+            operation._obj.fAnyOperationsAborted = 0
+            return 5
+
+    monkeypatch.setattr(context_menu, "shell32", FakeShell())
+
+    result = _delete_to_recycle("C:\\docs\\blocked.txt")
+
+    assert result.ok is False
+    assert result.error_code == 5
+    assert result.error == "SHFileOperationW returned 5"

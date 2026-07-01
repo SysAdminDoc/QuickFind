@@ -7,6 +7,7 @@ import subprocess
 import ctypes
 import logging
 import threading
+from dataclasses import dataclass
 from typing import Optional
 
 from PyQt6.QtWidgets import QMenu, QApplication, QInputDialog
@@ -19,7 +20,16 @@ from core.open_with import launch_open_with, resolve_open_with_apps
 
 logger = logging.getLogger('QuickFind.ContextMenu')
 
-shell32 = ctypes.windll.shell32
+shell32 = getattr(getattr(ctypes, 'windll', None), 'shell32', None)
+
+
+@dataclass(frozen=True)
+class RecycleResult:
+    path: str
+    ok: bool
+    error_code: int = 0
+    aborted: bool = False
+    error: str = ""
 
 
 class _SHFILEOPSTRUCTW(ctypes.Structure):
@@ -101,8 +111,13 @@ _FOF_SILENT = 0x0004
 _FOF_NOCONFIRMATION = 0x0010
 
 
-def _delete_to_recycle(path: str):
+def _delete_to_recycle(path: str) -> RecycleResult:
     """Delete file to Recycle Bin using SHFileOperation."""
+    if shell32 is None:
+        error = "Windows shell recycle API unavailable"
+        logger.error("%s for %s", error, path)
+        return RecycleResult(path=path, ok=False, error=error)
+
     try:
         op = _SHFILEOPSTRUCTW()
         op.wFunc = _FO_DELETE
@@ -110,9 +125,24 @@ def _delete_to_recycle(path: str):
         op.fFlags = _FOF_ALLOWUNDO | _FOF_SILENT | _FOF_NOCONFIRMATION
         result = shell32.SHFileOperationW(ctypes.byref(op))
         if result != 0:
-            logger.warning(f"SHFileOperationW returned {result} for {path}")
+            error = f"SHFileOperationW returned {int(result)}"
+            logger.warning("%s for %s", error, path)
+            return RecycleResult(
+                path=path,
+                ok=False,
+                error_code=int(result),
+                aborted=bool(op.fAnyOperationsAborted),
+                error=error,
+            )
+        if op.fAnyOperationsAborted:
+            error = "Recycle operation was aborted"
+            logger.warning("%s for %s", error, path)
+            return RecycleResult(path=path, ok=False, aborted=True, error=error)
+        logger.info("Moved to Recycle Bin: %s", path)
+        return RecycleResult(path=path, ok=True)
     except Exception as e:
         logger.error(f"Failed to delete {path}: {e}")
+        return RecycleResult(path=path, ok=False, error=str(e))
 
 
 def build_context_menu(entries: list[FileEntry], file_index: FileIndex,
@@ -120,7 +150,8 @@ def build_context_menu(entries: list[FileEntry], file_index: FileIndex,
                        hide_callback=None,
                        dialog_quick_switch_enabled: bool = False,
                        status_callback=None,
-                       compare_callback=None) -> QMenu:
+                       compare_callback=None,
+                       delete_callback=None) -> QMenu:
     """
     Build a context menu for the selected file entries.
     """
@@ -268,6 +299,9 @@ def build_context_menu(entries: list[FileEntry], file_index: FileIndex,
     # ── Delete ──────────────────────────────────────
     delete_action = menu.addAction(f"Delete ({len(entries)})" if len(entries) > 1 else "Delete")
     def _async_delete():
+        if delete_callback:
+            delete_callback(entries)
+            return
         paths = [e.get_path(file_index) for e in entries]
         threading.Thread(target=lambda: [_delete_to_recycle(p) for p in paths], daemon=True).start()
     delete_action.triggered.connect(_async_delete)
