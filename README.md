@@ -1,10 +1,10 @@
-# QuickFind v0.8.54
+# QuickFind v0.8.55
 
 Lightning-fast file search for Windows, powered by NTFS MFT + USN Journal.
 
 An open-source alternative to [Voidtools Everything](https://www.voidtools.com/), built with Python and PyQt6 for extensibility and customization.
 
-![Version](https://img.shields.io/badge/Version-v0.8.54-blueviolet)
+![Version](https://img.shields.io/badge/Version-v0.8.55-blueviolet)
 ![Python](https://img.shields.io/badge/Python-3.10+-blue)
 ![License](https://img.shields.io/badge/License-MIT-green)
 ![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey)
@@ -93,7 +93,7 @@ An open-source alternative to [Voidtools Everything](https://www.voidtools.com/)
 
 ## Supported Runtime Matrix
 
-| Component | Supported | Tested in v0.8.54 |
+| Component | Supported | Tested in v0.8.55 |
 |-----------|-----------|------------------|
 | OS | Windows 10/11 | Windows 10.0.26100 |
 | Python | 3.10+ | 3.11.9 |

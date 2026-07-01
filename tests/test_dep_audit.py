@@ -143,6 +143,8 @@ def test_audit_passes_medium_without_waiver(tmp_path):
     )
     assert report.passed is True
     assert not report.unwaived
+    assert len(report.unwaived_info) == 1
+    assert report.unwaived_info[0].severity == "medium"
 
 
 def test_waiver_suppresses_critical(tmp_path):

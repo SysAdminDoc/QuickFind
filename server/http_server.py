@@ -836,17 +836,19 @@ class SearchHandler(BaseHTTPRequestHandler):
 
     def _origin_or_referer_allowed(self) -> bool:
         expected = self._request_origin()
+        checked = False
         for header in ('Origin', 'Referer'):
             value = self.headers.get(header, '')
             if not value:
                 continue
+            checked = True
             parsed = urlparse(value)
             if not parsed.scheme or not parsed.netloc:
                 return False
             actual = f"{parsed.scheme.lower()}://{parsed.netloc.lower()}"
-            if not secrets.compare_digest(actual, expected):
+            if actual != expected:
                 return False
-        return True
+        return checked
 
     def _request_origin(self) -> str:
         host = self.headers.get('Host', '')
@@ -878,7 +880,7 @@ class SearchHandler(BaseHTTPRequestHandler):
         cards_html = self._build_result_cards_from_payloads(result_items)
 
         response = json.dumps({
-            'count': len(results),
+            'count': len(result_items),
             'results': result_items,
             'cards': cards_html,
             'rows': cards_html,
@@ -1053,12 +1055,6 @@ class SearchHandler(BaseHTTPRequestHandler):
             )
 
         return '\n'.join(cards)
-
-    def _build_result_cards(self, results):
-        """Build read-only result cards from search results."""
-        return self._build_result_cards_from_payloads(
-            self._build_result_payloads(results)
-        )
 
 
 class QuickFindHTTPServer:

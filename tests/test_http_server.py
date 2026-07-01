@@ -223,7 +223,8 @@ def test_result_cards_escape_paths_and_include_badges():
     entry._path = "C:\\docs\\alpha <report>.txt"
     handler.file_index.resolve_parent_path.return_value = "C:\\docs"
 
-    html = handler._build_result_cards([entry])
+    payloads = handler._build_result_payloads([entry])
+    html = handler._build_result_cards_from_payloads(payloads)
 
     assert 'class="result-card"' in html
     assert "alpha &lt;report&gt;.txt" in html
@@ -437,3 +438,28 @@ def test_pwa_icon_serves_valid_svg():
     assert "viewBox" in body
     header_calls = [call.args for call in handler.send_header.call_args_list]
     assert ("Content-Type", "image/svg+xml") in header_calls
+
+
+def test_csrf_rejects_post_without_origin_or_referer():
+    body = b"token=secret"
+    handler = _handler({
+        "Host": "127.0.0.1:8080",
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Content-Length": str(len(body)),
+    })
+    handler.rfile = BytesIO(body)
+
+    handler._handle_auth_post()
+
+    handler.send_response.assert_called_once_with(403)
+
+
+def test_api_search_count_matches_payload_length():
+    handler = _handler()
+    handler.search_engine.search.return_value = []
+
+    handler._handle_api_search({"q": ["test"], "max": ["5"]})
+
+    body = handler.wfile.getvalue().decode("utf-8")
+    payload = json.loads(body)
+    assert payload["count"] == len(payload["results"])

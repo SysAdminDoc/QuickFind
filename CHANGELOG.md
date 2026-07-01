@@ -2,6 +2,17 @@
 
 All notable changes to QuickFind will be documented in this file.
 
+## [v0.8.55] - 2026-07-01
+
+- Fixed CSRF bypass where POST to `/auth` without Origin/Referer headers was accepted; now requires at least one same-origin header.
+- Fixed API search `count` field reporting more results than the payload actually contains due to a hard 1000-item cap.
+- Fixed plugin loader path containment check using brittle string prefix; now uses `Path.relative_to` for case-insensitive, symlink-safe comparison.
+- Fixed settings file I/O not specifying UTF-8 encoding, causing potential data corruption on non-UTF-8 system locales.
+- Fixed `group_by_size` treating all 0-byte files as duplicates, producing false-positive groups for empty files like `.gitkeep` and `__init__.py`.
+- Fixed dep_audit silently dropping medium/low severity unwaived advisories from the report; they now appear in a separate `unwaived_info` section.
+- Removed dead `_build_result_cards` method from HTTP server handler.
+- Added 3 regression tests for CSRF, count/payload mismatch, and 0-byte duplicate exclusion, expanding the suite to 519 tests.
+
 ## [v0.8.54] - 2026-07-01
 
 - Title bar now switches between dark and light mode when the theme changes, fixing dark title bar on Latte (light) theme.

@@ -73,6 +73,8 @@ def group_by_size(entries: Sequence[FileEntry], index: FileIndex) -> list[Duplic
         if entry.is_dir:
             continue
         size = getattr(entry, "size", 0) or 0
+        if size == 0:
+            continue
         groups[size].append(entry)
 
     result = []

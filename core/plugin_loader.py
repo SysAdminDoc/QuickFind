@@ -147,7 +147,9 @@ def load_plugin_module(manifest: PluginManifest, plugin_dir: Path,
             return None
 
     resolved_dir = plugin_dir.resolve()
-    if not str(module_path).startswith(str(resolved_dir) + os.sep):
+    try:
+        module_path.relative_to(resolved_dir)
+    except ValueError:
         logger.warning(
             "Plugin %s entry point escapes plugin directory: %s",
             manifest.name, module_path,

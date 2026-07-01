@@ -85,6 +85,16 @@ def test_duplicate_group_recoverable_size():
     assert groups[0].recoverable_size == 2000
 
 
+def test_group_by_size_excludes_zero_byte_files():
+    entries = [
+        _entry("a.txt", frn=1, size=0),
+        _entry("b.txt", frn=2, size=0),
+        _entry("c.txt", frn=3, size=0),
+    ]
+    groups = group_by_size(entries, _index())
+    assert groups == []
+
+
 def test_preview_keeps_shortest_path():
     entries = [
         _entry("a.txt", frn=1, path="C:\\short\\a.txt"),

@@ -50,6 +50,7 @@ class AuditReport:
     packages: list[PackageInfo] = field(default_factory=list)
     waivers: list[Waiver] = field(default_factory=list)
     unwaived: list[Advisory] = field(default_factory=list)
+    unwaived_info: list[Advisory] = field(default_factory=list)
     waived: list[Advisory] = field(default_factory=list)
     expired_waivers: list[Waiver] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
@@ -213,6 +214,8 @@ def run_audit(
                 report.waived.append(adv)
             elif adv.severity in ("high", "critical"):
                 report.unwaived.append(adv)
+            else:
+                report.unwaived_info.append(adv)
 
     return report
 
@@ -269,6 +272,12 @@ def format_report(report: AuditReport) -> str:
         lines.append("")
         lines.append("UNWAIVED high/critical advisories:")
         for adv in report.unwaived:
+            lines.append(f"  {adv.severity.upper()} {adv.id} ({adv.package}): {adv.summary}")
+
+    if report.unwaived_info:
+        lines.append("")
+        lines.append("Unwaived informational advisories:")
+        for adv in report.unwaived_info:
             lines.append(f"  {adv.severity.upper()} {adv.id} ({adv.package}): {adv.summary}")
 
     if report.errors:

@@ -202,7 +202,7 @@ class Settings:
         if not SETTINGS_FILE.exists():
             return Settings()
         try:
-            with open(SETTINGS_FILE, 'r') as f:
+            with open(SETTINGS_FILE, 'r', encoding='utf-8') as f:
                 data = json.load(f)
             s, warnings = Settings.from_mapping(data)
             original_version = data.get("schema_version", 0)
@@ -227,13 +227,13 @@ class Settings:
 
     def export_to_file(self, path: str):
         """Export settings to a JSON file."""
-        with open(path, 'w') as f:
-            json.dump(asdict(self), f, indent=2)
+        with open(path, 'w', encoding='utf-8') as f:
+            json.dump(asdict(self), f, indent=2, ensure_ascii=False)
 
     @staticmethod
     def import_from_file(path: str) -> 'Settings':
         """Import settings from a JSON file."""
-        with open(path, 'r') as f:
+        with open(path, 'r', encoding='utf-8') as f:
             data = json.load(f)
         s, warnings = Settings.from_mapping(data)
         for warning in warnings:
@@ -267,8 +267,8 @@ def _write_settings_file(settings: Settings, path: Path, backup_existing: bool =
         shutil.copy2(path, backup)
 
     tmp = path.with_suffix('.tmp')
-    with open(tmp, 'w') as f:
-        json.dump(asdict(settings), f, indent=2)
+    with open(tmp, 'w', encoding='utf-8') as f:
+        json.dump(asdict(settings), f, indent=2, ensure_ascii=False)
     tmp.replace(path)
     return backup
 
