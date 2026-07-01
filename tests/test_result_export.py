@@ -55,6 +55,28 @@ def test_csv_export_includes_header_and_rows():
     assert "notes.txt" in lines[2]
 
 
+def test_csv_export_neutralizes_formula_injection():
+    malicious = [
+        ExportableResult(
+            name="=cmd|' /C calc'!A0",
+            path="@evil.txt",
+            parent_path="+2+3",
+            kind="-1",
+            extension=".txt",
+            size_bytes=1,
+            size_display="1 B",
+            date_modified="2026-07-01",
+        )
+    ]
+    csv_text = export_csv(malicious)
+    data_row = csv_text.strip().split("\n")[1]
+    # Every risky leading character is prefixed with a single quote.
+    assert "'=cmd" in data_row
+    assert "'@evil.txt" in data_row
+    assert "'+2+3" in data_row
+    assert "'-1" in data_row
+
+
 def test_csv_export_escapes_commas_in_paths():
     results = [ExportableResult(
         name="data,file.csv",

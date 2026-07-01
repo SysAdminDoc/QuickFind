@@ -182,3 +182,22 @@ def test_archive_reader_reports_sandbox_timeout(monkeypatch):
     assert outcome.members == []
     assert outcome.timed_out is True
     assert "timed out" in outcome.error
+
+
+@pytest.mark.parametrize("member", [
+    "../../Users/x/evil.exe",
+    "..\\..\\Windows\\System32\\evil.dll",
+    "C:\\Windows\\evil.exe",
+    "./a/../b.txt",
+])
+def test_normalize_member_path_contains_within_archive(member):
+    # Crafted member paths must not keep drive letters or parent-traversal
+    # segments that could resolve to a real file outside the archive.
+    normalized = archives_mod._normalize_member_path(member)
+    assert ".." not in normalized.split("\\")
+    assert ":" not in normalized
+    assert not normalized.startswith("\\")
+
+
+def test_normalize_member_path_preserves_normal_nesting():
+    assert archives_mod._normalize_member_path("docs/report.pdf") == "docs\\report.pdf"

@@ -160,6 +160,13 @@ class TestParseQuery:
         parsed = parse_query("ext:.py;.js")
         assert parsed.ext_filter == ["py", "js"]
 
+    def test_ext_trailing_semicolon_drops_empty_segment(self):
+        # A trailing ';' must not add an empty extension that matches every
+        # extensionless file.
+        parsed = parse_query("ext:exe;")
+        assert parsed.ext_filter == ["exe"]
+        assert "" not in parsed.ext_filter
+
     def test_size_greater(self):
         parsed = parse_query("size:>1mb")
         assert parsed.size_min == 1024 ** 2

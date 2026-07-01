@@ -33,7 +33,8 @@ Deep audit pass — correctness, security, UX, theming, and packaging.
 
 ### Build & packaging
 - `build.py --sbom` no longer crashes on a missing `json` import.
-- Version strings synced to 0.8.57 across `core/version.py`, README badges/matrix, CHANGELOG, and the winget manifests; README test count corrected to 526.
+- Version strings synced to 0.8.57 across `core/version.py`, README badges/matrix, CHANGELOG, and the winget manifests; README test count corrected (stale 363).
+- Added regression tests for CSV injection sanitizing, archive member-path containment, and `ext:` trailing-semicolon parsing; suite now 533 tests.
 
 ## [v0.8.56] - 2026-07-01
 
