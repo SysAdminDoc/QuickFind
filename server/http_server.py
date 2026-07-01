@@ -1071,17 +1071,22 @@ class QuickFindHTTPServer:
         self._server: Optional[HTTPServer] = None
         self._thread: Optional[threading.Thread] = None
 
-        # Inject dependencies into handler class
-        SearchHandler.file_index = file_index
-        SearchHandler.search_engine = search_engine
-        SearchHandler.auth_token = auth_token
-        SearchHandler.session_token = secrets.token_urlsafe(32) if auth_token else ""
-        SearchHandler.use_https = use_https
+        self._handler_class = type(
+            "BoundSearchHandler",
+            (SearchHandler,),
+            {
+                "file_index": file_index,
+                "search_engine": search_engine,
+                "auth_token": auth_token,
+                "session_token": secrets.token_urlsafe(32) if auth_token else "",
+                "use_https": use_https,
+            },
+        )
 
     def start(self):
         """Start the HTTP server in a background thread."""
         try:
-            self._server = HTTPServer((self._host, self._port), SearchHandler)
+            self._server = HTTPServer((self._host, self._port), self._handler_class)
             if self._use_https:
                 if not self._certfile:
                     raise ValueError("HTTPS requires a TLS certificate file")

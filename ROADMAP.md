@@ -34,10 +34,6 @@ NTFS-MFT-backed instant file search (PyQt6 + SQLite FTS5). Voidtools Everything 
 
 ### P2 - Search Depth and Workflow Expansion
 
-- [ ] P2 — HTTP server class-level mutable state shared across all handler instances
-  Why: SearchHandler dependencies (file_index, auth_token, session_token) are class attributes overwritten globally. Multiple server instances or sequential creation can corrupt state.
-  Where: `server/http_server.py` lines 654-658, 1078-1083
-
 - [ ] P3 — Audit salt regenerated on every restart, preventing cross-restart correlation
   Why: `_AUDIT_SALT` is `secrets.token_bytes(16)` at module load. Same IP hashes differently after restart, reducing audit trail usefulness.
   Where: `server/http_server.py` line 32
