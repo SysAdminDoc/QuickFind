@@ -6,8 +6,10 @@ import pytest
 
 from core.plugin_loader import (
     PluginManifest,
+    _sha256_file,
     _validate_manifest,
     discover_plugins,
+    load_allowed_hashes,
     load_plugins,
     plugin_summary,
     read_manifest,
@@ -25,6 +27,12 @@ def _clean_plugins():
 def _write_manifest(path, data):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data), encoding="utf-8")
+
+
+def _write_allowlist(plugin_dir, hashes):
+    path = plugin_dir / "allowed_hashes.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"hashes": list(hashes)}), encoding="utf-8")
 
 
 def test_read_manifest_from_valid_json(tmp_path):
@@ -169,11 +177,13 @@ def test_load_plugin_with_python_entry_point(tmp_path):
         "entry_point": "main.py",
         "description": "Python plugin",
     })
-    (plugin_path / "main.py").write_text(
+    main_py = plugin_path / "main.py"
+    main_py.write_text(
         "def parse(value, parsed):\n    pass\n"
         "def match(entry, index, value, parsed):\n    return True\n",
         encoding="utf-8",
     )
+    _write_allowlist(plugin_dir, [_sha256_file(main_py)])
     result = load_plugins(plugin_dir)
     assert len(result.loaded) == 1
     plugins = registered_modifier_plugins()
@@ -192,3 +202,45 @@ def test_path_traversal_in_entry_point_is_blocked(tmp_path):
     result = load_plugins(plugin_dir)
     assert len(result.loaded) == 0
     assert len(result.failed) == 1
+
+
+def test_plugin_blocked_when_hash_not_in_allowlist(tmp_path):
+    plugin_dir = tmp_path / "plugins"
+    plugin_path = plugin_dir / "untrusted"
+    plugin_path.mkdir(parents=True)
+    _write_manifest(plugin_path / "plugin.json", {
+        "name": "untrusted",
+        "modifiers": ["untrusted"],
+        "entry_point": "main.py",
+    })
+    (plugin_path / "main.py").write_text("x = 1\n", encoding="utf-8")
+    _write_allowlist(plugin_dir, ["0000000000000000000000000000000000000000000000000000000000000000"])
+    result = load_plugins(plugin_dir)
+    assert len(result.loaded) == 0
+    assert len(result.failed) == 1
+    assert "hash" in result.failed[0].error.lower() or "allowlist" in result.failed[0].error.lower()
+
+
+def test_plugin_loads_when_hash_allowlist_disabled(tmp_path):
+    plugin_dir = tmp_path / "plugins"
+    plugin_path = plugin_dir / "nocheck"
+    plugin_path.mkdir(parents=True)
+    _write_manifest(plugin_path / "plugin.json", {
+        "name": "nocheck",
+        "modifiers": ["nocheckmod"],
+        "entry_point": "main.py",
+    })
+    (plugin_path / "main.py").write_text("x = 1\n", encoding="utf-8")
+    result = load_plugins(plugin_dir, require_hash_allowlist=False)
+    assert len(result.loaded) == 1
+
+
+def test_load_allowed_hashes_parses_file(tmp_path):
+    _write_allowlist(tmp_path, ["abc123", "DEF456"])
+    hashes = load_allowed_hashes(tmp_path)
+    assert "abc123" in hashes
+    assert "def456" in hashes
+
+
+def test_load_allowed_hashes_empty_without_file(tmp_path):
+    assert load_allowed_hashes(tmp_path) == set()

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import json
 import logging
@@ -21,6 +22,7 @@ from core.search import (
 logger = logging.getLogger("QuickFind.Plugins")
 
 DEFAULT_PLUGIN_DIR = Path.home() / ".quickfind" / "plugins"
+ALLOWED_HASHES_FILE = "allowed_hashes.json"
 
 
 @dataclass(frozen=True)
@@ -105,7 +107,28 @@ def _validate_manifest(manifest: PluginManifest) -> str | None:
     return None
 
 
-def load_plugin_module(manifest: PluginManifest, plugin_dir: Path) -> SearchModifierPlugin | None:
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as f:
+        for chunk in iter(lambda: f.read(65536), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def load_allowed_hashes(plugin_dir: Path) -> set[str]:
+    """Load the SHA-256 hash allowlist for plugin entry points."""
+    path = plugin_dir / ALLOWED_HASHES_FILE
+    if not path.exists():
+        return set()
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return set(str(h).lower() for h in data.get("hashes", []))
+    except (json.JSONDecodeError, OSError):
+        return set()
+
+
+def load_plugin_module(manifest: PluginManifest, plugin_dir: Path,
+                       allowed_hashes: set[str] | None = None) -> SearchModifierPlugin | None:
     """Load a plugin's entry point module and extract the SearchModifierPlugin."""
     if not manifest.entry_point:
         return SearchModifierPlugin(
@@ -128,6 +151,14 @@ def load_plugin_module(manifest: PluginManifest, plugin_dir: Path) -> SearchModi
         logger.warning(
             "Plugin %s entry point escapes plugin directory: %s",
             manifest.name, module_path,
+        )
+        return None
+
+    file_hash = _sha256_file(module_path)
+    if allowed_hashes is not None and file_hash not in allowed_hashes:
+        logger.warning(
+            "Plugin %s blocked: hash %s not in allowed_hashes.json",
+            manifest.name, file_hash,
         )
         return None
 
@@ -166,10 +197,16 @@ def load_plugin_module(manifest: PluginManifest, plugin_dir: Path) -> SearchModi
 def load_plugins(
     plugin_dir: Path = DEFAULT_PLUGIN_DIR,
     disabled: frozenset[str] = frozenset(),
+    require_hash_allowlist: bool = True,
 ) -> PluginLoadResult:
-    """Discover, validate, and register plugins from the directory."""
+    """Discover, validate, and register plugins from the directory.
+
+    When require_hash_allowlist is True (default), plugins with Python entry
+    points are only loaded if their file hash appears in allowed_hashes.json.
+    """
     result = PluginLoadResult()
     manifests = discover_plugins(plugin_dir)
+    allowed_hashes = load_allowed_hashes(plugin_dir) if require_hash_allowlist else None
 
     for manifest in manifests:
         if manifest.name in disabled:
@@ -184,11 +221,11 @@ def load_plugins(
             continue
 
         try:
-            plugin = load_plugin_module(manifest, plugin_dir)
+            plugin = load_plugin_module(manifest, plugin_dir, allowed_hashes)
             if plugin is None:
                 status = PluginStatus(
                     manifest=manifest,
-                    error="Entry point not found or invalid",
+                    error="Entry point not found, path escape, or hash not in allowlist",
                 )
                 result.failed.append(status)
                 continue

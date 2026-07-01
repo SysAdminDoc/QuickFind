@@ -8,7 +8,8 @@ All notable changes to QuickFind will be documented in this file.
 - Help docs HTML now uses active theme palette colors instead of hardcoded Mocha hex values.
 - HTML result export now accepts a theme dict parameter; GUI export passes the active palette for correct Latte/Frappe/Macchiato styling.
 - Added `is_dark_theme()` helper to theme module for runtime dark/light detection.
-- Added 3 theme-aware rendering tests, expanding the suite to 511 tests.
+- Plugin loader now requires SHA-256 hash pinning via `allowed_hashes.json` for entry points with code execution; unpinned plugins are blocked by default.
+- Added 7 tests for theme-aware rendering and hash verification, expanding the suite to 515 tests.
 
 ## [v0.8.53] - 2026-07-01
 

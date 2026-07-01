@@ -36,10 +36,6 @@ NTFS-MFT-backed instant file search (PyQt6 + SQLite FTS5). Voidtools Everything 
 
 ### P3 — Larger Features
 
-- [ ] P2 — Plugin loader has no sandboxing or signature verification
-  Why: `exec_module` runs arbitrary Python with full privileges. Path traversal is now blocked, but any plugin in the plugin directory gets unrestricted code execution with no audit hook or hash pinning.
-  Where: `core/plugin_loader.py` lines 126-133
-
 - [ ] P3 — PWA manifest icon URLs return 404
   Why: `/icon-192.png` and `/icon-512.png` in `_pwa_manifest()` have no serving route. The PWA install prompt will fail or show a broken icon.
   Where: `server/http_server.py` `_pwa_manifest()`, route handling
