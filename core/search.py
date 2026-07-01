@@ -851,6 +851,13 @@ class SearchEngine:
         if parsed.parent_filter:
             return False
 
+        # db_search takes a single query string, so it can only express a lone
+        # `path:` include (as the query with match_path). A path include combined
+        # with a name term, or multiple path includes, would silently drop the
+        # constraint — route those to the in-memory engine which ANDs them.
+        if parsed.path_includes and (parsed.terms or len(parsed.path_includes) > 1):
+            return False
+
         # Multiple search terms need AND logic — DB can handle one
         if len(parsed.terms) > 1:
             return False

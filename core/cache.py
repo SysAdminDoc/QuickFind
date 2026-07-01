@@ -298,10 +298,19 @@ def _rebuild_fts(conn: sqlite3.Connection):
         return
     try:
         conn.execute("INSERT INTO entries_fts(entries_fts) VALUES('rebuild')")
+        # The rebuild is DML, so with the connection's implicit-transaction mode
+        # it opens a transaction that must be committed. Leaving it open both
+        # rolls the rebuild back at process exit and makes the next BEGIN raise
+        # "cannot start a transaction within a transaction".
+        conn.commit()
         with _fts_lock:
             _fts_pending_changes = 0
     except Exception as e:
         logger.warning(f"FTS rebuild failed: {e}")
+        try:
+            conn.rollback()
+        except Exception:
+            pass
 
 
 # ── DB Integrity / Corruption Recovery ────────────────────
@@ -1011,6 +1020,10 @@ def save_cache(index: FileIndex, usn_positions: dict[str, tuple[int, int]]):
 
     except Exception as e:
         logger.error(f"Failed to save cache: {e}")
+        try:
+            conn.rollback()
+        except Exception:
+            pass
 
 
 def load_cache(index: FileIndex) -> Optional[dict[str, tuple[int, int]]]:
@@ -1147,6 +1160,20 @@ def db_update_usn_position(drive: str, journal_id: int, next_usn: int) -> bool:
 
 # ── Database Search ──────────────────────────────────────
 
+# Trigram FTS tokenizer needs at least 3 characters to produce a token; shorter
+# queries silently MATCH nothing, so they must use the LIKE path instead.
+_FTS_MIN_QUERY_LEN = 3
+
+
+def _escape_like(value: str) -> str:
+    """Escape LIKE wildcards so user input matches literally under ESCAPE '\\'.
+
+    Backslashes are escaped first (the escape char itself), which keeps literal
+    Windows path separators working when the value is a path fragment.
+    """
+    return value.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
+
+
 def db_search(query: str, match_path: bool = False,
               extensions: Optional[list[str]] = None,
               files_only: bool = False, folders_only: bool = False,
@@ -1176,15 +1203,16 @@ def db_search(query: str, match_path: bool = False,
 
     # FTS5 search for name/path substring matching
     use_fts = False
-    if query and _FTS5_AVAILABLE and _TRIGRAM_AVAILABLE and not any(c in query for c in '%_'):
+    if query and len(query) >= _FTS_MIN_QUERY_LEN and _FTS5_AVAILABLE and _TRIGRAM_AVAILABLE \
+            and not any(c in query for c in '%_'):
         use_fts = True
 
     if query and not use_fts:
         if match_path:
-            conditions.append("e.path LIKE ? COLLATE NOCASE")
+            conditions.append("e.path LIKE ? ESCAPE '\\' COLLATE NOCASE")
         else:
-            conditions.append("e.name LIKE ? COLLATE NOCASE")
-        params.append(f"%{query}%")
+            conditions.append("e.name LIKE ? ESCAPE '\\' COLLATE NOCASE")
+        params.append(f"%{_escape_like(query)}%")
 
     # Extension filter
     if extensions:
@@ -1227,8 +1255,8 @@ def db_search(query: str, match_path: bool = False,
     # Exclude paths
     if exclude_paths:
         for ep in exclude_paths:
-            conditions.append("e.path NOT LIKE ? COLLATE NOCASE")
-            params.append(f"%{ep}%")
+            conditions.append("e.path NOT LIKE ? ESCAPE '\\' COLLATE NOCASE")
+            params.append(f"%{_escape_like(ep)}%")
 
     # Build query
     where_clause = " AND ".join(conditions) if conditions else "1=1"
@@ -1278,10 +1306,10 @@ def db_search(query: str, match_path: bool = False,
             use_fts = False
             if query:
                 if match_path:
-                    conditions.insert(0, "e.path LIKE ? COLLATE NOCASE")
+                    conditions.insert(0, "e.path LIKE ? ESCAPE '\\' COLLATE NOCASE")
                 else:
-                    conditions.insert(0, "e.name LIKE ? COLLATE NOCASE")
-                params.insert(0, f"%{query}%")
+                    conditions.insert(0, "e.name LIKE ? ESCAPE '\\' COLLATE NOCASE")
+                params.insert(0, f"%{_escape_like(query)}%")
                 where_clause = " AND ".join(conditions)
 
     sql = f"""

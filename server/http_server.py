@@ -102,7 +102,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link rel="manifest" href="/manifest.json">
-<meta name="theme-color" content="#89b4fa">
+<meta name="theme-color" content="{accent}">
 <title>QuickFind</title>
 <style>
 * {{ margin: 0; padding: 0; box-sizing: border-box; }}
@@ -175,8 +175,8 @@ select, .max-input {{
     padding: 12px 16px 24px;
 }}
 .result-card {{
-    background: rgba(49,50,68,0.55);
-    border: 1px solid {surface0};
+    background: {surface0};
+    border: 1px solid {surface1};
     border-radius: 8px;
     padding: 10px 12px;
 }}
@@ -202,7 +202,7 @@ select, .max-input {{
 }}
 .badge {{
     border: 1px solid {surface1};
-    border-radius: 999px;
+    border-radius: 6px;
     padding: 2px 7px;
     color: {subtext0};
 }}
@@ -242,13 +242,18 @@ function runSearch() {{
             max: maxResults.value
         }});
         fetch('/api/search?' + params, {{ credentials: 'same-origin' }})
-            .then(r => r.json())
+            .then(r => {{
+                if (r.status === 401) {{ window.location.reload(); throw new Error('Session expired'); }}
+                if (r.status === 429) {{ throw new Error('Too many requests — slow down'); }}
+                if (!r.ok) {{ throw new Error('Search failed'); }}
+                return r.json();
+            }})
             .then(data => {{
                 const n = data.count;
                 countEl.textContent = n + ' result' + (n !== 1 ? 's' : '');
                 document.getElementById('results').innerHTML = data.cards;
             }})
-            .catch(() => {{ countEl.textContent = 'Search failed'; }});
+            .catch(err => {{ countEl.textContent = err.message || 'Search failed'; }});
     }}, 200);
 }}
 search.addEventListener('input', runSearch);
@@ -337,10 +342,10 @@ h2 {{ color: {text}; font-size: 17px; margin-bottom: 8px; }}
 p, li {{ color: {subtext0}; font-size: 14px; }}
 a {{ color: {accent}; }}
 section {{
-    border: 1px solid {surface0};
+    border: 1px solid {surface1};
     border-radius: 8px;
     padding: 16px;
-    background: rgba(49,50,68,0.45);
+    background: {surface0};
 }}
 code, pre {{
     background: {surface0};
@@ -412,8 +417,8 @@ def _pwa_manifest() -> dict:
         "description": "Lightning-fast file search",
         "start_url": "/",
         "display": "standalone",
-        "background_color": "#1e1e2e",
-        "theme_color": "#89b4fa",
+        "background_color": MOCHA['base'],
+        "theme_color": MOCHA['blue'],
         "icons": [
             {"src": "/icon.svg", "sizes": "any", "type": "image/svg+xml"},
         ],
@@ -728,7 +733,7 @@ class SearchHandler(BaseHTTPRequestHandler):
         return "; ".join(parts)
 
     def _send_security_headers(self):
-        self.send_header('Content-Security-Policy', "default-src 'self'; script-src 'unsafe-inline'; style-src 'unsafe-inline'")
+        self.send_header('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'unsafe-inline'; worker-src 'self'; img-src 'self' data:")
         self.send_header('X-Content-Type-Options', 'nosniff')
         self.send_header('Cache-Control', 'no-store')
         self.send_header('Referrer-Policy', 'no-referrer')
@@ -759,6 +764,19 @@ class SearchHandler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         params = parse_qs(parsed.query)
 
+        # PWA shell assets carry no sensitive data and must load without a
+        # session: the browser fetches the manifest credential-less, and the
+        # service worker registers before login, so gating them breaks install.
+        if parsed.path == '/manifest.json':
+            self._handle_pwa_manifest()
+            return
+        elif parsed.path == '/icon.svg':
+            self._handle_pwa_icon()
+            return
+        elif parsed.path == '/sw.js':
+            self._handle_service_worker()
+            return
+
         if not self._check_auth():
             if parsed.path == '/' or parsed.path == '':
                 self._handle_login_page()
@@ -770,12 +788,6 @@ class SearchHandler(BaseHTTPRequestHandler):
             self._handle_api_search(params)
         elif parsed.path == '/openapi.json':
             self._handle_openapi_spec()
-        elif parsed.path == '/manifest.json':
-            self._handle_pwa_manifest()
-        elif parsed.path == '/icon.svg':
-            self._handle_pwa_icon()
-        elif parsed.path == '/sw.js':
-            self._handle_service_worker()
         elif parsed.path in ('/api/docs', '/docs'):
             self._handle_api_docs()
         elif parsed.path == '/' or parsed.path == '':
@@ -816,7 +828,7 @@ class SearchHandler(BaseHTTPRequestHandler):
             length = int(self.headers.get('Content-Length', '0'))
         except ValueError:
             length = 0
-        if length > 4096:
+        if length < 0 or length > 4096:
             self.send_response(413)
             self.end_headers()
             return
@@ -1003,7 +1015,9 @@ class SearchHandler(BaseHTTPRequestHandler):
     def _build_result_payloads(self, results):
         """Build structured JSON-safe result payloads from search results."""
         payloads = []
-        for entry in results[:1000]:
+        # results is already bounded by the search's max_results (coerced to the
+        # documented maximum); re-slicing here silently dropped requested rows.
+        for entry in results:
             parent_path = self.file_index.resolve_parent_path(entry.drive, entry.parent_frn)
             full_path = entry.get_path(self.file_index)
 
@@ -1111,7 +1125,7 @@ class QuickFindHTTPServer:
                 )
             self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
             self._thread.start()
-            auth_status = " (auth enabled)" if SearchHandler.auth_token else ""
+            auth_status = " (auth enabled)" if self._handler_class.auth_token else ""
             logger.info(f"{self.scheme.upper()} server started on {self._host}:{self._port}{auth_status}")
             return True
         except Exception as e:
