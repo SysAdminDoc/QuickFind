@@ -936,24 +936,36 @@ class SettingsDialog(QDialog):
 
     def _purge_all_content_cache(self):
         try:
-            from core.cache import purge_content_cache
+            from core.cache import purge_content_cache, get_content_cache_stats, get_content_cache_path
             deleted = purge_content_cache()
-            self._content_cache_status.setText(f"Purged {deleted:,} entries from content cache.")
+            stats = get_content_cache_stats()
+            count = stats.get("count", 0)
+            text_bytes = stats.get("text_bytes", 0)
+            size_mb = text_bytes / (1024 * 1024) if text_bytes else 0
+            self._content_cache_status.setText(
+                f"Purged {deleted:,} entries. Cache: {count:,} entries, {size_mb:.1f} MB text\n"
+                f"Location: {get_content_cache_path()}"
+            )
         except Exception as e:
             self._content_cache_status.setText(f"Purge failed: {e}")
-        self._refresh_content_cache_status()
 
     def _purge_content_cache_root(self):
         root = QFileDialog.getExistingDirectory(self, "Select Root to Purge")
         if not root:
             return
         try:
-            from core.cache import purge_content_cache_by_root
+            from core.cache import purge_content_cache_by_root, get_content_cache_stats, get_content_cache_path
             deleted = purge_content_cache_by_root(root)
-            self._content_cache_status.setText(f"Purged {deleted:,} entries under {root}.")
+            stats = get_content_cache_stats()
+            count = stats.get("count", 0)
+            text_bytes = stats.get("text_bytes", 0)
+            size_mb = text_bytes / (1024 * 1024) if text_bytes else 0
+            self._content_cache_status.setText(
+                f"Purged {deleted:,} entries under {root}. Cache: {count:,} entries, {size_mb:.1f} MB text\n"
+                f"Location: {get_content_cache_path()}"
+            )
         except Exception as e:
             self._content_cache_status.setText(f"Purge failed: {e}")
-        self._refresh_content_cache_status()
 
     def _browse_file(self, target: QLineEdit, title: str):
         path, _ = QFileDialog.getOpenFileName(

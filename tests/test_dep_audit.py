@@ -11,6 +11,7 @@ from core.dep_audit import (
     AuditReport,
     PackageInfo,
     Waiver,
+    _extract_severity,
     format_report,
     load_waivers,
     read_pinned_requirements,
@@ -251,3 +252,17 @@ def test_audit_fails_on_empty_requirements(tmp_path):
     )
     assert report.passed is False
     assert any("No pinned" in e for e in report.errors)
+
+
+def test_extract_severity_from_details_field():
+    vuln = {
+        "id": "PYSEC-2025-1234",
+        "aliases": ["CVE-2025-9999"],
+        "details": [{"severity": "HIGH"}],
+    }
+    assert _extract_severity(vuln) == "high"
+
+
+def test_extract_severity_falls_back_to_aliases():
+    vuln = {"id": "PYSEC-2025-1234", "aliases": ["CVE-2025-9999"]}
+    assert _extract_severity(vuln) == "unknown"

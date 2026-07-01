@@ -103,6 +103,19 @@ def _classify_severity(aliases: list[str]) -> str:
     return "unknown"
 
 
+def _extract_severity(vuln: dict) -> str:
+    """Extract severity from a PyPI vulnerability record."""
+    for detail in vuln.get("details", []):
+        if isinstance(detail, dict):
+            sev = detail.get("severity", "")
+            if sev:
+                classified = _classify_severity([sev])
+                if classified != "unknown":
+                    return classified
+    aliases = vuln.get("aliases", []) + [vuln.get("id", "")]
+    return _classify_severity(aliases)
+
+
 def fetch_pypi_advisories(distribution: str, version: str, *,
                           urlopen: Callable[..., Any] | None = None) -> list[Advisory]:
     opener = urlopen or urllib.request.urlopen
@@ -117,7 +130,7 @@ def fetch_pypi_advisories(distribution: str, version: str, *,
         advisories.append(Advisory(
             id=vuln.get("id", ""),
             package=distribution,
-            severity=_classify_severity(vuln.get("aliases", []) + [vuln.get("id", "")]),
+            severity=_extract_severity(vuln),
             summary=vuln.get("summary", "")[:200],
             fixed_in=", ".join(vuln.get("fixed_in", [])),
         ))

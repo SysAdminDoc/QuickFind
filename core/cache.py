@@ -645,25 +645,32 @@ def purge_content_cache_by_root(root: str) -> int:
     try:
         conn = _get_connection()
         _init_schema(conn)
-        norm = os.path.normcase(os.path.abspath(root))
-        if not norm.endswith(os.sep):
-            norm += os.sep
-        paths = conn.execute(
-            "SELECT path FROM content_cache WHERE path LIKE ?",
-            (norm + "%",),
-        ).fetchall()
-        if not paths:
+        norm = root.rstrip(os.sep) + os.sep
+        escaped = norm.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        like_pattern = escaped + "%"
+        count_row = conn.execute(
+            "SELECT COUNT(*) FROM content_cache WHERE path LIKE ? ESCAPE '\\'",
+            (like_pattern,),
+        ).fetchone()
+        count = int(count_row[0]) if count_row else 0
+        if count == 0:
             return 0
-        path_list = [row[0] for row in paths]
-        for path in path_list:
-            conn.execute("DELETE FROM content_cache WHERE path=?", (path,))
-            if _FTS5_AVAILABLE:
-                try:
+        if _FTS5_AVAILABLE:
+            try:
+                paths = conn.execute(
+                    "SELECT path FROM content_cache WHERE path LIKE ? ESCAPE '\\'",
+                    (like_pattern,),
+                ).fetchall()
+                for (path,) in paths:
                     conn.execute("DELETE FROM content_fts WHERE path=?", (path,))
-                except Exception:
-                    pass
+            except Exception:
+                pass
+        conn.execute(
+            "DELETE FROM content_cache WHERE path LIKE ? ESCAPE '\\'",
+            (like_pattern,),
+        )
         conn.commit()
-        return len(path_list)
+        return count
     except Exception as e:
         logger.debug(f"purge_content_cache_by_root failed: {e}")
         return 0

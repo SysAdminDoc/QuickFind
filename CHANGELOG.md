@@ -15,7 +15,12 @@ All notable changes to QuickFind will be documented in this file.
 - Fixed `_default_recycle` docstring claiming an `os.remove` fallback that didn't exist.
 - Fixed machine identity hash to include MAC address for stronger cross-machine uniqueness.
 - Removed unused `json` import from portable module.
-- Added 6 regression tests for the above fixes, expanding the suite to 506 tests.
+- Fixed dep_audit severity extraction to parse PyPI `details[].severity` field instead of relying only on alias strings.
+- Fixed `_format_size` treating 0 bytes as empty string instead of "0 B".
+- Fixed service worker intercepting API calls with HTML fallback, breaking AJAX search when offline.
+- Fixed `purge_content_cache_by_root` SQL LIKE pattern matching paths with `%` or `_` characters.
+- Fixed settings dialog purge confirmation being immediately overwritten by cache status refresh.
+- Added 8 regression tests for the above fixes, expanding the suite to 508 tests.
 
 ## [v0.8.52] - 2026-07-01
 

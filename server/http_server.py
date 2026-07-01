@@ -371,7 +371,7 @@ ul {{ display: grid; gap: 6px; padding-left: 18px; }}
 
 
 def _format_size(size):
-    if size <= 0: return ""
+    if size < 0: return ""
     if size < 1024: return f"{size} B"
     if size < 1048576: return f"{size/1024:.1f} KB"
     if size < 1073741824: return f"{size/1048576:.1f} MB"
@@ -413,6 +413,7 @@ def _pwa_manifest() -> dict:
 
 _SERVICE_WORKER_JS = """
 self.addEventListener('fetch', event => {
+  if (event.request.mode !== 'navigate') return;
   event.respondWith(
     fetch(event.request).catch(() =>
       new Response(
