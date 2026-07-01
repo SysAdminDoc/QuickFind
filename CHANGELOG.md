@@ -9,7 +9,8 @@ All notable changes to QuickFind will be documented in this file.
 - Added privacy-preserving remote access audit log for auth failures, rate limits, searches, and denied path events with hashed client IPs and query hashes.
 - Added content-cache privacy controls with purge-all and purge-by-root actions in Settings, exposing cache path, size, and entry count.
 - Purge removes both content_cache rows and FTS entries transactionally; tests prove sensitive text is no longer searchable after purge.
-- Added 27 tests covering advisory/SBOM/audit/purge scenarios, expanding the passing suite to 390 tests.
+- Expanded Spanish localization to cover settings, diagnostics, help, and result text; added `all_keys()`, `missing_keys()`, pseudo-locale generator, and fallback tests.
+- Added 35 tests covering advisory/SBOM/audit/purge/localization scenarios, expanding the passing suite to 398 tests.
 
 ## [v0.8.51] - 2026-07-01
 

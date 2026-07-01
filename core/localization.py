@@ -57,10 +57,66 @@ CATALOGS = {
         "menu.help.about": "Acerca de QuickFind",
         "status.select_result_preview": "Seleccione un resultado para vista previa",
         "settings.language": "Idioma:",
+        "settings.title": "Configuracion de QuickFind",
+        "settings.general": "General",
+        "settings.content": "Contenido",
+        "settings.http_server": "Servidor HTTP",
+        "settings.content.enable": "Habilitar indexado de contenido en segundo plano",
+        "settings.content.roots": "Raices:",
+        "settings.content.extensions": "Extensiones:",
+        "settings.content.cache_quota": "Cuota de cache:",
+        "settings.content.max_file_size": "Tamano maximo de archivo:",
+        "settings.content.cache_group": "Cache de contenido",
+        "settings.content.purge_all": "Purgar toda la cache",
+        "settings.content.purge_root": "Purgar raiz...",
+        "diagnostics.title": "Diagnosticos de QuickFind",
+        "diagnostics.refresh": "Actualizar",
+        "diagnostics.rebuild": "Reconstruir indice",
+        "diagnostics.save_cache": "Guardar cache",
+        "diagnostics.start_service": "Iniciar servicio",
+        "diagnostics.stop_service": "Detener servicio",
+        "diagnostics.export_bundle": "Exportar paquete de soporte",
+        "help.title": "Ayuda sin conexion de QuickFind",
+        "help.search_syntax": "Sintaxis de busqueda",
+        "help.workflows": "Flujos de trabajo principales",
+        "help.troubleshooting": "Solucion de problemas",
+        "help.intro": "Esta hoja de referencia esta incluida con QuickFind y no requiere acceso a la red.",
+        "results.count": "{count} resultados",
+        "results.empty": "Escriba una consulta para buscar archivos",
     }
 }
 
 _active_language = "en"
+
+
+def all_keys() -> frozenset[str]:
+    """Return the union of all translation keys across all catalogs."""
+    keys: set[str] = set()
+    for catalog in CATALOGS.values():
+        keys.update(catalog)
+    return frozenset(keys)
+
+
+def missing_keys(language: str) -> frozenset[str]:
+    """Return keys present in any catalog but missing from the given language."""
+    master = all_keys()
+    catalog = CATALOGS.get(language, {})
+    return master - frozenset(catalog)
+
+
+def pseudo_localize(text: str) -> str:
+    """Transform text into a pseudo-locale variant for UI expansion testing."""
+    table = str.maketrans(
+        "aeiouAEIOU",
+        "àèìòùÀÈÌÒÙ",
+    )
+    return f"[‹{text.translate(table)}›]"
+
+
+def generate_pseudo_catalog() -> dict[str, str]:
+    """Build a pseudo-locale catalog from the Spanish catalog for expansion testing."""
+    base = CATALOGS.get("es", {})
+    return {key: pseudo_localize(value) for key, value in base.items()}
 
 
 def available_languages() -> tuple[tuple[str, str], ...]:
