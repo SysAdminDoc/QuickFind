@@ -12,7 +12,8 @@ All notable changes to QuickFind will be documented in this file.
 - Expanded Spanish localization to cover settings, diagnostics, help, and result text; added `all_keys()`, `missing_keys()`, pseudo-locale generator, and fallback tests.
 - Added repeatable benchmark harness (`python -m tools.benchmark`) with synthetic tree generation, cold/warm search timings, and JSON/CSV export.
 - Added report-grade result export from File > Export Results as Report with CSV, JSON, and HTML formats including query metadata, content snippets, and XSS-safe HTML escaping.
-- Added 50 tests covering advisory/SBOM/audit/purge/localization/benchmark/export scenarios, expanding the passing suite to 413 tests.
+- Added visual query builder with modifier chip extraction, composition, validation, and round-trip to raw query strings for all built-in modifiers.
+- Added 66 tests covering advisory/SBOM/audit/purge/localization/benchmark/export/chips scenarios, expanding the passing suite to 429 tests.
 
 ## [v0.8.51] - 2026-07-01
 

@@ -48,13 +48,6 @@ NTFS-MFT-backed instant file search (PyQt6 + SQLite FTS5). Voidtools Everything 
   Acceptance: Creates/renames/modifies/deletes enqueue bounded content-cache refresh/removal work for supported files, diagnostics show queue status/failures, and tests prove stale snippets disappear after file changes.
   Complexity: L
 
-- [ ] P2 — Add visual query builder and filter chips for advanced modifiers
-  Why: QuickFind has rich boolean/modifier syntax, but complex queries are discoverable mainly through offline docs rather than editable UI state.
-  Evidence: `core/search.py`, `gui/help_docs.py`, Everything/FSearch filters, Recoll query workflow, FileLocator Pro query UX.
-  Touches: `gui/main_window.py`, `gui/filters.py`, `gui/help_docs.py`, `core/search.py`, `tests/test_search.py`, `tests/test_main_window.py`
-  Acceptance: Users can compose/edit modifiers as removable chips, chips round-trip to the raw query string, invalid modifiers show inline status, and parser tests cover UI-generated queries.
-  Complexity: M
-
 - [ ] P2 — Add duplicate review workflow with safe remediation
   Why: `dupe:` and `dupe:hash` identify duplicates, but there is no grouped review surface, keep-rule preview, or safe batch action.
   Evidence: `core/search.py:1142`, `gui/results_view.py`, UltraSearch/WizFile duplicate and hardlink features.
