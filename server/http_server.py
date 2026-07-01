@@ -405,10 +405,19 @@ def _pwa_manifest() -> dict:
         "background_color": "#1e1e2e",
         "theme_color": "#89b4fa",
         "icons": [
-            {"src": "/icon-192.png", "sizes": "192x192", "type": "image/png"},
-            {"src": "/icon-512.png", "sizes": "512x512", "type": "image/png"},
+            {"src": "/icon.svg", "sizes": "any", "type": "image/svg+xml"},
         ],
     }
+
+
+def _pwa_icon_svg() -> str:
+    return (
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">'
+        '<rect width="512" height="512" rx="96" fill="#1e1e2e"/>'
+        '<circle cx="220" cy="220" r="100" fill="none" stroke="#89b4fa" stroke-width="32"/>'
+        '<line x1="290" y1="290" x2="400" y2="400" stroke="#89b4fa" stroke-width="32" stroke-linecap="round"/>'
+        '</svg>'
+    )
 
 
 _SERVICE_WORKER_JS = """
@@ -753,6 +762,8 @@ class SearchHandler(BaseHTTPRequestHandler):
             self._handle_openapi_spec()
         elif parsed.path == '/manifest.json':
             self._handle_pwa_manifest()
+        elif parsed.path == '/icon.svg':
+            self._handle_pwa_icon()
         elif parsed.path == '/sw.js':
             self._handle_service_worker()
         elif parsed.path in ('/api/docs', '/docs'):
@@ -937,6 +948,14 @@ class SearchHandler(BaseHTTPRequestHandler):
         self._send_security_headers()
         self.end_headers()
         self.wfile.write(_SERVICE_WORKER_JS.encode('utf-8'))
+
+    def _handle_pwa_icon(self):
+        svg = _pwa_icon_svg()
+        self.send_response(200)
+        self.send_header('Content-Type', 'image/svg+xml')
+        self.send_header('Cache-Control', 'public, max-age=86400')
+        self.end_headers()
+        self.wfile.write(svg.encode('utf-8'))
 
     def _handle_api_docs(self):
         host = self.headers.get('Host', '127.0.0.1:8080')

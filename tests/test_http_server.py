@@ -396,7 +396,7 @@ def test_pwa_manifest_includes_app_identity():
     assert manifest["name"] == "QuickFind"
     assert manifest["display"] == "standalone"
     assert manifest["start_url"] == "/"
-    assert any(icon["sizes"] == "192x192" for icon in manifest["icons"])
+    assert any(icon["type"] == "image/svg+xml" for icon in manifest["icons"])
 
 
 def test_pwa_manifest_endpoint_serves_json():
@@ -427,3 +427,13 @@ def test_html_template_includes_pwa_manifest_link():
     assert 'rel="manifest"' in body
     assert "/manifest.json" in body
     assert 'name="theme-color"' in body
+
+
+def test_pwa_icon_serves_valid_svg():
+    handler = _handler()
+    handler._handle_pwa_icon()
+    body = handler.wfile.getvalue().decode("utf-8")
+    assert "<svg" in body
+    assert "viewBox" in body
+    header_calls = [call.args for call in handler.send_header.call_args_list]
+    assert ("Content-Type", "image/svg+xml") in header_calls

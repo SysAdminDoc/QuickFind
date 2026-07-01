@@ -9,7 +9,8 @@ All notable changes to QuickFind will be documented in this file.
 - HTML result export now accepts a theme dict parameter; GUI export passes the active palette for correct Latte/Frappe/Macchiato styling.
 - Added `is_dark_theme()` helper to theme module for runtime dark/light detection.
 - Plugin loader now requires SHA-256 hash pinning via `allowed_hashes.json` for entry points with code execution; unpinned plugins are blocked by default.
-- Added 7 tests for theme-aware rendering and hash verification, expanding the suite to 515 tests.
+- PWA manifest now uses an inline SVG search icon served at `/icon.svg`, replacing the broken PNG references that returned 404.
+- Added 8 tests for theme-aware rendering, hash verification, and PWA icon serving, expanding the suite to 516 tests.
 
 ## [v0.8.53] - 2026-07-01
 
