@@ -91,7 +91,8 @@ def validate_chip(modifier: str, value: str) -> str | None:
                      "git", "attrib") and not value:
         return f"{modifier}: requires a value"
     if modifier == "size" and value:
-        if not re.match(r'^[<>=!]*\d+(\.\d+)?\s*(b|kb|mb|gb|tb)?$', value.lower()):
+        size_pattern = r'\d+(\.\d+)?\s*(b|kb|mb|gb|tb)?'
+        if not re.match(rf'^[<>]?{size_pattern}(\.\.{size_pattern})?$', value.lower()):
             return f"Invalid size: {value}"
     return None
 

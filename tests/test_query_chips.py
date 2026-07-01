@@ -126,3 +126,9 @@ def test_validate_broken_without_value_is_valid():
 
 def test_validate_dupe_without_value_is_valid():
     assert validate_chip("dupe", "") is None
+
+
+def test_validate_size_range_syntax():
+    assert validate_chip("size", "1mb..10mb") is None
+    assert validate_chip("size", ">1gb") is None
+    assert validate_chip("size", "<500kb") is None

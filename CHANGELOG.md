@@ -4,6 +4,13 @@ All notable changes to QuickFind will be documented in this file.
 
 ## [v0.8.55] - 2026-07-01
 
+- Fixed `ww:` modifier alias collision: `ww:` now correctly enables whole-word mode (matching Everything convention), `wc:` enables wildcards.
+- Fixed `thisweek`/`lastweek` date shortcuts not normalized to midnight, causing files modified earlier the same day to be excluded.
+- Fixed `size:` with empty value silently filtering to 0-byte files; empty size modifier is now treated as a no-op.
+- Fixed query chip validator rejecting valid `size:1mb..10mb` range syntax; regex now accepts range and single-operator forms.
+- Fixed export size formatting missing GB/TB tiers, showing unwieldy values like `10737.4 MB` for large files.
+- Fixed cache purge functions not rolling back on failure, risking partial deletes committed by later operations.
+- Added 8 regression tests for modifier aliases, date normalization, size parsing, and chip validation, expanding the suite to 524 tests.
 - Fixed CSRF bypass where POST to `/auth` without Origin/Referer headers was accepted; now requires at least one same-origin header.
 - Fixed API search `count` field reporting more results than the payload actually contains due to a hard 1000-item cap.
 - Fixed plugin loader path containment check using brittle string prefix; now uses `Path.relative_to` for case-insensitive, symlink-safe comparison.

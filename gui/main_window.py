@@ -1951,8 +1951,12 @@ class MainWindow(QMainWindow):
                         size_display = f"{entry.size} B"
                     elif entry.size < 1048576:
                         size_display = f"{entry.size / 1024:.1f} KB"
-                    else:
+                    elif entry.size < 1073741824:
                         size_display = f"{entry.size / 1048576:.1f} MB"
+                    elif entry.size < 1099511627776:
+                        size_display = f"{entry.size / 1073741824:.2f} GB"
+                    else:
+                        size_display = f"{entry.size / 1099511627776:.2f} TB"
                 dm = entry.date_modified.strftime("%Y-%m-%d %H:%M") if entry.date_modified else ""
                 results.append(ExportableResult(
                     name=entry.name,

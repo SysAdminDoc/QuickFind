@@ -273,8 +273,8 @@ def _parse_date(date_str: str) -> Optional[datetime]:
     shortcuts = {
         'today': now.replace(hour=0, minute=0, second=0, microsecond=0),
         'yesterday': (now - timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0),
-        'thisweek': now - timedelta(days=now.weekday()),
-        'lastweek': now - timedelta(days=now.weekday() + 7),
+        'thisweek': (now - timedelta(days=now.weekday())).replace(hour=0, minute=0, second=0, microsecond=0),
+        'lastweek': (now - timedelta(days=now.weekday() + 7)).replace(hour=0, minute=0, second=0, microsecond=0),
         'thismonth': now.replace(day=1, hour=0, minute=0, second=0, microsecond=0),
         'lastmonth': (now.replace(day=1) - timedelta(days=1)).replace(day=1, hour=0, minute=0, second=0, microsecond=0),
         'thisyear': now.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0),
@@ -570,7 +570,7 @@ def parse_query(raw_query: str, base_options: Optional[SearchOptions] = None,
             elif mod_lower == 'noregex':
                 parsed.options.use_regex = False
                 i += 1; continue
-            elif mod_lower in ('wildcards', 'ww'):
+            elif mod_lower in ('wildcards', 'wc'):
                 parsed.options.use_wildcards = True
                 if val:
                     remaining_terms.append(val)
@@ -627,6 +627,8 @@ def parse_query(raw_query: str, base_options: Optional[SearchOptions] = None,
                     )
                 i += 1; continue
             elif mod_lower == 'size':
+                if not val:
+                    i += 1; continue
                 if '..' in val:
                     lo, hi = val.split('..', 1)
                     parsed.size_min = _parse_size(lo)

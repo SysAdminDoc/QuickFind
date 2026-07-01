@@ -292,6 +292,27 @@ class TestParseQuery:
         parsed = parse_query("wholefilename:readme.txt")
         assert parsed.options.match_whole_filename is True
 
+    def test_ww_shortcut_enables_wholeword_not_wildcards(self):
+        parsed = parse_query("ww: test")
+        assert parsed.options.match_whole_word is True
+        assert parsed.options.use_wildcards is False
+
+    def test_wc_shortcut_enables_wildcards(self):
+        parsed = parse_query("wc:test*")
+        assert parsed.options.use_wildcards is True
+
+    def test_empty_size_modifier_is_ignored(self):
+        parsed = parse_query("size: test")
+        assert parsed.size_min == 0
+        assert parsed.size_max == 0
+        assert parsed.terms == ["test"]
+
+    def test_thisweek_date_is_normalized_to_midnight(self):
+        parsed = parse_query("dm:>thisweek")
+        if parsed.date_mod_after:
+            assert parsed.date_mod_after.hour == 0
+            assert parsed.date_mod_after.minute == 0
+
     def test_combined_modifiers(self):
         parsed = parse_query("ext:py size:>1kb dm:today hello")
         assert parsed.ext_filter == ["py"]

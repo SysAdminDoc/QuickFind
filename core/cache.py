@@ -645,6 +645,10 @@ def purge_content_cache() -> int:
         return int(count)
     except Exception as e:
         logger.debug(f"purge_content_cache failed: {e}")
+        try:
+            _get_connection().rollback()
+        except Exception:
+            pass
         return 0
 
 
@@ -681,6 +685,10 @@ def purge_content_cache_by_root(root: str) -> int:
         return count
     except Exception as e:
         logger.debug(f"purge_content_cache_by_root failed: {e}")
+        try:
+            _get_connection().rollback()
+        except Exception:
+            pass
         return 0
 
 
