@@ -29,7 +29,17 @@ logger = logging.getLogger('QuickFind.HTTPServer')
 audit_logger = logging.getLogger('QuickFind.Audit')
 
 _SESSION_COOKIE_NAME = "qf_session"
-_AUDIT_SALT = secrets.token_bytes(16)
+
+
+def _derive_audit_salt() -> bytes:
+    """Derive a stable per-machine audit salt from hostname and config directory."""
+    import platform
+    from pathlib import Path
+    seed = f"QuickFind-audit:{platform.node()}:{Path.home()}"
+    return hashlib.sha256(seed.encode("utf-8")).digest()[:16]
+
+
+_AUDIT_SALT = _derive_audit_salt()
 
 
 def _hash_pii(value: str) -> str:

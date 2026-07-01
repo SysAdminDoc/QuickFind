@@ -7,6 +7,7 @@ All notable changes to QuickFind will be documented in this file.
 - Fixed active search filter silently overwriting user's explicit `ext:` modifier; user's query-level extension now takes precedence over the filter bar.
 - Removed ambiguous `d/m/Y` date format from date modifier parsing; use ISO `YYYY-MM-DD` or US `m/d/Y` to avoid silent misinterpretation.
 - Fixed HTTP server handler state shared globally across all instances; each server now creates an isolated handler subclass to prevent cross-instance corruption.
+- Audit salt is now derived from hostname + config directory for stable cross-restart PII hashing, enabling audit trail correlation.
 - Added 2 regression tests for filter/modifier precedence, expanding the suite to 526 tests.
 
 ## [v0.8.55] - 2026-07-01
