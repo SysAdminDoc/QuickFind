@@ -2,6 +2,12 @@
 
 All notable changes to QuickFind will be documented in this file.
 
+## [v0.8.50] - 2026-07-01
+
+- Added an optional Windows IFilter/property-handler content adapter through Windows Search COM APIs for installed legacy Office, PDF, email, and metadata extractors.
+- Added fallback extraction across adapters for the same extension and surfaced per-extractor content-cache counts/bytes in diagnostics.
+- Added fake Windows Search COM adapter coverage, expanding the passing suite to 359 tests.
+
 ## [v0.8.49] - 2026-07-01
 
 - Added rendered/offscreen PyQt accessibility smoke tests for the main search flow, settings, results, preview, and diagnostics surfaces.

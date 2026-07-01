@@ -601,6 +601,7 @@ def build(onefile=False):
         'pdfplumber', 'docx', 'pptx',
         'watchdog', 'watchdog.events', 'watchdog.observers',
         'service.ipc', 'service.windows_service',
+        'pythoncom', 'pywintypes', 'win32com', 'win32com.client',
         'win32serviceutil', 'win32service', 'win32event', 'servicemanager',
         'win32gui', 'win32con', 'win32cred', 'win32wnet', 'win32netcon',
     ]

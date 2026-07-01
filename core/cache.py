@@ -565,7 +565,7 @@ def get_content_cache_freshness() -> dict[str, tuple[int, int]]:
         return {}
 
 
-def get_content_cache_stats() -> dict[str, int]:
+def get_content_cache_stats() -> dict:
     try:
         conn = _get_connection()
         _init_schema(conn)
@@ -574,17 +574,43 @@ def get_content_cache_stats() -> dict[str, int]:
             "COALESCE(MIN(indexed_ms), 0), COALESCE(MAX(indexed_ms), 0) "
             "FROM content_cache"
         ).fetchone()
+        extractor_rows = conn.execute(
+            "SELECT COALESCE(NULLIF(extractor, ''), 'unknown') AS name, "
+            "COUNT(*), COALESCE(SUM(length(text)), 0) "
+            "FROM content_cache "
+            "GROUP BY COALESCE(NULLIF(extractor, ''), 'unknown') "
+            "ORDER BY COUNT(*) DESC, name"
+        ).fetchall()
+        extractors = [
+            {
+                "name": str(name),
+                "count": int(count or 0),
+                "text_bytes": int(text_bytes or 0),
+            }
+            for name, count, text_bytes in extractor_rows
+        ]
         if not row:
-            return {"count": 0, "text_bytes": 0, "oldest_indexed_ms": 0, "newest_indexed_ms": 0}
+            return _empty_content_cache_stats()
         return {
             "count": int(row[0] or 0),
             "text_bytes": int(row[1] or 0),
             "oldest_indexed_ms": int(row[2] or 0),
             "newest_indexed_ms": int(row[3] or 0),
+            "extractors": extractors,
         }
     except Exception as e:
         logger.debug(f"get_content_cache_stats failed: {e}")
-        return {"count": 0, "text_bytes": 0, "oldest_indexed_ms": 0, "newest_indexed_ms": 0}
+        return _empty_content_cache_stats()
+
+
+def _empty_content_cache_stats() -> dict:
+    return {
+        "count": 0,
+        "text_bytes": 0,
+        "oldest_indexed_ms": 0,
+        "newest_indexed_ms": 0,
+        "extractors": [],
+    }
 
 
 def get_content_cache_size_bytes() -> int:

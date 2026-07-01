@@ -7,8 +7,9 @@ import pytest
 
 from core import cache
 import core.content as content
+import core.content.adapters as adapters_module
 from core.content import adapter_diagnostics, extract_text, matched_line_context
-from core.content.adapters import PdfAdapter
+from core.content.adapters import PdfAdapter, WindowsSearchAdapter
 from core.content.sandbox import ExtractionOutcome
 from core.content.indexer import ContentIndexJob, ContentIndexSettings
 from core.index import FileEntry
@@ -176,6 +177,9 @@ def test_content_cache_roundtrip_and_search(temp_cache):
     stats = cache.get_content_cache_stats()
     assert stats["count"] == 1
     assert stats["text_bytes"] == len("alpha needle omega")
+    assert stats["extractors"] == [
+        {"name": "text", "count": 1, "text_bytes": len("alpha needle omega")}
+    ]
 
 
 def test_content_cache_hits_return_ranked_snippets(temp_cache):
@@ -302,6 +306,88 @@ def test_adapter_diagnostics_reports_text_adapter():
     assert "eml" in eml_adapter.extensions
     ocr_adapter = next(item for item in diagnostics if item.name == "tesseract-ocr")
     assert "pdf" in ocr_adapter.extensions
+    windows_adapter = next(item for item in diagnostics if item.name == "windows-ifilter")
+    assert "doc" in windows_adapter.extensions
+    assert "pdf" in windows_adapter.extensions
+
+
+def test_windows_search_adapter_gracefully_disables_off_windows(monkeypatch):
+    monkeypatch.setattr(adapters_module.sys, "platform", "linux")
+
+    available, detail = WindowsSearchAdapter.availability()
+
+    assert available is False
+    assert "Windows Search" in detail
+    assert adapters_module.adapter_for_path("C:\\docs\\legacy.doc") is None
+
+
+def test_windows_search_adapter_extracts_indexed_content_and_properties(monkeypatch):
+    monkeypatch.setattr(adapters_module.sys, "platform", "win32")
+    calls = {"initialize": 0, "uninitialize": 0}
+
+    class FakeField:
+        def __init__(self, value):
+            self.Value = value
+
+    class FakeFields:
+        values = {
+            "System.Search.Contents": "Body needle text",
+            "System.Title": "Quarterly Plan",
+            "System.Subject": "Operations",
+            "System.Author": ("Alice", "Bob"),
+            "System.Keywords": ("search", "ifilter"),
+            "System.Comment": None,
+        }
+
+        def Item(self, name):
+            return FakeField(self.values.get(name))
+
+    class FakeRecordset:
+        EOF = False
+        Fields = FakeFields()
+
+        def __init__(self):
+            self.closed = False
+
+        def Close(self):
+            self.closed = True
+
+    class FakeConnection:
+        def __init__(self):
+            self.sql = ""
+            self.closed = False
+
+        def Open(self, connection_string):
+            self.connection_string = connection_string
+
+        def Execute(self, sql):
+            self.sql = sql
+            return FakeRecordset()
+
+        def Close(self):
+            self.closed = True
+
+    connection = FakeConnection()
+    pythoncom = types.ModuleType("pythoncom")
+    pythoncom.CoInitialize = lambda: calls.__setitem__("initialize", calls["initialize"] + 1)
+    pythoncom.CoUninitialize = lambda: calls.__setitem__("uninitialize", calls["uninitialize"] + 1)
+    win32com = types.ModuleType("win32com")
+    win32com.__path__ = []
+    client = types.ModuleType("win32com.client")
+    client.Dispatch = lambda name: connection
+    win32com.client = client
+    monkeypatch.setitem(sys.modules, "pythoncom", pythoncom)
+    monkeypatch.setitem(sys.modules, "win32com", win32com)
+    monkeypatch.setitem(sys.modules, "win32com.client", client)
+
+    extracted = WindowsSearchAdapter().extract("C:\\docs\\O'Hara.doc", max_chars=200)
+
+    assert "Body needle text" in extracted
+    assert "Title: Quarterly Plan" in extracted
+    assert "Author: Alice, Bob" in extracted
+    assert "System.Search.Contents" in connection.sql
+    assert "O''Hara.doc" in connection.sql
+    assert calls == {"initialize": 1, "uninitialize": 1}
 
 
 def test_content_index_job_honors_roots_extensions_and_cache(temp_cache, tmp_path):

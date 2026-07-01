@@ -4,6 +4,7 @@ import logging
 import os
 import importlib.util
 import re
+import sys
 from email import policy
 from email.parser import BytesParser
 from html import unescape
@@ -26,6 +27,12 @@ TEXT_EXTENSIONS = {
     'kt', 'kts', 'rs', 'go', 'rb', 'php', 'sql', 'r', 'lua', 'pl',
     'swift', 'scala', 'dart', 'erl', 'ex', 'exs', 'clj', 'cljs',
     'toml', 'env', 'gitignore', 'dockerfile', 'makefile', 'gradle',
+}
+
+WINDOWS_SEARCH_EXTENSIONS = {
+    'pdf', 'doc', 'docx', 'dot', 'dotx', 'rtf',
+    'xls', 'xlsx', 'xlsm', 'xlsb', 'ppt', 'pptx', 'pps', 'ppsx',
+    'msg', 'eml', 'odt', 'ods', 'odp', 'one', 'vsd', 'vsdx', 'xps',
 }
 
 
@@ -170,21 +177,67 @@ class EmlAdapter:
         return text[:max_chars]
 
 
+class WindowsSearchAdapter:
+    """Use Windows Search indexed properties backed by installed IFilters."""
+
+    name = 'windows-ifilter'
+    extensions = WINDOWS_SEARCH_EXTENSIONS
+
+    @classmethod
+    def availability(cls) -> tuple[bool, str]:
+        if sys.platform != 'win32':
+            return False, "Windows Search COM APIs are only available on Windows"
+        missing = []
+        for module_name in ("pythoncom", "win32com.client"):
+            try:
+                spec = importlib.util.find_spec(module_name)
+            except (ImportError, ValueError):
+                spec = None
+            if spec is None:
+                missing.append(module_name)
+        if missing:
+            return False, "Missing Python module: " + ", ".join(missing)
+        return True, "Uses Windows Search property handlers/IFilters for indexed files"
+
+    def extract(self, path: str, max_chars: int = MAX_EXTRACT_CHARS) -> str:
+        pythoncom, win32_client = _load_windows_search_com()
+        initialized = False
+        connection = None
+        recordset = None
+        try:
+            co_initialize = getattr(pythoncom, "CoInitialize", None)
+            if callable(co_initialize):
+                co_initialize()
+                initialized = True
+            connection = win32_client.Dispatch("ADODB.Connection")
+            connection.Open("Provider=Search.CollatorDSO;Extended Properties='Application=Windows';")
+            recordset = connection.Execute(_windows_search_sql(path))
+            if isinstance(recordset, tuple):
+                recordset = recordset[0]
+            return _windows_search_record_text(recordset, max_chars)
+        finally:
+            _close_com_object(recordset)
+            _close_com_object(connection)
+            co_uninitialize = getattr(pythoncom, "CoUninitialize", None)
+            if initialized and callable(co_uninitialize):
+                co_uninitialize()
+
+
 ADAPTERS: tuple[ContentAdapter, ...] = (
     PlainTextAdapter(),
     PdfAdapter(),
     DocxAdapter(),
     PptxAdapter(),
     EmlAdapter(),
+    WindowsSearchAdapter(),
 )
 
-_ADAPTER_BY_EXTENSION = {
-    ext: adapter
-    for adapter in ADAPTERS
-    for ext in adapter.extensions
-}
+_ADAPTERS_BY_EXTENSION: dict[str, list[ContentAdapter]] = {}
+for adapter in ADAPTERS:
+    for ext in adapter.extensions:
+        _ADAPTERS_BY_EXTENSION.setdefault(ext, []).append(adapter)
 
-SUPPORTED_CONTENT_EXTENSIONS = set(_ADAPTER_BY_EXTENSION)
+SUPPORTED_CONTENT_EXTENSIONS = set(_ADAPTERS_BY_EXTENSION)
 
 
 def is_supported_content_path(path: str) -> bool:
@@ -192,26 +245,21 @@ def is_supported_content_path(path: str) -> bool:
 
 
 def adapter_for_path(path: str) -> ContentAdapter | None:
-    return _ADAPTER_BY_EXTENSION.get(_extension(path))
+    adapters = adapters_for_path(path)
+    return adapters[0] if adapters else None
+
+
+def adapters_for_path(path: str, available_only: bool = True) -> tuple[ContentAdapter, ...]:
+    adapters = _ADAPTERS_BY_EXTENSION.get(_extension(path), [])
+    if not available_only:
+        return tuple(adapters)
+    return tuple(adapter for adapter in adapters if _adapter_available_detail(adapter)[0])
 
 
 def adapter_diagnostics() -> list[AdapterDiagnostic]:
-    module_names = {
-        'text': None,
-        'pdfplumber': 'pdfplumber',
-        'python-docx': 'docx',
-        'python-pptx': 'pptx',
-        'eml': None,
-    }
     diagnostics = []
     for adapter in ADAPTERS:
-        module_name = module_names.get(adapter.name)
-        available = True
-        detail = ""
-        if module_name:
-            available = importlib.util.find_spec(module_name) is not None
-            if not available:
-                detail = f"Missing Python module: {module_name}"
+        available, detail = _adapter_available_detail(adapter)
         diagnostics.append(AdapterDiagnostic(
             name=adapter.name,
             extensions=tuple(sorted(adapter.extensions)),
@@ -223,18 +271,24 @@ def adapter_diagnostics() -> list[AdapterDiagnostic]:
 
 
 def extract_text(path: str, max_chars: int = MAX_EXTRACT_CHARS) -> ExtractedContent | None:
-    adapter = adapter_for_path(path)
-    if adapter is None:
+    adapters = adapters_for_path(path)
+    if not adapters:
         return None
-    try:
-        text = adapter.extract(path, max_chars=max_chars)
-    except (OSError, PermissionError, UnicodeError, ImportError) as exc:
-        logger.debug(f"Content extraction failed for {path}: {exc}")
-        return None
-    except Exception as exc:
-        logger.debug(f"Content extraction failed for {path}: {exc}")
-        return None
-    return ExtractedContent(text=text, extractor=adapter.name)
+    empty_result = None
+    for adapter in adapters:
+        try:
+            text = adapter.extract(path, max_chars=max_chars)
+        except (OSError, PermissionError, UnicodeError, ImportError) as exc:
+            logger.debug(f"Content extraction failed for {path} with {adapter.name}: {exc}")
+            continue
+        except Exception as exc:
+            logger.debug(f"Content extraction failed for {path} with {adapter.name}: {exc}")
+            continue
+        result = ExtractedContent(text=text, extractor=adapter.name)
+        if text:
+            return result
+        empty_result = result
+    return empty_result
 
 
 def matched_line_context(content: str, search_text: str,
@@ -289,6 +343,111 @@ def _html_to_text(html: str) -> str:
     text = re.sub(r"(?s)<[^>]+>", " ", text)
     text = unescape(text)
     return re.sub(r"\s+", " ", text).strip()
+
+
+def _adapter_available_detail(adapter: ContentAdapter) -> tuple[bool, str]:
+    availability = getattr(adapter, "availability", None)
+    if callable(availability):
+        return availability()
+    module_names = {
+        'text': None,
+        'pdfplumber': 'pdfplumber',
+        'python-docx': 'docx',
+        'python-pptx': 'pptx',
+        'eml': None,
+    }
+    module_name = module_names.get(adapter.name)
+    if not module_name:
+        return True, ""
+    available = importlib.util.find_spec(module_name) is not None
+    detail = "" if available else f"Missing Python module: {module_name}"
+    return available, detail
+
+
+def _load_windows_search_com():
+    import pythoncom
+    import win32com.client
+
+    return pythoncom, win32com.client
+
+
+def _windows_search_sql(path: str) -> str:
+    query_path = os.path.abspath(path) if sys.platform == 'win32' else path
+    escaped_path = query_path.replace("'", "''")
+    columns = ", ".join([
+        "System.Search.Contents",
+        "System.Title",
+        "System.Subject",
+        "System.Author",
+        "System.Keywords",
+        "System.Comment",
+    ])
+    return (
+        f"SELECT {columns} "
+        "FROM SYSTEMINDEX "
+        f"WHERE System.ItemPathDisplay = '{escaped_path}'"
+    )
+
+
+def _windows_search_record_text(recordset, max_chars: int) -> str:
+    if recordset is None or bool(getattr(recordset, "EOF", True)):
+        return ""
+    chunks = []
+    contents = _record_field_text(recordset, "System.Search.Contents")
+    if contents:
+        chunks.append(contents)
+    metadata_fields = [
+        ("Title", "System.Title"),
+        ("Subject", "System.Subject"),
+        ("Author", "System.Author"),
+        ("Keywords", "System.Keywords"),
+        ("Comment", "System.Comment"),
+    ]
+    for label, field_name in metadata_fields:
+        value = _record_field_text(recordset, field_name)
+        if value:
+            chunks.append(f"{label}: {value}")
+    return "\n".join(chunks)[:max_chars]
+
+
+def _record_field_text(recordset, field_name: str) -> str:
+    fields = getattr(recordset, "Fields", None)
+    if fields is None:
+        return ""
+    field = None
+    try:
+        item = getattr(fields, "Item", None)
+        if callable(item):
+            field = item(field_name)
+        elif callable(fields):
+            field = fields(field_name)
+    except Exception:
+        field = None
+    if field is None:
+        return ""
+    value = getattr(field, "Value", None)
+    return _plain_field_value(value)
+
+
+def _plain_field_value(value) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, bytes):
+        value = value.decode("utf-8", errors="replace")
+    elif isinstance(value, (list, tuple, set)):
+        value = ", ".join(_plain_field_value(item) for item in value if item is not None)
+    else:
+        value = str(value)
+    return re.sub(r"\s+", " ", value).strip()
+
+
+def _close_com_object(value) -> None:
+    close = getattr(value, "Close", None)
+    if callable(close):
+        try:
+            close()
+        except Exception:
+            pass
 
 
 def _ocr_diagnostic() -> AdapterDiagnostic:
