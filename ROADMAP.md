@@ -34,13 +34,6 @@ NTFS-MFT-backed instant file search (PyQt6 + SQLite FTS5). Voidtools Everything 
 
 ### P2 - Search Depth and Workflow Expansion
 
-- [ ] P2 — Incrementally reindex content from file-change events
-  Why: Content indexing is a manual/background pass over all entries; changed files should enqueue targeted content refreshes from USN/watchdog updates.
-  Evidence: `gui/main_window.py:137`, `core/content/indexer.py`, `core/index.py:1732`, Recoll/FSearch update workflows.
-  Touches: `core/index.py`, `core/content/indexer.py`, `gui/main_window.py`, `core/cache.py`, `tests/test_content_search.py`, `tests/test_index.py`
-  Acceptance: Creates/renames/modifies/deletes enqueue bounded content-cache refresh/removal work for supported files, diagnostics show queue status/failures, and tests prove stale snippets disappear after file changes.
-  Complexity: L
-
 - [ ] P2 — Add duplicate review workflow with safe remediation
   Why: `dupe:` and `dupe:hash` identify duplicates, but there is no grouped review surface, keep-rule preview, or safe batch action.
   Evidence: `core/search.py:1142`, `gui/results_view.py`, UltraSearch/WizFile duplicate and hardlink features.

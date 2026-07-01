@@ -14,7 +14,8 @@ All notable changes to QuickFind will be documented in this file.
 - Added report-grade result export from File > Export Results as Report with CSV, JSON, and HTML formats including query metadata, content snippets, and XSS-safe HTML escaping.
 - Added visual query builder with modifier chip extraction, composition, validation, and round-trip to raw query strings for all built-in modifiers.
 - Added plugin discovery from `~/.quickfind/plugins/` with manifest validation, Python entry-point loading, disabled/quarantine support, and plugin summary for settings/help.
-- Added 80 tests covering advisory/SBOM/audit/purge/localization/benchmark/export/chips/plugins scenarios, expanding the passing suite to 443 tests.
+- Added incremental content-cache refresh queue for file-change events with bounded capacity, batch processing, rename/delete handling, and queue diagnostics.
+- Added 95 tests covering advisory/SBOM/audit/purge/localization/benchmark/export/chips/plugins/refresh scenarios, expanding the passing suite to 458 tests.
 
 ## [v0.8.51] - 2026-07-01
 
