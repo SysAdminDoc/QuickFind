@@ -30,91 +30,7 @@ NTFS-MFT-backed instant file search (PyQt6 + SQLite FTS5). Voidtools Everything 
 
 ### P0 - Security and Release Blockers
 
-- [ ] P0 — Sandbox content and archive extraction workers
-  Why: PDF/DOCX/PPTX/EML and archive probing currently run in-process, so hostile or hanging parsers can still stall or crash indexing despite quotas.
-  Evidence: `core/content/adapters.py`, `core/content/indexer.py`, `core/archives.py`, py7zr advisory/release discussion, Recoll/DocFetcher extractor models.
-  Touches: `core/content/adapters.py`, `core/content/indexer.py`, `core/archives.py`, `core/cache.py`, `gui/diagnostics_dialog.py`, `tests/test_content_search.py`, `tests/test_archive_search.py`
-  Acceptance: Extraction/probing runs through cancellable worker isolation with per-file timeout, byte caps, adapter failure/quarantine diagnostics, and tests proving a hanging adapter cannot block the GUI/index job.
-  Complexity: L
-
-- [ ] P0 — Verify release artifacts, update feeds, and locked clean paths
-  Why: MSIX/App Installer/winget metadata points at GitHub release assets, but the build script does not verify release URLs, signatures, hashes, or locked stale artifacts before publishing.
-  Evidence: `build.py:95`, `build.py:115`, `packaging/winget/`, Microsoft App Installer and winget manifest docs.
-  Touches: `build.py`, `packaging/winget/`, `tests/test_version.py`, `README.md`
-  Acceptance: A local release-check command validates version consistency, MSIX signature/hash, appinstaller and winget URLs, GitHub release asset presence, and cleanly reports/remediates locked build outputs.
-  Complexity: M
-
 ### P1 - Trust, Reliability, and Observability
-
-- [ ] P1 — Persist live USN journal checkpoints after monitor batches
-  Why: File-row changes are batch-synced during live monitoring, but `drives.next_usn` is only refreshed on full cache saves, creating crash windows with stale journal replay positions.
-  Evidence: `core/cache.py:1030`, `core/index.py:1732`, `core/index.py:1945`, Everything/FSearch live-update expectations.
-  Touches: `core/index.py`, `core/cache.py`, `tests/test_index.py`, `tests/test_cache.py`
-  Acceptance: After successful live USN batches, each affected drive's journal ID and next USN are durably flushed; restart tests prove no duplicate replay storm and proper full reindex on journal recycle.
-  Complexity: M
-
-- [ ] P1 — Harden remote session cookies and auth POST origin checks
-  Why: Remote search is read-only and token-gated, but HTTPS cookies lack `Secure`, `/auth` has no Origin/Referer guard, and inline CSP should be intentionally documented or reduced.
-  Evidence: `server/http_server.py:598`, `server/http_server.py:601`, `server/http_server.py:660`, OWASP-style session expectations, commercial remote-search surfaces.
-  Touches: `server/http_server.py`, `tests/test_http_server.py`, `gui/settings_validation.py`
-  Acceptance: HTTPS sessions set `Secure; HttpOnly; SameSite=Strict`, auth POST rejects cross-origin form submissions when an Origin/Referer is present, docs/tests cover HTTP vs HTTPS behavior, and no query token path is reintroduced.
-  Complexity: S
-
-- [ ] P1 — Add redacted diagnostics support bundle export
-  Why: The diagnostics UI shows cache, drive, service, and content state but there is no single redacted artifact for troubleshooting stale indexes, parser failures, HTTP config, or release runtime drift.
-  Evidence: `gui/diagnostics_dialog.py`, `gui/status_indicators.py`, `core/cache.py:665`, `build.py:66`, FileLocator/Copernic enterprise support patterns.
-  Touches: `gui/diagnostics_dialog.py`, `gui/main_window.py`, `core/cache.py`, `build.py`, `tests/test_cache.py`, `tests/test_main_window.py`
-  Acceptance: Tools > Index Diagnostics can export a JSON/ZIP bundle with runtime matrix, cache integrity, drive states, content adapter failures, settings summary with secrets redacted, recent log tail, and a test proving tokens/passwords are absent.
-  Complexity: M
-
-- [ ] P1 — Version settings/profile migrations with backup and rollback
-  Why: Settings import/export exists, but persisted settings have no schema version or pre-migration backup as options grow across remote, content, i18n, plugins, and packaging features.
-  Evidence: `gui/settings_dialog.py:145`, `gui/settings_dialog.py:197`, `gui/settings_validation.py`, Listary/Flow portable/profile expectations.
-  Touches: `gui/settings_dialog.py`, `gui/settings_validation.py`, `tests/test_settings_validation.py`, `README.md`
-  Acceptance: Settings JSON includes schema version, migrations run through validated steps, old files are backed up before replacement, invalid imports can roll back to the previous profile, and tests cover forward/unknown versions.
-  Complexity: M
-
-- [ ] P1 — Add rendered UI accessibility smoke tests
-  Why: Current accessibility tests validate helper metadata, but they do not exercise rendered settings/results/preview/diagnostics focus order or accessible names.
-  Evidence: `gui/accessibility.py`, `tests/test_accessibility.py`, `tests/test_main_window.py`, README accessibility claim, WCAG/UIA expectations for desktop tools.
-  Touches: `gui/accessibility.py`, `gui/main_window.py`, `gui/settings_dialog.py`, `gui/results_view.py`, `gui/diagnostics_dialog.py`, `tests/`
-  Acceptance: A headless/offscreen PyQt smoke test opens core windows, verifies accessible names/descriptions for primary controls, confirms keyboard focus traversal reaches search/filter/results/actions, and fails on missing critical labels.
-  Complexity: M
-
-- [ ] P1 — Add Windows IFilter and property-handler content adapter
-  Why: Current content search covers selected Python parsers only; Windows IFilter/property handlers unlock installed Office/PDF/email/metadata formats without making Windows Search the filename engine.
-  Evidence: `core/content/adapters.py`, Microsoft IFilter docs, Windows Search AQS/property model, FileLocator/UltraSearch/Copernic content-search feature sets.
-  Touches: `core/content/adapters.py`, `core/content/indexer.py`, `core/cache.py`, `gui/settings_dialog.py`, `tests/test_content_search.py`
-  Acceptance: On Windows, an optional adapter extracts text/properties through installed IFilters/property handlers with timeout/fallback diagnostics, surfaces extractor name in content cache stats, and gracefully disables when COM/filter APIs are unavailable.
-  Complexity: L
-
-- [ ] P1 — Add recoverable delete action feedback
-  Why: Delete-to-Recycle is intentionally no-confirm, but current context-menu deletion is silent and does not report success/failure or recovery details.
-  Evidence: `gui/context_menu.py:104`, `gui/main_window.py`, commercial search tools' result action feedback.
-  Touches: `gui/context_menu.py`, `gui/main_window.py`, `gui/results_view.py`, `tests/test_main_window.py`
-  Acceptance: Recycle actions emit status/toast/log feedback with count/path summary, report SHFileOperation errors visibly, refresh affected result rows, and expose a non-modal recovery hint without adding confirmation dialogs.
-  Complexity: S
-
-- [ ] P1 — Add dependency advisory and SBOM release gate
-  Why: The release matrix records pinned dependency versions, but there is no local advisory/license/SBOM check for the PyQt/PyInstaller/pdfplumber/py7zr/watchdog stack before packaging.
-  Evidence: `requirements.txt`, `build.py:36`, `build.py:66`, pip-audit, CycloneDX, PyInstaller and py7zr changelogs.
-  Touches: `requirements.txt`, `build.py`, `tests/test_version.py`, `README.md`
-  Acceptance: A local release/audit command reads pinned requirements, emits dependency version/license/advisory/SBOM output, fails on unwaived high/critical advisories with expiring allowlist entries, and has tests with mocked advisory data.
-  Complexity: M
-
-- [ ] P1 — Add privacy-preserving remote access audit log
-  Why: The remote server has auth, rate limiting, and OpenAPI docs, but no durable redacted audit trail for auth failures, rate limits, search volume, or future denied ACL decisions.
-  Evidence: `server/http_server.py:548`, `server/http_server.py:615`, `server/http_server.py:646`, OWASP logging guidance, FileLocator/Copernic enterprise support patterns.
-  Touches: `server/http_server.py`, `quickfind.py`, `gui/diagnostics_dialog.py`, `tests/test_http_server.py`
-  Acceptance: Remote auth failures, rate limits, searches, and denied path/ACL events write structured audit records with timestamps, endpoint, client hash, result count/query hash where relevant, and tests prove tokens, passwords, raw queries, and full paths are not logged.
-  Complexity: M
-
-- [ ] P1 — Add content-cache privacy controls and purge workflow
-  Why: Background content indexing persists extracted document text in SQLite, but users cannot see retention policy, purge cached text, remove one root from the content cache, or verify that sensitive content was deleted from FTS tables.
-  Evidence: `core/cache.py:185`, `core/cache.py:470`, `core/content/indexer.py:86`, `gui/settings_dialog.py:476`, Everything content-index scope/stat controls, OWASP desktop data-storage guidance.
-  Touches: `core/cache.py`, `core/content/indexer.py`, `gui/settings_dialog.py`, `gui/diagnostics_dialog.py`, `tests/test_content_search.py`, `tests/test_cache.py`
-  Acceptance: Settings/Diagnostics expose content-cache path, size, retention warning, purge-all, and purge-by-root actions; purge removes rows and FTS entries transactionally; tests prove cached sensitive text is no longer searchable after purge.
-  Complexity: M
 
 ### P2 - Search Depth and Workflow Expansion
 
@@ -131,20 +47,6 @@ NTFS-MFT-backed instant file search (PyQt6 + SQLite FTS5). Voidtools Everything 
   Touches: `core/index.py`, `core/content/indexer.py`, `gui/main_window.py`, `core/cache.py`, `tests/test_content_search.py`, `tests/test_index.py`
   Acceptance: Creates/renames/modifies/deletes enqueue bounded content-cache refresh/removal work for supported files, diagnostics show queue status/failures, and tests prove stale snippets disappear after file changes.
   Complexity: L
-
-- [ ] P2 — Expand localization coverage with extraction and pseudo-locale checks
-  Why: English/Spanish localization currently covers a small shell catalog while help, settings, diagnostics, and result text still contain many literals.
-  Evidence: `core/localization.py`, `gui/help_docs.py`, `gui/settings_dialog.py`, `tests/test_localization.py`
-  Touches: `core/localization.py`, `gui/help_docs.py`, `gui/settings_dialog.py`, `gui/main_window.py`, `tests/test_localization.py`
-  Acceptance: Adds a string-key extraction/lint command, pseudo-locale test coverage, Spanish coverage for help/settings/diagnostics primary text, and fallback tests for missing keys.
-  Complexity: M
-
-- [ ] P2 — Add repeatable benchmark harness and README metrics
-  Why: README claims sub-second/millions-file performance, but there is no reproducible benchmark for cold cache, warm cache, content search, USN catchup, or Windows Search comparison.
-  Evidence: `README.md`, `core/index.py`, `core/search.py`, Voidtools Everything and Windows Search performance positioning.
-  Touches: `tools/` or `tests/benchmarks/`, `core/index.py`, `core/search.py`, `README.md`
-  Acceptance: A local benchmark command builds synthetic trees, records cold/warm/index/search/content timings and memory, exports JSON/CSV, and README badges/text cite the latest measured run.
-  Complexity: M
 
 - [ ] P2 — Add visual query builder and filter chips for advanced modifiers
   Why: QuickFind has rich boolean/modifier syntax, but complex queries are discoverable mainly through offline docs rather than editable UI state.
