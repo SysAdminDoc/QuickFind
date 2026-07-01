@@ -11,7 +11,8 @@ All notable changes to QuickFind will be documented in this file.
 - Purge removes both content_cache rows and FTS entries transactionally; tests prove sensitive text is no longer searchable after purge.
 - Expanded Spanish localization to cover settings, diagnostics, help, and result text; added `all_keys()`, `missing_keys()`, pseudo-locale generator, and fallback tests.
 - Added repeatable benchmark harness (`python -m tools.benchmark`) with synthetic tree generation, cold/warm search timings, and JSON/CSV export.
-- Added 41 tests covering advisory/SBOM/audit/purge/localization/benchmark scenarios, expanding the passing suite to 404 tests.
+- Added report-grade result export from File > Export Results as Report with CSV, JSON, and HTML formats including query metadata, content snippets, and XSS-safe HTML escaping.
+- Added 50 tests covering advisory/SBOM/audit/purge/localization/benchmark/export scenarios, expanding the passing suite to 413 tests.
 
 ## [v0.8.51] - 2026-07-01
 

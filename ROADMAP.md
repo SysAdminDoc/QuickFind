@@ -62,13 +62,6 @@ NTFS-MFT-backed instant file search (PyQt6 + SQLite FTS5). Voidtools Everything 
   Acceptance: Duplicate results can be grouped by duplicate set/hash, users can preview keep/delete candidates, safe actions move only selected duplicates to Recycle Bin with feedback, and tests cover folders, hardlinks, and missing files.
   Complexity: L
 
-- [ ] P2 — Add report-grade result export from the GUI
-  Why: QuickFind can export EFU file lists and the CLI can emit CSV/JSON, but the GUI cannot save active results with visible columns, query criteria, content snippets, or HTML/CSV/JSON report formats for review and handoff.
-  Evidence: `gui/main_window.py:1787`, `cli/es.py:182`, FileLocator Pro result export and commercial report workflows.
-  Touches: `gui/main_window.py`, `gui/results_view.py`, `core/file_list.py`, `tests/test_main_window.py`, `tests/test_file_list.py`
-  Acceptance: File > Export offers CSV, JSON, and HTML report formats for current results, includes query/filter/sort metadata and optional content snippets, escapes HTML/CSV safely, respects visible columns, and reports success/failure in the status bar.
-  Complexity: M
-
 ### P3 — Larger Features
 
 - [ ] P3 — Add portable/cloud-profile mode with machine-scoped caches

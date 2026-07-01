@@ -15,6 +15,7 @@ CATALOGS = {
         "menu.file.new_window": "Nueva ventana",
         "menu.file.open_efu": "Abrir lista de archivos",
         "menu.file.export_efu": "Exportar resultados",
+        "menu.file.export_report": "Exportar resultados como informe...",
         "menu.file.exit": "Salir",
         "menu.edit": "Editar",
         "menu.edit.select_all": "Seleccionar todo",

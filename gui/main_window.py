@@ -803,6 +803,9 @@ class MainWindow(QMainWindow):
         export_efu = file_menu.addAction(tr("menu.file.export_efu", "&Export Results as EFU..."))
         export_efu.triggered.connect(self._export_efu)
 
+        export_report = file_menu.addAction(tr("menu.file.export_report", "Export Results as &Report..."))
+        export_report.triggered.connect(self._export_report)
+
         file_menu.addSeparator()
 
         exit_action = file_menu.addAction(tr("menu.file.exit", "E&xit"))
@@ -1904,6 +1907,77 @@ class MainWindow(QMainWindow):
         )
         if path:
             save_efu(entries, path, self._file_index)
+
+    def _export_report(self):
+        from PyQt6.QtWidgets import QFileDialog
+        from core.result_export import (
+            ExportMetadata,
+            ExportableResult,
+            export_csv,
+            export_html,
+            export_json,
+        )
+        from core.version import VERSION
+
+        entries = self._results_view.model.entries
+        if not entries:
+            self._status_label.setText("No results to export.")
+            return
+
+        path, selected_filter = QFileDialog.getSaveFileName(
+            self, "Export Results",
+            "results.csv",
+            "CSV Files (*.csv);;JSON Files (*.json);;HTML Reports (*.html);;All Files (*)",
+        )
+        if not path:
+            return
+
+        try:
+            query = self._search_box.text() if hasattr(self, '_search_box') else ""
+            meta = ExportMetadata(
+                query=query,
+                result_count=len(entries),
+                app_version=VERSION,
+            )
+            results = []
+            for entry in entries:
+                full_path = entry.get_path(self._file_index)
+                parent = self._file_index.resolve_parent_path(entry.drive, entry.parent_frn)
+                kind = "Folder" if entry.is_dir else (entry.extension.upper() + " file" if entry.extension else "File")
+                size_display = ""
+                if not entry.is_dir and entry.size is not None:
+                    if entry.size < 1024:
+                        size_display = f"{entry.size} B"
+                    elif entry.size < 1048576:
+                        size_display = f"{entry.size / 1024:.1f} KB"
+                    else:
+                        size_display = f"{entry.size / 1048576:.1f} MB"
+                dm = entry.date_modified.strftime("%Y-%m-%d %H:%M") if entry.date_modified else ""
+                results.append(ExportableResult(
+                    name=entry.name,
+                    path=full_path,
+                    parent_path=parent,
+                    kind=kind,
+                    extension=entry.extension,
+                    size_bytes=entry.size if not entry.is_dir else None,
+                    size_display=size_display,
+                    date_modified=dm,
+                    content_snippet=getattr(entry, "content_snippet", ""),
+                ))
+
+            lower = path.lower()
+            if lower.endswith(".json"):
+                content = export_json(results, meta)
+            elif lower.endswith(".html") or lower.endswith(".htm"):
+                content = export_html(results, meta)
+            else:
+                content = export_csv(results, meta)
+
+            with open(path, "w", encoding="utf-8", newline="") as f:
+                f.write(content)
+            self._status_label.setText(f"Exported {len(results)} results to {os.path.basename(path)}")
+        except Exception as e:
+            self._status_label.setText(f"Export failed: {e}")
 
     # ── Filter Import/Export ─────────────────────────────
 
