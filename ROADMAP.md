@@ -34,13 +34,6 @@ NTFS-MFT-backed instant file search (PyQt6 + SQLite FTS5). Voidtools Everything 
 
 ### P2 - Search Depth and Workflow Expansion
 
-- [ ] P2 — Package and discover modifier plugins safely
-  Why: The modifier plugin API is programmatic only, so third-party plugins cannot be installed, disabled, or quarantined without code edits.
-  Evidence: `core/search.py:182`, `tests/test_search.py:337`, Flow Launcher plugin store/docs, PowerToys Run plugin model.
-  Touches: `core/search.py`, `gui/settings_dialog.py`, `gui/help_docs.py`, `README.md`, `tests/test_search.py`
-  Acceptance: QuickFind discovers plugin manifests or Python entry points from a configured plugin directory, validates names/permissions, disables failed plugins without breaking search, lists plugin status in settings/help, and tests conflict/quarantine behavior.
-  Complexity: L
-
 - [ ] P2 — Incrementally reindex content from file-change events
   Why: Content indexing is a manual/background pass over all entries; changed files should enqueue targeted content refreshes from USN/watchdog updates.
   Evidence: `gui/main_window.py:137`, `core/content/indexer.py`, `core/index.py:1732`, Recoll/FSearch update workflows.
