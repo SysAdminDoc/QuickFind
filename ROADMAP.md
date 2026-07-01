@@ -36,13 +36,6 @@ NTFS-MFT-backed instant file search (PyQt6 + SQLite FTS5). Voidtools Everything 
 
 ### P3 — Larger Features
 
-- [ ] P3 — Add portable/cloud-profile mode with machine-scoped caches
-  Why: Users sync launcher/search profiles through OneDrive/Dropbox, but cache and plugin state need machine-specific identity to avoid stale paths and conflicts.
-  Evidence: `gui/settings_dialog.py`, `core/cache.py`, Flow Launcher portable-mode issue signal, Listary portable/profile workflows.
-  Touches: `gui/settings_dialog.py`, `core/cache.py`, `core/version.py`, `README.md`, `tests/test_settings_validation.py`
-  Acceptance: A portable mode stores settings beside the executable or a chosen root, caches include a machine/source identity, synced profiles do not reuse incompatible cache DBs, and diagnostics report portable/profile paths.
-  Complexity: L
-
 - [ ] P3 — Prototype shared read-only search server with explicit ACL boundary
   Why: Commercial and Recoll-style web deployments show demand for shared indexes, but exposing personal filesystem results requires an explicit access-control model before multi-user use.
   Evidence: `server/http_server.py`, `service/windows_service.py`, Recoll web/Python API docs, FileLocator/Copernic enterprise search patterns.
