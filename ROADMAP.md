@@ -109,6 +109,13 @@ NTFS-MFT-backed instant file search (PyQt6 + SQLite FTS5). Voidtools Everything 
   Acceptance: Remote auth failures, rate limits, searches, and denied path/ACL events write structured audit records with timestamps, endpoint, client hash, result count/query hash where relevant, and tests prove tokens, passwords, raw queries, and full paths are not logged.
   Complexity: M
 
+- [ ] P1 — Add content-cache privacy controls and purge workflow
+  Why: Background content indexing persists extracted document text in SQLite, but users cannot see retention policy, purge cached text, remove one root from the content cache, or verify that sensitive content was deleted from FTS tables.
+  Evidence: `core/cache.py:185`, `core/cache.py:470`, `core/content/indexer.py:86`, `gui/settings_dialog.py:476`, Everything content-index scope/stat controls, OWASP desktop data-storage guidance.
+  Touches: `core/cache.py`, `core/content/indexer.py`, `gui/settings_dialog.py`, `gui/diagnostics_dialog.py`, `tests/test_content_search.py`, `tests/test_cache.py`
+  Acceptance: Settings/Diagnostics expose content-cache path, size, retention warning, purge-all, and purge-by-root actions; purge removes rows and FTS entries transactionally; tests prove cached sensitive text is no longer searchable after purge.
+  Complexity: M
+
 ### P2 - Search Depth and Workflow Expansion
 
 - [ ] P2 — Package and discover modifier plugins safely
@@ -152,6 +159,13 @@ NTFS-MFT-backed instant file search (PyQt6 + SQLite FTS5). Voidtools Everything 
   Touches: `core/search.py`, `gui/main_window.py`, `gui/results_view.py`, `gui/context_menu.py`, `tests/test_search.py`, `tests/test_main_window.py`
   Acceptance: Duplicate results can be grouped by duplicate set/hash, users can preview keep/delete candidates, safe actions move only selected duplicates to Recycle Bin with feedback, and tests cover folders, hardlinks, and missing files.
   Complexity: L
+
+- [ ] P2 — Add report-grade result export from the GUI
+  Why: QuickFind can export EFU file lists and the CLI can emit CSV/JSON, but the GUI cannot save active results with visible columns, query criteria, content snippets, or HTML/CSV/JSON report formats for review and handoff.
+  Evidence: `gui/main_window.py:1787`, `cli/es.py:182`, FileLocator Pro result export and commercial report workflows.
+  Touches: `gui/main_window.py`, `gui/results_view.py`, `core/file_list.py`, `tests/test_main_window.py`, `tests/test_file_list.py`
+  Acceptance: File > Export offers CSV, JSON, and HTML report formats for current results, includes query/filter/sort metadata and optional content snippets, escapes HTML/CSV safely, respects visible columns, and reports success/failure in the status bar.
+  Complexity: M
 
 ### P3 — Larger Features
 
