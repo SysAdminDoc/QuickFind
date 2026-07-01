@@ -17,6 +17,7 @@ def _handler(headers=None) -> SearchHandler:
     handler.headers = headers or {}
     handler.auth_token = "secret"
     handler.session_token = "session"
+    handler.use_https = False
     handler.send_response = MagicMock()
     handler.send_header = MagicMock()
     handler.end_headers = MagicMock()
@@ -121,6 +122,8 @@ def test_session_cookie_is_accepted():
 def test_successful_auth_post_sets_same_origin_session_cookie():
     body = b"token=secret"
     handler = _handler({
+        "Host": "127.0.0.1:8080",
+        "Origin": "http://127.0.0.1:8080",
         "Content-Type": "application/x-www-form-urlencoded",
         "Content-Length": str(len(body)),
     })
@@ -134,6 +137,57 @@ def test_successful_auth_post_sets_same_origin_session_cookie():
         "Set-Cookie",
         f"{_SESSION_COOKIE_NAME}=session; HttpOnly; Path=/; SameSite=Strict",
     )
+
+
+def test_https_auth_cookie_sets_secure_flag():
+    handler = _handler()
+    handler.use_https = True
+
+    assert handler._session_cookie_header() == (
+        f"{_SESSION_COOKIE_NAME}=session; HttpOnly; Path=/; SameSite=Strict; Secure"
+    )
+
+
+def test_auth_post_rejects_cross_origin_submit():
+    body = b"token=secret"
+    handler = _handler({
+        "Host": "quickfind.local:8080",
+        "Origin": "https://evil.example",
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Content-Length": str(len(body)),
+    })
+    handler.rfile = BytesIO(body)
+
+    handler._handle_auth_post()
+
+    handler.send_response.assert_called_once_with(403)
+    header_calls = [call.args for call in handler.send_header.call_args_list]
+    assert not any(name == "Set-Cookie" for name, _value in header_calls)
+    assert json.loads(handler.wfile.getvalue().decode("utf-8"))["error"] == "Cross-origin auth rejected"
+
+
+def test_auth_post_rejects_cross_origin_referer():
+    body = b"token=secret"
+    handler = _handler({
+        "Host": "quickfind.local:8080",
+        "Referer": "http://quickfind.local:8081/login",
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Content-Length": str(len(body)),
+    })
+    handler.rfile = BytesIO(body)
+
+    handler._handle_auth_post()
+
+    handler.send_response.assert_called_once_with(403)
+
+
+def test_security_headers_disable_browser_storage_and_referrers():
+    handler = _handler()
+
+    handler._send_security_headers()
+
+    handler.send_header.assert_any_call("Cache-Control", "no-store")
+    handler.send_header.assert_any_call("Referrer-Policy", "no-referrer")
 
 
 def test_api_search_omits_wildcard_cors_header():

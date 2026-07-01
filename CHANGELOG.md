@@ -2,6 +2,12 @@
 
 All notable changes to QuickFind will be documented in this file.
 
+## [v0.8.46] - 2026-07-01
+
+- Hardened remote browser authentication with `Secure` HTTPS session cookies and same-origin Origin/Referer checks on `/auth`.
+- Added no-store cache and no-referrer headers to remote responses so authenticated search pages and API payloads are not retained by the browser.
+- Added remote auth hardening coverage, expanding the passing suite to 343 tests.
+
 ## [v0.8.45] - 2026-07-01
 
 - Persisted live USN journal checkpoints after successful monitor batches so restarts do not replay already-applied journal records.

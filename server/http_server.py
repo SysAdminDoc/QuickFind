@@ -544,6 +544,7 @@ class SearchHandler(BaseHTTPRequestHandler):
     search_engine: SearchEngine = None
     auth_token: str = ""
     session_token: str = ""
+    use_https: bool = False
 
     def log_message(self, format, *args):
         logger.debug(format % args)
@@ -595,11 +596,23 @@ class SearchHandler(BaseHTTPRequestHandler):
             return ''
 
     def _session_cookie_header(self) -> str:
-        return f"{_SESSION_COOKIE_NAME}={self.session_token}; HttpOnly; Path=/; SameSite=Strict"
+        parts = [
+            f"{_SESSION_COOKIE_NAME}={self.session_token}",
+            "HttpOnly",
+            "Path=/",
+            "SameSite=Strict",
+        ]
+        if self.use_https:
+            parts.append("Secure")
+        return "; ".join(parts)
 
     def _send_security_headers(self):
         self.send_header('Content-Security-Policy', "default-src 'self'; script-src 'unsafe-inline'; style-src 'unsafe-inline'")
         self.send_header('X-Content-Type-Options', 'nosniff')
+        self.send_header('Cache-Control', 'no-store')
+        self.send_header('Referrer-Policy', 'no-referrer')
+        if self.use_https:
+            self.send_header('Strict-Transport-Security', 'max-age=31536000')
 
     def _send_unauthorized(self):
         self.send_response(401)
@@ -661,6 +674,13 @@ class SearchHandler(BaseHTTPRequestHandler):
         if not self.auth_token:
             self.send_error(404)
             return
+        if not self._origin_or_referer_allowed():
+            self.send_response(403)
+            self.send_header('Content-Type', 'application/json')
+            self._send_security_headers()
+            self.end_headers()
+            self.wfile.write(json.dumps({'error': 'Cross-origin auth rejected'}).encode('utf-8'))
+            return
 
         try:
             length = int(self.headers.get('Content-Length', '0'))
@@ -692,6 +712,29 @@ class SearchHandler(BaseHTTPRequestHandler):
             return
 
         self._handle_login_page(error="Invalid token", status=401)
+
+    def _origin_or_referer_allowed(self) -> bool:
+        expected = self._request_origin()
+        for header in ('Origin', 'Referer'):
+            value = self.headers.get(header, '')
+            if not value:
+                continue
+            parsed = urlparse(value)
+            if not parsed.scheme or not parsed.netloc:
+                return False
+            actual = f"{parsed.scheme.lower()}://{parsed.netloc.lower()}"
+            if not secrets.compare_digest(actual, expected):
+                return False
+        return True
+
+    def _request_origin(self) -> str:
+        host = self.headers.get('Host', '')
+        if not host:
+            server = getattr(self, 'server', None)
+            host, port = getattr(server, 'server_address', ('127.0.0.1', 8080))
+            host = f"{host}:{port}"
+        scheme = 'https' if self.use_https else 'http'
+        return f"{scheme}://{host.lower()}"
 
     def _handle_api_search(self, params):
         """JSON API for AJAX search."""
@@ -886,6 +929,7 @@ class QuickFindHTTPServer:
         SearchHandler.search_engine = search_engine
         SearchHandler.auth_token = auth_token
         SearchHandler.session_token = secrets.token_urlsafe(32) if auth_token else ""
+        SearchHandler.use_https = use_https
 
     def start(self):
         """Start the HTTP server in a background thread."""
