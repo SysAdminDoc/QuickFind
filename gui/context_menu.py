@@ -72,7 +72,8 @@ def _copy_to_clipboard(text: str):
 def _open_cmd_here(directory: str):
     """Open command prompt in directory."""
     try:
-        subprocess.Popen(['cmd', '/k', f'cd /d "{directory}"'], creationflags=subprocess.CREATE_NEW_CONSOLE)
+        subprocess.Popen(['cmd', '/k', 'cd', '/d', directory],
+                         cwd=directory, creationflags=subprocess.CREATE_NEW_CONSOLE)
     except Exception as e:
         logger.error(f"Failed to open CMD: {e}")
 
@@ -80,7 +81,8 @@ def _open_cmd_here(directory: str):
 def _open_powershell_here(directory: str):
     """Open PowerShell in directory."""
     try:
-        subprocess.Popen(['powershell', '-NoExit', '-Command', f'Set-Location "{directory}"'],
+        subprocess.Popen(['powershell', '-NoExit', '-Command',
+                         'Set-Location -LiteralPath $args[0]', '-args', directory],
                          creationflags=subprocess.CREATE_NEW_CONSOLE)
     except Exception as e:
         logger.error(f"Failed to open PowerShell: {e}")

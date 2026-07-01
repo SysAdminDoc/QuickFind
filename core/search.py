@@ -38,7 +38,7 @@ BUILTIN_MODIFIERS = {
     'ext', 'file', 'folder', 'fuzzy', 'git', 'len', 'matchcase',
     'nocase', 'nofuzzy', 'nomatchcase', 'nopath', 'noregex',
     'nowholefilename', 'nowholeword', 'nowildcards', 'parent', 'path',
-    'regex', 'size', 'wholefilename', 'wholeword', 'wfn', 'wildcards', 'ww',
+    'regex', 'size', 'wc', 'wholefilename', 'wholeword', 'wfn', 'wildcards', 'ww',
 }
 
 

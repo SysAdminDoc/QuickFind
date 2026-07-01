@@ -10,6 +10,8 @@ All notable changes to QuickFind will be documented in this file.
 - Fixed query chip validator rejecting valid `size:1mb..10mb` range syntax; regex now accepts range and single-operator forms.
 - Fixed export size formatting missing GB/TB tiers, showing unwieldy values like `10737.4 MB` for large files.
 - Fixed cache purge functions not rolling back on failure, risking partial deletes committed by later operations.
+- Fixed command injection in context menu terminal openers by using proper argument separation instead of string interpolation.
+- Added `wc` to BUILTIN_MODIFIERS for the new wildcards shortcut, preventing it from being captured by plugin registration.
 - Added 8 regression tests for modifier aliases, date normalization, size parsing, and chip validation, expanding the suite to 524 tests.
 - Fixed CSRF bypass where POST to `/auth` without Origin/Referer headers was accepted; now requires at least one same-origin header.
 - Fixed API search `count` field reporting more results than the payload actually contains due to a hard 1000-item cap.
