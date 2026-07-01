@@ -2,6 +2,11 @@
 
 All notable changes to QuickFind will be documented in this file.
 
+## [v0.8.56] - 2026-07-01
+
+- Fixed active search filter silently overwriting user's explicit `ext:` modifier; user's query-level extension now takes precedence over the filter bar.
+- Added 2 regression tests for filter/modifier precedence, expanding the suite to 526 tests.
+
 ## [v0.8.55] - 2026-07-01
 
 - Fixed `ww:` modifier alias collision: `ww:` now correctly enables whole-word mode (matching Everything convention), `wc:` enables wildcards.

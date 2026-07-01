@@ -950,13 +950,13 @@ class SearchEngine:
         if max_results:
             parsed.options.max_results = max_results
 
-        # Apply active filter
+        # Apply active filter (user's explicit modifiers take precedence)
         if active_filter:
             if active_filter.files_only:
                 parsed.options.files_only = True
             if active_filter.folders_only:
                 parsed.options.folders_only = True
-            if active_filter.extensions:
+            if active_filter.extensions and not parsed.ext_filter:
                 parsed.ext_filter = active_filter.extensions
             if active_filter.min_size:
                 parsed.size_min = active_filter.min_size

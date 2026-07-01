@@ -816,3 +816,41 @@ class TestGitDirtySearch:
         results = engine.search("git:dirty")
 
         assert [entry.name for entry in results] == ["dirty.py"]
+
+
+class TestActiveFilterPrecedence:
+    def test_explicit_ext_not_overwritten_by_active_filter(self):
+        entries = [
+            _entry("app.py", 1),
+            _entry("doc.txt", 2),
+            _entry("pic.jpg", 3),
+        ]
+        engine = SearchEngine(FakeIndex(entries))
+        doc_filter = SearchFilter("Docs", extensions=["txt", "md"])
+
+        results = engine.search(
+            "ext:py", active_filter=doc_filter,
+            base_options=SearchOptions(use_regex=True),
+        )
+
+        names = [e.name for e in results]
+        assert "app.py" in names
+        assert "doc.txt" not in names
+
+    def test_active_filter_applies_when_no_explicit_ext(self):
+        entries = [
+            _entry("app.py", 1),
+            _entry("doc.txt", 2),
+            _entry("pic.jpg", 3),
+        ]
+        engine = SearchEngine(FakeIndex(entries))
+        doc_filter = SearchFilter("Docs", extensions=["txt"])
+
+        results = engine.search(
+            "doc", active_filter=doc_filter,
+            base_options=SearchOptions(use_regex=True),
+        )
+
+        names = [e.name for e in results]
+        assert "doc.txt" in names
+        assert "app.py" not in names
