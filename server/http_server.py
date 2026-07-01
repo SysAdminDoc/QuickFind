@@ -91,6 +91,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#89b4fa">
 <title>QuickFind</title>
 <style>
 * {{ margin: 0; padding: 0; box-sizing: border-box; }}
@@ -243,6 +245,7 @@ search.addEventListener('input', runSearch);
 typeFilter.addEventListener('change', runSearch);
 maxResults.addEventListener('change', runSearch);
 search.select();
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {{}});
 </script>
 </body>
 </html>"""
@@ -390,6 +393,37 @@ def _coerce_remote_max_results(value: str | int | None, default: int = 1000) -> 
     except (TypeError, ValueError):
         parsed = default
     return max(1, min(parsed, 10000))
+
+
+def _pwa_manifest() -> dict:
+    return {
+        "name": "QuickFind",
+        "short_name": "QuickFind",
+        "description": "Lightning-fast file search",
+        "start_url": "/",
+        "display": "standalone",
+        "background_color": "#1e1e2e",
+        "theme_color": "#89b4fa",
+        "icons": [
+            {"src": "/icon-192.png", "sizes": "192x192", "type": "image/png"},
+            {"src": "/icon-512.png", "sizes": "512x512", "type": "image/png"},
+        ],
+    }
+
+
+_SERVICE_WORKER_JS = """
+self.addEventListener('fetch', event => {
+  event.respondWith(
+    fetch(event.request).catch(() =>
+      new Response(
+        '<html><body style="background:#1e1e2e;color:#cdd6f4;font-family:sans-serif;padding:48px;text-align:center">'
+        + '<h1>QuickFind Offline</h1><p>The search server is not reachable.</p></body></html>',
+        { headers: { 'Content-Type': 'text/html' }, status: 503 }
+      )
+    )
+  );
+});
+"""
 
 
 def _openapi_spec() -> dict:
@@ -706,6 +740,10 @@ class SearchHandler(BaseHTTPRequestHandler):
             self._handle_api_search(params)
         elif parsed.path == '/openapi.json':
             self._handle_openapi_spec()
+        elif parsed.path == '/manifest.json':
+            self._handle_pwa_manifest()
+        elif parsed.path == '/sw.js':
+            self._handle_service_worker()
         elif parsed.path in ('/api/docs', '/docs'):
             self._handle_api_docs()
         elif parsed.path == '/' or parsed.path == '':
@@ -872,6 +910,22 @@ class SearchHandler(BaseHTTPRequestHandler):
         self._send_security_headers()
         self.end_headers()
         self.wfile.write(response.encode('utf-8'))
+
+    def _handle_pwa_manifest(self):
+        response = json.dumps(_pwa_manifest(), indent=2)
+        self.send_response(200)
+        self.send_header('Content-Type', 'application/manifest+json')
+        self._send_security_headers()
+        self.end_headers()
+        self.wfile.write(response.encode('utf-8'))
+
+    def _handle_service_worker(self):
+        self.send_response(200)
+        self.send_header('Content-Type', 'application/javascript')
+        self.send_header('Service-Worker-Allowed', '/')
+        self._send_security_headers()
+        self.end_headers()
+        self.wfile.write(_SERVICE_WORKER_JS.encode('utf-8'))
 
     def _handle_api_docs(self):
         host = self.headers.get('Host', '127.0.0.1:8080')

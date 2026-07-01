@@ -16,7 +16,8 @@ All notable changes to QuickFind will be documented in this file.
 - Added plugin discovery from `~/.quickfind/plugins/` with manifest validation, Python entry-point loading, disabled/quarantine support, and plugin summary for settings/help.
 - Added incremental content-cache refresh queue for file-change events with bounded capacity, batch processing, rename/delete handling, and queue diagnostics.
 - Added duplicate review workflow with name/size grouping, configurable keep rules, remediation preview, and safe Recycle Bin batch actions with skip/fail tracking.
-- Added 106 tests across all new features, expanding the passing suite to 469 tests.
+- Added PWA manifest, service worker with offline shell, and theme-color meta for installable mobile-ready remote search UI.
+- Added 110 tests across all new features, expanding the passing suite to 473 tests.
 
 ## [v0.8.51] - 2026-07-01
 

@@ -43,13 +43,6 @@ NTFS-MFT-backed instant file search (PyQt6 + SQLite FTS5). Voidtools Everything 
   Acceptance: A portable mode stores settings beside the executable or a chosen root, caches include a machine/source identity, synced profiles do not reuse incompatible cache DBs, and diagnostics report portable/profile paths.
   Complexity: L
 
-- [ ] P3 — Make the remote web UI installable and mobile-tested
-  Why: Remote search has cards and OpenAPI, but there is no PWA manifest, offline shell, or mobile viewport verification for phone/tablet lookup flows.
-  Evidence: `server/http_server.py`, `tests/test_http_server.py`, Fluent/Copernic remote/search-app expectations.
-  Touches: `server/http_server.py`, `tests/test_http_server.py`, `README.md`
-  Acceptance: Remote UI includes responsive mobile layout tests, PWA manifest/icons, offline/error shell for disconnected API calls, and no weakening of read-only auth behavior.
-  Complexity: M
-
 - [ ] P3 — Prototype shared read-only search server with explicit ACL boundary
   Why: Commercial and Recoll-style web deployments show demand for shared indexes, but exposing personal filesystem results requires an explicit access-control model before multi-user use.
   Evidence: `server/http_server.py`, `service/windows_service.py`, Recoll web/Python API docs, FileLocator/Copernic enterprise search patterns.

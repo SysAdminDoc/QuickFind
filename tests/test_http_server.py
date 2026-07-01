@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 from core.index import FileEntry
 from core.ntfs import FILE_ATTRIBUTE_DIRECTORY
 from server.http_server import QuickFindHTTPServer, SearchHandler, _SESSION_COOKIE_NAME
-from server.http_server import _coerce_remote_max_results, _openapi_spec
+from server.http_server import _coerce_remote_max_results, _openapi_spec, _pwa_manifest
 from server.http_server import _query_with_remote_filters
 from server.http_server import AuditLog, _hash_pii, _audit
 
@@ -389,3 +389,41 @@ def test_handler_auth_failure_emits_audit_record(monkeypatch):
     assert len(records) == 1
     assert records[0]["event"] == "auth_failure"
     assert records[0]["endpoint"] == "/api/search"
+
+
+def test_pwa_manifest_includes_app_identity():
+    manifest = _pwa_manifest()
+    assert manifest["name"] == "QuickFind"
+    assert manifest["display"] == "standalone"
+    assert manifest["start_url"] == "/"
+    assert any(icon["sizes"] == "192x192" for icon in manifest["icons"])
+
+
+def test_pwa_manifest_endpoint_serves_json():
+    handler = _handler()
+    handler._handle_pwa_manifest()
+    body = handler.wfile.getvalue().decode("utf-8")
+    data = json.loads(body)
+    assert data["name"] == "QuickFind"
+    header_calls = [call.args for call in handler.send_header.call_args_list]
+    assert ("Content-Type", "application/manifest+json") in header_calls
+
+
+def test_service_worker_endpoint_serves_javascript():
+    handler = _handler()
+    handler._handle_service_worker()
+    body = handler.wfile.getvalue().decode("utf-8")
+    assert "serviceWorker" in body or "fetch" in body
+    header_calls = [call.args for call in handler.send_header.call_args_list]
+    assert ("Content-Type", "application/javascript") in header_calls
+    assert ("Service-Worker-Allowed", "/") in header_calls
+
+
+def test_html_template_includes_pwa_manifest_link():
+    handler = _handler()
+    handler.search_engine.search.return_value = []
+    handler._handle_page({})
+    body = handler.wfile.getvalue().decode("utf-8")
+    assert 'rel="manifest"' in body
+    assert "/manifest.json" in body
+    assert 'name="theme-color"' in body
