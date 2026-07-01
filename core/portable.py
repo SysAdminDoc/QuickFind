@@ -9,11 +9,10 @@ via OneDrive/Dropbox.
 from __future__ import annotations
 
 import hashlib
-import json
 import os
 import platform
 import sys
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from pathlib import Path
 
 
@@ -40,8 +39,13 @@ def machine_identity() -> MachineIdentity:
     """Generate a stable machine identity for cache scoping."""
     hostname = platform.node()
     plat = platform.platform()
+    try:
+        import uuid
+        mac = str(uuid.getnode())
+    except Exception:
+        mac = ""
     node_hash = hashlib.sha256(
-        f"{hostname}:{plat}:{os.getenv('COMPUTERNAME', '')}".encode()
+        f"{hostname}:{plat}:{os.getenv('COMPUTERNAME', '')}:{mac}".encode()
     ).hexdigest()
     return MachineIdentity(hostname=hostname, platform=plat, node_hash=node_hash)
 
@@ -96,7 +100,7 @@ def is_cache_compatible(cache_dir: Path, expected_tag: str) -> bool:
         return True
     stamp_file = cache_dir / ".machine_tag"
     if not stamp_file.exists():
-        return True
+        return not cache_dir.exists()
     try:
         stored = stamp_file.read_text(encoding="utf-8").strip()
         return stored == expected_tag

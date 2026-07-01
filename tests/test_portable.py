@@ -49,9 +49,14 @@ def test_cache_incompatible_with_different_stamp(tmp_path):
     assert not is_cache_compatible(cache_dir, "different1")
 
 
-def test_cache_compatible_without_stamp(tmp_path):
+def test_cache_incompatible_existing_dir_without_stamp(tmp_path):
     cache_dir = tmp_path / "cache" / "new"
     cache_dir.mkdir(parents=True)
+    assert not is_cache_compatible(cache_dir, "abc12345")
+
+
+def test_cache_compatible_nonexistent_dir(tmp_path):
+    cache_dir = tmp_path / "cache" / "fresh"
     assert is_cache_compatible(cache_dir, "abc12345")
 
 

@@ -8,6 +8,7 @@ through the audit system. Shared mode is disabled by default.
 from __future__ import annotations
 
 import os
+import secrets
 from dataclasses import dataclass, field
 from typing import Sequence
 
@@ -35,7 +36,7 @@ class SharedServerConfig:
 
     def acl_for_token(self, token: str) -> TokenACL | None:
         for acl in self.token_acls:
-            if acl.token == token:
+            if secrets.compare_digest(acl.token, token):
                 return acl
         return None
 
@@ -47,12 +48,12 @@ class ACLFilterResult:
 
 
 def path_within_roots(path: str, roots: Sequence[str]) -> bool:
-    """Check if a path falls within any of the allowed roots."""
+    """Check if a resolved path falls within any of the allowed roots."""
     if not roots:
         return True
-    norm_path = os.path.normcase(os.path.abspath(path))
+    norm_path = os.path.normcase(os.path.realpath(path))
     for root in roots:
-        norm_root = os.path.normcase(os.path.abspath(root))
+        norm_root = os.path.normcase(os.path.realpath(root))
         if not norm_root.endswith(os.sep):
             norm_root += os.sep
         if norm_path.startswith(norm_root) or norm_path == norm_root.rstrip(os.sep):

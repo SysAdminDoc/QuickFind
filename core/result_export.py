@@ -70,11 +70,10 @@ def export_json(results: Sequence[ExportableResult], metadata: ExportMetadata | 
 def export_html(results: Sequence[ExportableResult], metadata: ExportMetadata | None = None) -> str:
     meta = metadata or ExportMetadata()
     query_escaped = html.escape(meta.query, quote=True)
+    has_snippets = any(r.content_snippet for r in results)
     rows = []
     for r in results:
-        snippet_cell = ""
-        if r.content_snippet:
-            snippet_cell = f"<td>{html.escape(r.content_snippet)}</td>"
+        snippet_cell = f"<td>{html.escape(r.content_snippet)}</td>" if has_snippets else ""
         rows.append(
             "<tr>"
             f"<td>{html.escape(r.name)}</td>"
@@ -85,7 +84,6 @@ def export_html(results: Sequence[ExportableResult], metadata: ExportMetadata | 
             f"{snippet_cell}"
             "</tr>"
         )
-    has_snippets = any(r.content_snippet for r in results)
     snippet_header = "<th>Snippet</th>" if has_snippets else ""
     return f"""<!DOCTYPE html>
 <html lang="en">

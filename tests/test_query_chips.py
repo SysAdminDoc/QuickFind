@@ -118,3 +118,11 @@ def test_modifier_only_chip():
     assert chips[0].modifier == "file"
     assert chips[0].value == ""
     assert text == "report"
+
+
+def test_validate_broken_without_value_is_valid():
+    assert validate_chip("broken", "") is None
+
+
+def test_validate_dupe_without_value_is_valid():
+    assert validate_chip("dupe", "") is None

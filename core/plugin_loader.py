@@ -114,14 +114,22 @@ def load_plugin_module(manifest: PluginManifest, plugin_dir: Path) -> SearchModi
         )
 
     plugin_path = plugin_dir / manifest.name
-    module_path = plugin_path / manifest.entry_point
+    module_path = (plugin_path / manifest.entry_point).resolve()
+
     if not module_path.exists():
-        for candidate in [plugin_dir / manifest.entry_point]:
-            if candidate.exists():
-                module_path = candidate
-                break
+        candidate = (plugin_dir / manifest.entry_point).resolve()
+        if candidate.exists():
+            module_path = candidate
         else:
             return None
+
+    resolved_dir = plugin_dir.resolve()
+    if not str(module_path).startswith(str(resolved_dir) + os.sep):
+        logger.warning(
+            "Plugin %s entry point escapes plugin directory: %s",
+            manifest.name, module_path,
+        )
+        return None
 
     try:
         spec = importlib.util.spec_from_file_location(

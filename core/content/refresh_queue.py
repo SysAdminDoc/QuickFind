@@ -152,15 +152,18 @@ def process_batch(
                 continue
 
             text = extract_fn(item.path)
-            if text:
-                stat = os.stat(item.path)
-                upsert_fn(
-                    item.path,
-                    int(stat.st_size),
-                    int(stat.st_mtime * 1000),
-                    "refresh",
-                    text,
-                )
+            if not text:
+                queue.record_failed()
+                continue
+
+            stat = os.stat(item.path)
+            upsert_fn(
+                item.path,
+                int(stat.st_size),
+                int(stat.st_mtime * 1000),
+                "refresh",
+                text,
+            )
             processed += 1
             queue.record_processed()
         except Exception as e:

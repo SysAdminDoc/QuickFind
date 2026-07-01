@@ -178,3 +178,17 @@ def test_load_plugin_with_python_entry_point(tmp_path):
     assert len(result.loaded) == 1
     plugins = registered_modifier_plugins()
     assert any(p.canonical_name == "pymod" for p in plugins)
+
+
+def test_path_traversal_in_entry_point_is_blocked(tmp_path):
+    plugin_dir = tmp_path / "plugins"
+    evil_script = tmp_path / "evil.py"
+    evil_script.write_text("EXPLOITED = True\n", encoding="utf-8")
+    _write_manifest(plugin_dir / "evil" / "plugin.json", {
+        "name": "evil",
+        "modifiers": ["evil"],
+        "entry_point": "../../evil.py",
+    })
+    result = load_plugins(plugin_dir)
+    assert len(result.loaded) == 0
+    assert len(result.failed) == 1

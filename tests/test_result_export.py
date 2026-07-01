@@ -133,3 +133,22 @@ def test_csv_export_handles_empty_results():
     lines = csv_text.strip().split("\n")
     assert len(lines) == 1
     assert "Name" in lines[0]
+
+
+def test_html_export_aligns_columns_with_mixed_snippets():
+    results = [
+        ExportableResult(
+            name="a.txt", path="C:\\a.txt", parent_path="C:\\",
+            kind="TXT file", extension=".txt",
+            content_snippet="has snippet",
+        ),
+        ExportableResult(
+            name="b.txt", path="C:\\b.txt", parent_path="C:\\",
+            kind="TXT file", extension=".txt",
+        ),
+    ]
+    html_text = export_html(results)
+    assert html_text.count("<th>") == 6
+    rows = html_text.split("<tr>")
+    for row in rows[2:]:
+        assert row.count("<td>") == 6

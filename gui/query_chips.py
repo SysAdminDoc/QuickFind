@@ -87,8 +87,8 @@ def validate_chip(modifier: str, value: str) -> str | None:
     """Return an error message if the chip is invalid, or None if valid."""
     if modifier not in MODIFIER_NAMES:
         return f"Unknown modifier: {modifier}"
-    if modifier in ("ext", "parent", "content", "archive", "dupe",
-                     "git", "broken", "attrib") and not value:
+    if modifier in ("ext", "parent", "content", "archive",
+                     "git", "attrib") and not value:
         return f"{modifier}: requires a value"
     if modifier == "size" and value:
         if not re.match(r'^[<>=!]*\d+(\.\d+)?\s*(b|kb|mb|gb|tb)?$', value.lower()):

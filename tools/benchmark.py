@@ -103,14 +103,12 @@ def run_benchmarks(entry_count: int = 100_000) -> BenchmarkReport:
     )
 
     print(f"[*] Generating {entry_count:,} synthetic entries...")
-    gen_ms = _time_ms(lambda: None)
-    entries = _synthetic_entries(entry_count)
-    gen_ms = _time_ms(lambda: _synthetic_entries(entry_count))
+    entries = []
+    gen_ms = _time_ms(lambda: entries.extend(_synthetic_entries(entry_count)))
     report.add(BenchmarkResult("generate_entries", entry_count, gen_ms))
 
     print("[*] Building index...")
     index = engine = None
-    build_ms = _time_ms(lambda: None)
 
     def _build():
         nonlocal index, engine

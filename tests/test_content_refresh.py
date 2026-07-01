@@ -186,3 +186,22 @@ def test_stale_snippet_disappears_after_delete(tmp_path):
     q.enqueue(ContentRefreshItem(path=path_str, change=ChangeType.DELETED))
     process_batch(q, upsert, delete, lambda p: "")
     assert path_str not in cache
+
+
+def test_empty_extraction_counts_as_failure(tmp_path):
+    test_file = tmp_path / "empty.txt"
+    test_file.write_text("", encoding="utf-8")
+
+    q = ContentRefreshQueue()
+    q.enqueue(ContentRefreshItem(path=str(test_file), change=ChangeType.MODIFIED))
+
+    upserted = []
+    process_batch(
+        q,
+        upsert_fn=lambda *a: upserted.append(a),
+        delete_fn=lambda path: None,
+        extract_fn=lambda path: "",
+    )
+
+    assert len(upserted) == 0
+    assert q.stats().failed == 1

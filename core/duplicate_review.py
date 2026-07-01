@@ -145,7 +145,7 @@ def safe_recycle(
 
 
 def _default_recycle(path: str) -> bool:
-    """Platform recycle using shell on Windows, fallback to os.remove."""
+    """Send a file to the Windows Recycle Bin via SHFileOperationW."""
     try:
         import ctypes
         from ctypes import wintypes

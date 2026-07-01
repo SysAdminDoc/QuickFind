@@ -2,6 +2,21 @@
 
 All notable changes to QuickFind will be documented in this file.
 
+## [v0.8.53] - 2026-07-01
+
+- Fixed path traversal in plugin loader: entry points that escape the plugin directory are now blocked.
+- Fixed ACL token comparison to use constant-time `secrets.compare_digest` against timing side-channels.
+- Fixed ACL path check to resolve symlinks/junctions via `realpath` instead of `abspath`.
+- Fixed HTML export table column misalignment when only some rows have content snippets.
+- Fixed content refresh queue counting empty extractions as processed instead of failed.
+- Fixed portable cache compatibility to reject existing unstamped directories from synced profiles.
+- Fixed `validate_chip` rejecting valueless `broken:` and `dupe:` modifiers that are valid in the search engine.
+- Fixed benchmark generating synthetic entries twice wastefully.
+- Fixed `_default_recycle` docstring claiming an `os.remove` fallback that didn't exist.
+- Fixed machine identity hash to include MAC address for stronger cross-machine uniqueness.
+- Removed unused `json` import from portable module.
+- Added 6 regression tests for the above fixes, expanding the suite to 506 tests.
+
 ## [v0.8.52] - 2026-07-01
 
 - Added dependency advisory, license, and SBOM release gate via `python build.py --dep-audit` with optional `--sbom` CycloneDX JSON output.
