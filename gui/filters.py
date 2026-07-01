@@ -227,7 +227,7 @@ class ManageFiltersDialog(QDialog):
             name=f.name, extensions=list(f.extensions),
             min_size=f.min_size, max_size=f.max_size,
             files_only=f.files_only, folders_only=f.folders_only,
-            macro=f.macro
+            macro=f.macro, exclude_paths=list(f.exclude_paths)
         ) for f in filters]
 
         self._setup_ui()

@@ -366,6 +366,9 @@ class MainWindow(QMainWindow):
         self._tab_widget.setAccessibleName("Search results tabs")
         self._tab_widget.tabCloseRequested.connect(self._close_tab)
         self._tab_widget.currentChanged.connect(self._on_tab_changed)
+        # Keep self._tabs aligned with the visual order when tabs are dragged;
+        # every index lookup assumes self._tabs[i] is the tab at widget index i.
+        self._tab_widget.tabBar().tabMoved.connect(self._on_tab_moved)
         self._tab_widget.setStyleSheet(f"""
             QTabWidget::pane {{
                 border: none;
@@ -531,8 +534,14 @@ class MainWindow(QMainWindow):
         if tab.search_worker and tab.search_worker.isRunning():
             tab.search_worker.cancel()
             tab.search_worker.wait(1000)
-        self._tab_widget.removeTab(index)
+        # Pop before removeTab: removeTab synchronously emits currentChanged,
+        # and _on_tab_changed must not index into the stale (pre-removal) list.
         self._tabs.pop(index)
+        self._tab_widget.removeTab(index)
+
+    def _on_tab_moved(self, from_index: int, to_index: int):
+        if (0 <= from_index < len(self._tabs)) and (0 <= to_index < len(self._tabs)):
+            self._tabs.insert(to_index, self._tabs.pop(from_index))
 
     def _on_tab_changed(self, index: int):
         if index < 0 or index >= len(self._tabs):
@@ -1934,7 +1943,7 @@ class MainWindow(QMainWindow):
             return
 
         try:
-            query = self._search_box.text() if hasattr(self, '_search_box') else ""
+            query = self._search_input.text() if hasattr(self, '_search_input') else ""
             meta = ExportMetadata(
                 query=query,
                 result_count=len(entries),
@@ -2347,6 +2356,16 @@ class MainWindow(QMainWindow):
         if self._content_index_worker and self._content_index_worker.isRunning():
             self._content_index_worker.cancel()
             self._content_index_worker.wait(2000)
+        # Stop workers that touch the index/volume handles BEFORE shutdown closes
+        # those handles, otherwise a mid-scan worker faults on a closed handle and
+        # its QThread wrapper is destroyed while still running (interpreter abort).
+        if self._index_worker and self._index_worker.isRunning():
+            self._file_index.cancel_indexing()
+            self._index_worker.wait(3000)
+        for tab in self._tabs:
+            if tab.search_worker and tab.search_worker.isRunning():
+                tab.search_worker.cancel()
+                tab.search_worker.wait(1000)
         self._file_index.shutdown()
         self._tray.stop_hotkey()
         self._tray.hide()

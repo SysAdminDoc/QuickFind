@@ -421,7 +421,9 @@ class ResultsTableModel(QAbstractTableModel):
                 if entry.is_dir:
                     return ""
                 entry.ensure_stat(self._index)
-                return format_size(entry.size) if entry.size else ""
+                # Show "0 B" for genuinely empty files; only blank when the size
+                # is unknown (stat could not be loaded), not when it is zero.
+                return format_size(entry.size) if entry._stat_loaded else ""
             elif col == COLUMN_DATE_MOD:
                 entry.ensure_stat(self._index)
                 return format_datetime(entry.date_modified)

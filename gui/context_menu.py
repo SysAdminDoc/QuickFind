@@ -5,6 +5,7 @@ Context menu for search results with shell integration.
 import os
 import subprocess
 import ctypes
+import ctypes.wintypes
 import logging
 import threading
 from dataclasses import dataclass
@@ -45,6 +46,26 @@ class _SHFILEOPSTRUCTW(ctypes.Structure):
     ]
 
 
+class _SHELLEXECUTEINFOW(ctypes.Structure):
+    _fields_ = [
+        ('cbSize', ctypes.wintypes.DWORD),
+        ('fMask', ctypes.c_ulong),
+        ('hwnd', ctypes.wintypes.HWND),
+        ('lpVerb', ctypes.c_wchar_p),
+        ('lpFile', ctypes.c_wchar_p),
+        ('lpParameters', ctypes.c_wchar_p),
+        ('lpDirectory', ctypes.c_wchar_p),
+        ('nShow', ctypes.c_int),
+        ('hInstApp', ctypes.wintypes.HINSTANCE),
+        ('lpIDList', ctypes.c_void_p),
+        ('lpClass', ctypes.c_wchar_p),
+        ('hkeyClass', ctypes.wintypes.HKEY),
+        ('dwHotKey', ctypes.wintypes.DWORD),
+        ('hIcon', ctypes.wintypes.HANDLE),
+        ('hProcess', ctypes.wintypes.HANDLE),
+    ]
+
+
 def _open_file(path: str):
     """Open a file with its default application."""
     try:
@@ -81,8 +102,11 @@ def _open_cmd_here(directory: str):
 def _open_powershell_here(directory: str):
     """Open PowerShell in directory."""
     try:
-        subprocess.Popen(['powershell', '-NoExit', '-Command',
-                         'Set-Location -LiteralPath $args[0]', '-args', directory],
+        # Set the working directory via cwd rather than injecting the path into a
+        # -Command string; powershell.exe has no -WorkingDirectory and -Command
+        # does not accept -args, so the previous form failed to change directory.
+        subprocess.Popen(['powershell', '-NoExit'],
+                         cwd=directory,
                          creationflags=subprocess.CREATE_NEW_CONSOLE)
     except Exception as e:
         logger.error(f"Failed to open PowerShell: {e}")
@@ -100,9 +124,21 @@ def _open_terminal_here(directory: str):
 
 def _show_properties(path: str):
     """Show Windows file properties dialog."""
+    if shell32 is None:
+        return
+    # The "properties" verb is not supported by ShellExecuteW; it requires
+    # ShellExecuteEx with SEE_MASK_INVOKEIDLIST, otherwise nothing happens.
     try:
-        # ShellExecuteW with "properties" verb
-        shell32.ShellExecuteW(None, "properties", path, None, None, 1)
+        SEE_MASK_INVOKEIDLIST = 0x0000000C
+        SW_SHOW = 5
+        info = _SHELLEXECUTEINFOW()
+        info.cbSize = ctypes.sizeof(info)
+        info.fMask = SEE_MASK_INVOKEIDLIST
+        info.lpVerb = "properties"
+        info.lpFile = path
+        info.nShow = SW_SHOW
+        if not shell32.ShellExecuteExW(ctypes.byref(info)):
+            logger.error(f"Failed to show properties for {path} (error {ctypes.get_last_error()})")
     except Exception as e:
         logger.error(f"Failed to show properties for {path}: {e}")
 
