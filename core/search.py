@@ -284,7 +284,8 @@ def _parse_date(date_str: str) -> Optional[datetime]:
     if date_str in shortcuts:
         return shortcuts[date_str]
 
-    for fmt in ('%Y-%m-%d', '%Y/%m/%d', '%m/%d/%Y', '%d/%m/%Y'):
+    # d/m/Y intentionally omitted: ambiguous with m/d/Y for day ≤ 12. Use YYYY-MM-DD.
+    for fmt in ('%Y-%m-%d', '%Y/%m/%d', '%m/%d/%Y'):
         try:
             return datetime.strptime(date_str, fmt)
         except ValueError:

@@ -5,6 +5,7 @@ All notable changes to QuickFind will be documented in this file.
 ## [v0.8.56] - 2026-07-01
 
 - Fixed active search filter silently overwriting user's explicit `ext:` modifier; user's query-level extension now takes precedence over the filter bar.
+- Removed ambiguous `d/m/Y` date format from date modifier parsing; use ISO `YYYY-MM-DD` or US `m/d/Y` to avoid silent misinterpretation.
 - Added 2 regression tests for filter/modifier precedence, expanding the suite to 526 tests.
 
 ## [v0.8.55] - 2026-07-01
