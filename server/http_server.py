@@ -6,6 +6,7 @@ Supports optional Bearer, Basic, and same-origin cookie authentication.
 
 import base64
 import binascii
+import hashlib
 import html
 import json
 import logging
@@ -16,8 +17,8 @@ import time
 import threading
 from http.cookies import SimpleCookie
 from http.server import HTTPServer, BaseHTTPRequestHandler
+from typing import Any, Callable, Optional
 from urllib.parse import urlparse, parse_qs
-from typing import Optional
 
 from core.index import FileIndex
 from core.search import SearchEngine, SearchOptions
@@ -25,8 +26,64 @@ from core.version import VERSION
 from gui.theme import MOCHA
 
 logger = logging.getLogger('QuickFind.HTTPServer')
+audit_logger = logging.getLogger('QuickFind.Audit')
 
 _SESSION_COOKIE_NAME = "qf_session"
+_AUDIT_SALT = secrets.token_bytes(16)
+
+
+def _hash_pii(value: str) -> str:
+    return hashlib.sha256(_AUDIT_SALT + value.encode("utf-8")).hexdigest()[:12]
+
+
+class AuditLog:
+    """Privacy-preserving structured audit trail for remote access events."""
+
+    def __init__(self, emitter: Callable[[dict[str, Any]], None] | None = None):
+        self._emitter = emitter or self._default_emit
+
+    @staticmethod
+    def _default_emit(record: dict[str, Any]) -> None:
+        audit_logger.info(json.dumps(record, separators=(",", ":")))
+
+    def _record(self, event: str, **fields: Any) -> dict[str, Any]:
+        record = {"ts": time.time(), "event": event, **fields}
+        self._emitter(record)
+        return record
+
+    def auth_failure(self, client_ip: str, endpoint: str, method: str = "") -> dict[str, Any]:
+        return self._record(
+            "auth_failure",
+            client=_hash_pii(client_ip),
+            endpoint=endpoint,
+            method=method,
+        )
+
+    def rate_limit(self, client_ip: str, endpoint: str) -> dict[str, Any]:
+        return self._record(
+            "rate_limit",
+            client=_hash_pii(client_ip),
+            endpoint=endpoint,
+        )
+
+    def search(self, client_ip: str, query_hash: str, result_count: int) -> dict[str, Any]:
+        return self._record(
+            "search",
+            client=_hash_pii(client_ip),
+            query_hash=query_hash,
+            result_count=result_count,
+        )
+
+    def denied_path(self, client_ip: str, endpoint: str, reason: str = "") -> dict[str, Any]:
+        return self._record(
+            "denied_path",
+            client=_hash_pii(client_ip),
+            endpoint=endpoint,
+            reason=reason,
+        )
+
+
+_audit = AuditLog()
 
 
 HTML_TEMPLATE = """<!DOCTYPE html>
@@ -614,7 +671,8 @@ class SearchHandler(BaseHTTPRequestHandler):
         if self.use_https:
             self.send_header('Strict-Transport-Security', 'max-age=31536000')
 
-    def _send_unauthorized(self):
+    def _send_unauthorized(self, endpoint: str = "", method: str = ""):
+        _audit.auth_failure(self.client_address[0], endpoint or self.path, method)
         self.send_response(401)
         self.send_header('Content-Type', 'application/json')
         if self.auth_token:
@@ -626,6 +684,7 @@ class SearchHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         client_ip = self.client_address[0]
         if not _rate_limiter.allow(client_ip):
+            _audit.rate_limit(client_ip, self.path)
             self.send_response(429)
             self.send_header('Content-Type', 'application/json')
             self.send_header('Retry-After', '60')
@@ -640,7 +699,7 @@ class SearchHandler(BaseHTTPRequestHandler):
             if parsed.path == '/' or parsed.path == '':
                 self._handle_login_page()
             else:
-                self._send_unauthorized()
+                self._send_unauthorized(parsed.path, "GET")
             return
 
         if parsed.path == '/api/search':
@@ -657,6 +716,7 @@ class SearchHandler(BaseHTTPRequestHandler):
     def do_POST(self):
         client_ip = self.client_address[0]
         if not _rate_limiter.allow(client_ip):
+            _audit.rate_limit(client_ip, self.path)
             self.send_response(429)
             self.send_header('Content-Type', 'application/json')
             self.send_header('Retry-After', '60')
@@ -711,6 +771,7 @@ class SearchHandler(BaseHTTPRequestHandler):
             self.end_headers()
             return
 
+        _audit.auth_failure(self.client_address[0], "/auth", "POST")
         self._handle_login_page(error="Invalid token", status=401)
 
     def _origin_or_referer_allowed(self) -> bool:
@@ -745,6 +806,12 @@ class SearchHandler(BaseHTTPRequestHandler):
         search_query = _query_with_remote_filters(query, type_filter)
         results = self.search_engine.search(
             search_query, max_results=max_results
+        )
+
+        _audit.search(
+            self.client_address[0],
+            _hash_pii(search_query) if search_query else "",
+            len(results),
         )
 
         result_items = self._build_result_payloads(results)

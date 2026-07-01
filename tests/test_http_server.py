@@ -10,6 +10,7 @@ from core.ntfs import FILE_ATTRIBUTE_DIRECTORY
 from server.http_server import QuickFindHTTPServer, SearchHandler, _SESSION_COOKIE_NAME
 from server.http_server import _coerce_remote_max_results, _openapi_spec
 from server.http_server import _query_with_remote_filters
+from server.http_server import AuditLog, _hash_pii, _audit
 
 
 def _handler(headers=None) -> SearchHandler:
@@ -18,6 +19,7 @@ def _handler(headers=None) -> SearchHandler:
     handler.auth_token = "secret"
     handler.session_token = "session"
     handler.use_https = False
+    handler.client_address = ("192.0.2.1", 54321)
     handler.send_response = MagicMock()
     handler.send_header = MagicMock()
     handler.end_headers = MagicMock()
@@ -26,6 +28,7 @@ def _handler(headers=None) -> SearchHandler:
     handler.rfile = BytesIO()
     handler.search_engine = MagicMock()
     handler.file_index = MagicMock()
+    handler.path = "/"
     return handler
 
 
@@ -280,3 +283,109 @@ def test_unauthorized_response_includes_basic_challenge():
         "WWW-Authenticate",
         'Basic realm="QuickFind", charset="UTF-8"',
     )
+
+
+def test_audit_log_emits_structured_records():
+    records = []
+    audit = AuditLog(emitter=records.append)
+
+    rec = audit.auth_failure("10.0.0.1", "/api/search", "GET")
+
+    assert rec["event"] == "auth_failure"
+    assert "ts" in rec
+    assert rec["endpoint"] == "/api/search"
+    assert rec["method"] == "GET"
+
+
+def test_audit_log_hashes_client_ip():
+    records = []
+    audit = AuditLog(emitter=records.append)
+
+    audit.auth_failure("192.168.1.100", "/api/search", "GET")
+
+    rec = records[0]
+    assert rec["client"] != "192.168.1.100"
+    assert len(rec["client"]) == 12
+
+
+def test_audit_search_records_query_hash_and_count():
+    records = []
+    audit = AuditLog(emitter=records.append)
+
+    audit.search("10.0.0.1", _hash_pii("budget report 2025"), 42)
+
+    rec = records[0]
+    assert rec["event"] == "search"
+    assert rec["result_count"] == 42
+    assert "budget" not in rec["query_hash"]
+    assert "report" not in rec["query_hash"]
+    assert "2025" not in rec["query_hash"]
+
+
+def test_audit_records_never_contain_raw_tokens_or_passwords():
+    records = []
+    audit = AuditLog(emitter=records.append)
+
+    audit.auth_failure("10.0.0.1", "/auth", "POST")
+    audit.rate_limit("10.0.0.1", "/api/search")
+    audit.search("10.0.0.1", _hash_pii("secret query"), 5)
+    audit.denied_path("10.0.0.1", "/api/search", "outside allowed roots")
+
+    serialized = json.dumps(records)
+    assert "10.0.0.1" not in serialized
+    assert "secret query" not in serialized
+
+
+def test_audit_records_never_contain_full_paths():
+    records = []
+    audit = AuditLog(emitter=records.append)
+
+    audit.denied_path("10.0.0.1", "/api/search", "outside allowed roots")
+
+    rec = records[0]
+    assert rec["event"] == "denied_path"
+    assert rec["reason"] == "outside allowed roots"
+    serialized = json.dumps(rec)
+    assert "C:\\" not in serialized
+    assert "Users" not in serialized
+
+
+def test_audit_rate_limit_records_endpoint():
+    records = []
+    audit = AuditLog(emitter=records.append)
+
+    audit.rate_limit("10.0.0.1", "/api/search")
+
+    rec = records[0]
+    assert rec["event"] == "rate_limit"
+    assert rec["endpoint"] == "/api/search"
+
+
+def test_handler_search_emits_audit_record(monkeypatch):
+    records = []
+    test_audit = AuditLog(emitter=records.append)
+    monkeypatch.setattr("server.http_server._audit", test_audit)
+
+    handler = _handler()
+    handler.search_engine.search.return_value = []
+
+    handler._handle_api_search({"q": ["readme"]})
+
+    assert len(records) == 1
+    assert records[0]["event"] == "search"
+    assert records[0]["result_count"] == 0
+    serialized = json.dumps(records[0])
+    assert "readme" not in serialized
+
+
+def test_handler_auth_failure_emits_audit_record(monkeypatch):
+    records = []
+    test_audit = AuditLog(emitter=records.append)
+    monkeypatch.setattr("server.http_server._audit", test_audit)
+
+    handler = _handler()
+    handler._send_unauthorized("/api/search", "GET")
+
+    assert len(records) == 1
+    assert records[0]["event"] == "auth_failure"
+    assert records[0]["endpoint"] == "/api/search"
