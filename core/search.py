@@ -1566,7 +1566,7 @@ class SearchEngine:
                        case_sensitive: bool = False) -> bool:
         try:
             path = entry.get_path(self._index)
-            from core.content import extract_text, is_supported_content_path
+            from core.content import extract_text_sandboxed, is_supported_content_path
             from core.cache import get_content_cache, upsert_content_cache
 
             if not is_supported_content_path(path):
@@ -1577,7 +1577,7 @@ class SearchEngine:
             modified_ms = int(st.st_mtime * 1000)
             content = get_content_cache(path, size, modified_ms)
             if content is None:
-                extracted = extract_text(path)
+                extracted = extract_text_sandboxed(path)
                 if extracted is None:
                     return False
                 content = extracted.text

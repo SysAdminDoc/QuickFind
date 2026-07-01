@@ -359,7 +359,7 @@ def build(onefile=False):
         'core.localization',
         'core.network_shares', 'core.platform_engines',
         'core.content', 'core.content.adapters', 'core.content.indexer',
-        'core.sqlite_compat',
+        'core.content.sandbox', 'core.worker_isolation', 'core.sqlite_compat',
         'gui.main_window', 'gui.results_view', 'gui.settings_dialog',
         'gui.diagnostics_dialog',
         'gui.theme', 'gui.tray', 'gui.accessibility', 'gui.help_docs',

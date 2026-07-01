@@ -9,6 +9,7 @@ from core import cache
 import core.content as content
 from core.content import adapter_diagnostics, extract_text, matched_line_context
 from core.content.adapters import PdfAdapter
+from core.content.sandbox import ExtractionOutcome
 from core.content.indexer import ContentIndexJob, ContentIndexSettings
 from core.index import FileEntry
 from core.search import SearchEngine
@@ -345,12 +346,37 @@ def test_content_index_job_records_adapter_failures(temp_cache, tmp_path, monkey
     path = tmp_path / "broken.txt"
     path.write_text("needle", encoding="utf-8")
     entry = _file_entry(path)
-    monkeypatch.setattr("core.content.indexer.extract_text", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        "core.content.indexer.extract_text_with_diagnostics",
+        lambda *_args, **_kwargs: ExtractionOutcome(None, "text", "parser failed"),
+    )
 
     stats = ContentIndexJob(ContentIndexSettings()).run([entry], lambda entry: entry.get_path(None))
 
     assert stats.failed == 1
     assert stats.adapter_failures["text"] == 1
+    assert stats.last_error == "parser failed"
+
+
+def test_content_index_job_records_sandbox_timeout(temp_cache, tmp_path, monkeypatch):
+    path = tmp_path / "slow.txt"
+    path.write_text("needle", encoding="utf-8")
+    entry = _file_entry(path)
+    monkeypatch.setattr(
+        "core.content.indexer.extract_text_with_diagnostics",
+        lambda *_args, **_kwargs: ExtractionOutcome(
+            None,
+            "text",
+            "Worker timed out after 0.01s",
+            timed_out=True,
+        ),
+    )
+
+    stats = ContentIndexJob(ContentIndexSettings()).run([entry], lambda entry: entry.get_path(None))
+
+    assert stats.failed == 1
+    assert stats.adapter_failures["text:timeout"] == 1
+    assert "timed out" in stats.last_error
 
 
 def os_path_mtime(path: str) -> float:

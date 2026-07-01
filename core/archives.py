@@ -4,8 +4,10 @@ import hashlib
 import logging
 import os
 import zipfile
+from dataclasses import dataclass
 from datetime import datetime
 
+from core.worker_isolation import run_in_worker
 from core.index import FileEntry, FileIndex
 from core.ntfs import FILE_ATTRIBUTE_ARCHIVE, FILE_ATTRIBUTE_DIRECTORY
 
@@ -18,6 +20,14 @@ except ImportError:  # pragma: no cover - covered by packaging/install checks
 logger = logging.getLogger('QuickFind.Archives')
 
 SUPPORTED_ARCHIVE_EXTENSIONS = {'zip', '7z'}
+DEFAULT_ARCHIVE_TIMEOUT_SECONDS = 10.0
+
+
+@dataclass(frozen=True)
+class ArchiveReadOutcome:
+    members: list[dict]
+    error: str = ""
+    timed_out: bool = False
 
 
 def is_supported_archive(entry: FileEntry) -> bool:
@@ -66,14 +76,41 @@ def _cached_or_read_members(archive_entry: FileEntry, archive_path: str,
     if cached is not None:
         return cached
 
-    if archive_entry.extension == 'zip':
-        members = list(_iter_zip_members(archive_path))
-    elif archive_entry.extension == '7z':
-        members = list(_iter_7z_members(archive_path))
-    else:
-        members = []
+    outcome = read_archive_members_sandboxed(archive_path, archive_entry.extension)
+    if outcome.error:
+        logger.debug("Skipping archive %s: %s", archive_path, outcome.error)
+        return []
+    members = outcome.members
     upsert_archive_member_cache(archive_path, archive_size, archive_modified_ms, members)
     return members
+
+
+def read_archive_members_sandboxed(
+    archive_path: str,
+    extension: str,
+    timeout_seconds: float = DEFAULT_ARCHIVE_TIMEOUT_SECONDS,
+) -> ArchiveReadOutcome:
+    outcome = run_in_worker(
+        _read_archive_members_direct,
+        archive_path,
+        extension,
+        timeout_seconds=timeout_seconds,
+    )
+    if not outcome.ok:
+        return ArchiveReadOutcome(
+            members=[],
+            error=outcome.error,
+            timed_out=outcome.timed_out,
+        )
+    return ArchiveReadOutcome(members=outcome.value)
+
+
+def _read_archive_members_direct(archive_path: str, extension: str) -> list[dict]:
+    if extension == 'zip':
+        return list(_iter_zip_members(archive_path))
+    if extension == '7z':
+        return list(_iter_7z_members(archive_path))
+    return []
 
 
 def _iter_zip_members(archive_path: str):

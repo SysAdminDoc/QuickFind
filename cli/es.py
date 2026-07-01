@@ -33,6 +33,7 @@ import os
 import csv
 import json
 import argparse
+import multiprocessing
 import time
 
 # Add parent directory to path
@@ -228,4 +229,5 @@ def _format_attrs(attrs):
 
 
 if __name__ == '__main__':
+    multiprocessing.freeze_support()
     main()

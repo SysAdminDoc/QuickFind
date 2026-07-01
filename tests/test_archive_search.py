@@ -9,6 +9,7 @@ import pytest
 
 import core.archives as archives_mod
 import core.cache as cache_mod
+from core.worker_isolation import WorkerOutcome
 from core.index import FileEntry
 from core.search import SearchEngine, SearchOptions, SortField, SortOrder
 
@@ -159,3 +160,25 @@ def test_archive_search_invalidates_cache_when_archive_changes(tmp_path):
 
     assert [entry.name for entry in results] == ["new.txt"]
     assert SearchEngine(index).search("archive:old") == []
+
+
+def test_archive_reader_reports_sandbox_timeout(monkeypatch):
+    monkeypatch.setattr(
+        archives_mod,
+        "run_in_worker",
+        lambda *_args, **_kwargs: WorkerOutcome(
+            ok=False,
+            error="Worker timed out after 0.01s",
+            timed_out=True,
+        ),
+    )
+
+    outcome = archives_mod.read_archive_members_sandboxed(
+        "bundle.zip",
+        "zip",
+        timeout_seconds=0.01,
+    )
+
+    assert outcome.members == []
+    assert outcome.timed_out is True
+    assert "timed out" in outcome.error

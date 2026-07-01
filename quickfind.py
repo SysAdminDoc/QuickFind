@@ -4,6 +4,7 @@
 import sys
 import os
 import importlib
+import multiprocessing
 from pathlib import Path
 
 
@@ -222,4 +223,5 @@ def main():
 
 
 if __name__ == '__main__':
+    multiprocessing.freeze_support()
     main()

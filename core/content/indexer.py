@@ -14,7 +14,11 @@ from core.content.adapters import (
     MAX_EXTRACT_CHARS,
     SUPPORTED_CONTENT_EXTENSIONS,
     adapter_for_path,
-    extract_text,
+)
+from core.content.sandbox import (
+    DEFAULT_EXTRACTION_TIMEOUT_SECONDS,
+    ExtractionOutcome,
+    extract_text_with_diagnostics,
 )
 from core.index import FileEntry
 
@@ -30,6 +34,7 @@ class ContentIndexSettings:
     max_cache_bytes: int = DEFAULT_CONTENT_CACHE_BYTES
     max_file_bytes: int = DEFAULT_CONTENT_FILE_BYTES
     max_chars: int = MAX_EXTRACT_CHARS
+    timeout_seconds: float = DEFAULT_EXTRACTION_TIMEOUT_SECONDS
 
     @property
     def allowed_extensions(self) -> frozenset[str]:
@@ -131,10 +136,16 @@ class ContentIndexJob:
                 stats.quota_skipped += 1
                 continue
 
-            extracted = extract_text(path, max_chars=self._settings.max_chars)
-            if extracted is None:
-                stats.record_failure(adapter.name)
+            outcome = extract_text_with_diagnostics(
+                path,
+                max_chars=self._settings.max_chars,
+                max_file_bytes=self._settings.max_file_bytes,
+                timeout_seconds=self._settings.timeout_seconds,
+            )
+            if outcome.content is None:
+                stats.record_failure(_failure_key(adapter.name, outcome), outcome.error)
                 continue
+            extracted = outcome.content
 
             text_bytes = len(extracted.text.encode("utf-8", errors="ignore"))
             if stats.bytes_cached + text_bytes > self._settings.max_cache_bytes:
@@ -176,3 +187,9 @@ def _extension(path: str) -> str:
     if suffix:
         return suffix
     return Path(path).name.lower()
+
+
+def _failure_key(adapter_name: str, outcome: ExtractionOutcome) -> str:
+    if outcome.timed_out:
+        return f"{adapter_name}:timeout"
+    return outcome.adapter_name or adapter_name

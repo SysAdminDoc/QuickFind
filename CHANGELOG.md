@@ -2,6 +2,12 @@
 
 All notable changes to QuickFind will be documented in this file.
 
+## [v0.8.43] - 2026-07-01
+
+- Added process-isolated worker timeouts for content extraction and archive member probing so stuck parsers fail closed instead of blocking indexing or search.
+- Routed background content indexing and cache-miss `content:` searches through the sandboxed extractor while preserving adapter failure diagnostics.
+- Added worker timeout and parser-sandbox coverage, expanding the passing suite to 333 tests.
+
 ## [v0.8.42] - 2026-06-29
 
 - Added a bundled offline Help menu dialog with search syntax, workflow, and troubleshooting cheat sheets.
