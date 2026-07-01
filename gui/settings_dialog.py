@@ -538,6 +538,25 @@ class SettingsDialog(QDialog):
         content_form.addRow("Max file size:", self._content_index_max_file)
 
         content_layout.addWidget(content_group)
+
+        cache_group = QGroupBox("Content Cache")
+        cache_layout = QVBoxLayout(cache_group)
+        self._content_cache_status = QLabel("")
+        self._content_cache_status.setWordWrap(True)
+        self._content_cache_status.setStyleSheet(f"color: {MOCHA['subtext0']}; font-size: 11px;")
+        cache_layout.addWidget(self._content_cache_status)
+        cache_buttons = QHBoxLayout()
+        self._purge_cache_btn = QPushButton("Purge All Content Cache")
+        self._purge_cache_btn.clicked.connect(self._purge_all_content_cache)
+        cache_buttons.addWidget(self._purge_cache_btn)
+        self._purge_root_btn = QPushButton("Purge Root...")
+        self._purge_root_btn.clicked.connect(self._purge_content_cache_root)
+        cache_buttons.addWidget(self._purge_root_btn)
+        cache_buttons.addStretch()
+        cache_layout.addLayout(cache_buttons)
+        content_layout.addWidget(cache_group)
+        self._refresh_content_cache_status()
+
         adapter_lines = []
         try:
             from core.content import adapter_diagnostics
@@ -899,6 +918,42 @@ class SettingsDialog(QDialog):
         if root:
             delete_network_credential(root)
         self._network_list.takeItem(row)
+
+    def _refresh_content_cache_status(self):
+        try:
+            from core.cache import get_content_cache_stats, get_content_cache_path
+            stats = get_content_cache_stats()
+            count = stats.get("count", 0)
+            text_bytes = stats.get("text_bytes", 0)
+            size_mb = text_bytes / (1024 * 1024) if text_bytes else 0
+            db_path = get_content_cache_path()
+            self._content_cache_status.setText(
+                f"Cache: {count:,} entries, {size_mb:.1f} MB text\n"
+                f"Location: {db_path}"
+            )
+        except Exception:
+            self._content_cache_status.setText("Content cache status unavailable.")
+
+    def _purge_all_content_cache(self):
+        try:
+            from core.cache import purge_content_cache
+            deleted = purge_content_cache()
+            self._content_cache_status.setText(f"Purged {deleted:,} entries from content cache.")
+        except Exception as e:
+            self._content_cache_status.setText(f"Purge failed: {e}")
+        self._refresh_content_cache_status()
+
+    def _purge_content_cache_root(self):
+        root = QFileDialog.getExistingDirectory(self, "Select Root to Purge")
+        if not root:
+            return
+        try:
+            from core.cache import purge_content_cache_by_root
+            deleted = purge_content_cache_by_root(root)
+            self._content_cache_status.setText(f"Purged {deleted:,} entries under {root}.")
+        except Exception as e:
+            self._content_cache_status.setText(f"Purge failed: {e}")
+        self._refresh_content_cache_status()
 
     def _browse_file(self, target: QLineEdit, title: str):
         path, _ = QFileDialog.getOpenFileName(

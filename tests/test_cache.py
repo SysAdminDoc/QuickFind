@@ -180,3 +180,75 @@ class TestCacheDiagnostics:
         loaded_entry = loaded._entries["C"][10]
         assert loaded_entry.reparse_tag == 0xA000000C
         assert loaded_entry.has_extended_attributes is True
+
+
+class TestContentCachePurge:
+    def test_purge_all_deletes_entries_and_fts(self, monkeypatch, tmp_path):
+        cache_mod._close_connection()
+        monkeypatch.setattr(cache_mod, "CONFIG_DIR", tmp_path)
+        monkeypatch.setattr(cache_mod, "DB_FILE", tmp_path / "index.db")
+
+        cache_mod.upsert_content_cache(
+            "C:\\docs\\a.txt", 100, 1000, "plain", "hello world"
+        )
+        cache_mod.upsert_content_cache(
+            "C:\\docs\\b.txt", 200, 2000, "plain", "secret data"
+        )
+        stats_before = cache_mod.get_content_cache_stats()
+        assert stats_before["count"] == 2
+
+        deleted = cache_mod.purge_content_cache()
+        cache_mod._close_connection()
+
+        assert deleted == 2
+        stats_after = cache_mod.get_content_cache_stats()
+        assert stats_after["count"] == 0
+        assert cache_mod.search_content_cache("hello") == []
+        assert cache_mod.search_content_cache("secret") == []
+        cache_mod._close_connection()
+
+    def test_purge_by_root_removes_only_matching_paths(self, monkeypatch, tmp_path):
+        cache_mod._close_connection()
+        monkeypatch.setattr(cache_mod, "CONFIG_DIR", tmp_path)
+        monkeypatch.setattr(cache_mod, "DB_FILE", tmp_path / "index.db")
+
+        cache_mod.upsert_content_cache(
+            "C:\\docs\\report.pdf", 100, 1000, "pdf", "quarterly report"
+        )
+        cache_mod.upsert_content_cache(
+            "C:\\photos\\img.txt", 50, 500, "plain", "metadata"
+        )
+
+        deleted = cache_mod.purge_content_cache_by_root("C:\\docs")
+        cache_mod._close_connection()
+
+        assert deleted == 1
+        stats = cache_mod.get_content_cache_stats()
+        assert stats["count"] == 1
+        assert cache_mod.search_content_cache("quarterly") == []
+        remaining = cache_mod.search_content_cache("metadata")
+        assert len(remaining) == 1
+        cache_mod._close_connection()
+
+    def test_purge_proves_sensitive_text_not_searchable(self, monkeypatch, tmp_path):
+        cache_mod._close_connection()
+        monkeypatch.setattr(cache_mod, "CONFIG_DIR", tmp_path)
+        monkeypatch.setattr(cache_mod, "DB_FILE", tmp_path / "index.db")
+
+        cache_mod.upsert_content_cache(
+            "C:\\sensitive\\ssn.txt", 30, 100, "plain",
+            "SSN: 123-45-6789 password: hunter2"
+        )
+        assert cache_mod.search_content_cache("123-45-6789") != []
+
+        cache_mod.purge_content_cache()
+        cache_mod._close_connection()
+
+        assert cache_mod.search_content_cache("123-45-6789") == []
+        assert cache_mod.search_content_cache("hunter2") == []
+        cache_mod._close_connection()
+
+    def test_get_content_cache_path_returns_string(self):
+        path = cache_mod.get_content_cache_path()
+        assert isinstance(path, str)
+        assert "index.db" in path

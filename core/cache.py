@@ -617,6 +617,58 @@ def get_content_cache_size_bytes() -> int:
     return get_content_cache_stats()["text_bytes"]
 
 
+def get_content_cache_path() -> str:
+    return str(DB_FILE)
+
+
+def purge_content_cache() -> int:
+    """Delete all content cache entries and FTS rows. Returns count of deleted rows."""
+    try:
+        conn = _get_connection()
+        _init_schema(conn)
+        count = conn.execute("SELECT COUNT(*) FROM content_cache").fetchone()[0]
+        conn.execute("DELETE FROM content_cache")
+        if _FTS5_AVAILABLE:
+            try:
+                conn.execute("DELETE FROM content_fts")
+            except Exception:
+                pass
+        conn.commit()
+        return int(count)
+    except Exception as e:
+        logger.debug(f"purge_content_cache failed: {e}")
+        return 0
+
+
+def purge_content_cache_by_root(root: str) -> int:
+    """Delete content cache entries under a root path. Returns count of deleted rows."""
+    try:
+        conn = _get_connection()
+        _init_schema(conn)
+        norm = os.path.normcase(os.path.abspath(root))
+        if not norm.endswith(os.sep):
+            norm += os.sep
+        paths = conn.execute(
+            "SELECT path FROM content_cache WHERE path LIKE ?",
+            (norm + "%",),
+        ).fetchall()
+        if not paths:
+            return 0
+        path_list = [row[0] for row in paths]
+        for path in path_list:
+            conn.execute("DELETE FROM content_cache WHERE path=?", (path,))
+            if _FTS5_AVAILABLE:
+                try:
+                    conn.execute("DELETE FROM content_fts WHERE path=?", (path,))
+                except Exception:
+                    pass
+        conn.commit()
+        return len(path_list)
+    except Exception as e:
+        logger.debug(f"purge_content_cache_by_root failed: {e}")
+        return 0
+
+
 def get_archive_member_cache(archive_path: str, size: int, modified_ms: int) -> Optional[list[dict]]:
     """Return cached archive members when the archive fingerprint still matches."""
     try:

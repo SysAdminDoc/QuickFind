@@ -7,7 +7,9 @@ All notable changes to QuickFind will be documented in this file.
 - Added dependency advisory, license, and SBOM release gate via `python build.py --dep-audit` with optional `--sbom` CycloneDX JSON output.
 - Advisory checks fail on unwaived high/critical vulnerabilities; waivers support expiry dates via `dep_waivers.json`.
 - Added privacy-preserving remote access audit log for auth failures, rate limits, searches, and denied path events with hashed client IPs and query hashes.
-- Added 23 tests covering advisory/SBOM/audit scenarios, expanding the passing suite to 386 tests.
+- Added content-cache privacy controls with purge-all and purge-by-root actions in Settings, exposing cache path, size, and entry count.
+- Purge removes both content_cache rows and FTS entries transactionally; tests prove sensitive text is no longer searchable after purge.
+- Added 27 tests covering advisory/SBOM/audit/purge scenarios, expanding the passing suite to 390 tests.
 
 ## [v0.8.51] - 2026-07-01
 
