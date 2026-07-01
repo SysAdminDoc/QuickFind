@@ -9,20 +9,22 @@ _QT_ATTRS = {
         'QObject', 'pyqtSignal', 'QThread', 'QTimer', 'Qt', 'QSize',
         'pyqtSlot', 'QStringListModel', 'QPoint', 'QAbstractTableModel',
         'QModelIndex', 'QSortFilterProxyModel', 'QVariant', 'QFileInfo',
-        'QUrl', 'QMimeData', 'QRect',
+        'QUrl', 'QMimeData', 'QRect', 'QBuffer', 'QIODevice',
     ],
     'PyQt6.QtWidgets': [
         'QApplication', 'QMessageBox', 'QMenu', 'QInputDialog',
         'QMainWindow', 'QWidget', 'QVBoxLayout', 'QHBoxLayout', 'QLineEdit',
         'QSplitter', 'QStatusBar', 'QLabel', 'QMenuBar', 'QComboBox',
         'QProgressBar', 'QTabWidget', 'QTabBar', 'QCompleter', 'QToolTip',
-        'QTableView', 'QAbstractItemView', 'QHeaderView', 'QListView',
+        'QToolButton', 'QButtonGroup',
+        'QTableView', 'QTableWidget', 'QTableWidgetItem',
+        'QAbstractItemView', 'QHeaderView', 'QListView',
         'QPlainTextEdit', 'QScrollArea', 'QStackedWidget', 'QTextEdit',
         'QStyledItemDelegate', 'QStyle',
         'QFileIconProvider', 'QDialog', 'QFormLayout', 'QCheckBox',
         'QSpinBox', 'QGroupBox', 'QPushButton', 'QDialogButtonBox',
         'QListWidget', 'QListWidgetItem', 'QTreeWidget', 'QTreeWidgetItem',
-        'QFileDialog',
+        'QFileDialog', 'QSystemTrayIcon',
     ],
     'PyQt6.QtGui': [
         'QIcon', 'QPalette', 'QColor', 'QFont', 'QAction',
@@ -34,12 +36,12 @@ _QT_ATTRS = {
 }
 
 
-if 'PyQt6' not in sys.modules:
-    try:
-        import PyQt6.QtCore  # noqa: F401
-        import PyQt6.QtWidgets  # noqa: F401
-        import PyQt6.QtGui  # noqa: F401
-    except (ImportError, ModuleNotFoundError):
+try:
+    import PyQt6.QtCore  # noqa: F401
+    import PyQt6.QtWidgets  # noqa: F401
+    import PyQt6.QtGui  # noqa: F401
+except (ImportError, ModuleNotFoundError):
+    if 'PyQt6' not in sys.modules:
         sys.modules['PyQt6'] = types.ModuleType('PyQt6')
 
 for mod_name, attrs in _QT_ATTRS.items():

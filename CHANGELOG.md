@@ -2,6 +2,12 @@
 
 All notable changes to QuickFind will be documented in this file.
 
+## [v0.8.49] - 2026-07-01
+
+- Added rendered/offscreen PyQt accessibility smoke tests for the main search flow, settings, results, preview, and diagnostics surfaces.
+- Added accessible names and descriptions for diagnostics tables and action buttons.
+- Fixed the test PyQt fallback loader so real Qt submodules are used when available, expanding the passing suite to 357 tests.
+
 ## [v0.8.48] - 2026-07-01
 
 - Added schema-versioned settings migrations with legacy-profile upgrade, validation, and future-version rejection.

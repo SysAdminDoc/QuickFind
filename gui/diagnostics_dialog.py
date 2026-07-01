@@ -19,6 +19,7 @@ from PyQt6.QtWidgets import (
 
 from core.cache import cache_diagnostics
 from core.support_bundle import default_support_bundle_name
+from gui.accessibility import describe_widget
 from gui.status_indicators import diagnostics_summary_rows, yes_no
 from gui.theme import MOCHA
 from service.ipc import service_health
@@ -53,6 +54,11 @@ class DiagnosticsDialog(QDialog):
         self._summary_table.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
         self._summary_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
         self._summary_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        describe_widget(
+            self._summary_table,
+            "Diagnostics summary",
+            "Summary table for index, cache, service, and content status.",
+        )
         layout.addWidget(self._summary_table, 1)
 
         self._drive_table = QTableWidget(0, 12)
@@ -65,33 +71,44 @@ class DiagnosticsDialog(QDialog):
         self._drive_table.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
         self._drive_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
         self._drive_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        describe_widget(
+            self._drive_table,
+            "Drive diagnostics",
+            "Per-drive state, journal, monitor, rescan, and recovery status.",
+        )
         layout.addWidget(self._drive_table, 1)
 
         action_row = QHBoxLayout()
         self._refresh_button = QPushButton("Refresh")
+        describe_widget(self._refresh_button, "Refresh diagnostics", "Refresh diagnostics tables.")
         self._refresh_button.clicked.connect(self.refresh)
         action_row.addWidget(self._refresh_button)
 
         self._rebuild_button = QPushButton("Rebuild Index")
+        describe_widget(self._rebuild_button, "Rebuild index", "Start a full index rebuild.")
         self._rebuild_button.clicked.connect(lambda: self._run_action("rebuild"))
         action_row.addWidget(self._rebuild_button)
 
         self._save_cache_button = QPushButton("Save Cache")
+        describe_widget(self._save_cache_button, "Save cache", "Persist the current index cache.")
         self._save_cache_button.clicked.connect(lambda: self._run_action("save_cache"))
         action_row.addWidget(self._save_cache_button)
 
         self._start_service_button = QPushButton("Start Service")
+        describe_widget(self._start_service_button, "Start service", "Request background index service start.")
         self._start_service_button.clicked.connect(lambda: self._run_action("start_service"))
         action_row.addWidget(self._start_service_button)
 
         self._stop_service_button = QPushButton("Stop Service")
+        describe_widget(self._stop_service_button, "Stop service", "Request background index service stop.")
         self._stop_service_button.clicked.connect(lambda: self._run_action("stop_service"))
         action_row.addWidget(self._stop_service_button)
 
         self._export_bundle_button = QPushButton("Export Support Bundle")
-        self._export_bundle_button.setAccessibleName("Export support bundle")
-        self._export_bundle_button.setAccessibleDescription(
-            "Save a redacted diagnostics bundle for troubleshooting."
+        describe_widget(
+            self._export_bundle_button,
+            "Export support bundle",
+            "Save a redacted diagnostics bundle for troubleshooting.",
         )
         self._export_bundle_button.clicked.connect(self._export_support_bundle)
         action_row.addWidget(self._export_bundle_button)
