@@ -752,7 +752,7 @@ def _content_snippet(text: str, match_start: int, match_len: int,
 # ── Batch DB Operations ──────────────────────────────────
 
 def db_batch_apply(inserts: list[tuple], deletes: list[tuple],
-                   updates: list[tuple], fts_dirty: bool = True):
+                   updates: list[tuple], fts_dirty: bool = True) -> bool:
     """
     Apply a batch of incremental changes in a single transaction.
 
@@ -763,7 +763,7 @@ def db_batch_apply(inserts: list[tuple], deletes: list[tuple],
         fts_dirty: if True, rebuild FTS after changes
     """
     if not inserts and not deletes and not updates:
-        return
+        return True
 
     try:
         conn = _get_connection()
@@ -821,6 +821,7 @@ def db_batch_apply(inserts: list[tuple], deletes: list[tuple],
                 _rebuild_fts(conn)
 
         logger.debug(f"Batch applied: +{len(inserts)} -{len(deletes)} ~{len(updates)} ({total} ops)")
+        return True
 
     except Exception as e:
         logger.error(f"db_batch_apply failed: {e}")
@@ -828,6 +829,7 @@ def db_batch_apply(inserts: list[tuple], deletes: list[tuple],
             conn.rollback()
         except Exception:
             pass
+        return False
 
 
 def save_cache(index: FileIndex, usn_positions: dict[str, tuple[int, int]]):
@@ -1027,7 +1029,7 @@ def db_update_entry(entry: FileEntry, path: str = ""):
     db_batch_apply(inserts=[], deletes=[], updates=[(entry, path)])
 
 
-def db_update_usn_position(drive: str, journal_id: int, next_usn: int):
+def db_update_usn_position(drive: str, journal_id: int, next_usn: int) -> bool:
     """Update the USN journal position for a drive."""
     try:
         conn = _get_connection()
@@ -1036,8 +1038,10 @@ def db_update_usn_position(drive: str, journal_id: int, next_usn: int):
             (journal_id, next_usn, drive)
         )
         conn.commit()
+        return True
     except Exception as e:
         logger.debug(f"db_update_usn_position failed: {e}")
+        return False
 
 
 # ── Database Search ──────────────────────────────────────

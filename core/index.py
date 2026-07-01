@@ -1738,6 +1738,7 @@ class FileIndex(QObject):
         added = 0
         removed = 0
         modified = 0
+        touched_drives = set()
 
         # Collect batch operations for single-transaction DB write
         db_inserts = []
@@ -1746,6 +1747,7 @@ class FileIndex(QObject):
 
         with self._lock:
             for drive, record in changes:
+                touched_drives.add(drive)
                 drive_entries = self._entries.get(drive, {})
 
                 if record.is_delete and record.is_close:
@@ -1824,14 +1826,35 @@ class FileIndex(QObject):
                 self._all_entries = new_list
 
         # Single-transaction batch DB write (outside lock to avoid holding it during I/O)
+        db_success = True
         if db_inserts or db_deletes or db_updates:
-            db_batch_apply(db_inserts, db_deletes, db_updates)
+            db_success = db_batch_apply(db_inserts, db_deletes, db_updates)
+
+        if db_success:
+            self._persist_usn_checkpoints(touched_drives)
 
         total_changes = added + removed + modified
         if total_changes > 0:
             self._stats.last_update = datetime.now()
             self.index_updated.emit(total_changes)
             logger.debug(f"Applied {total_changes} changes: +{added} -{removed} ~{modified}")
+
+    def _persist_usn_checkpoints(self, drives: set[str]):
+        """Flush current journal positions after a successful USN apply batch."""
+        if not drives:
+            return
+        from core.cache import db_update_usn_position
+
+        for drive in sorted(drives):
+            vol = self._volumes.get(drive)
+            if vol is None:
+                continue
+            journal_id = int(getattr(vol, "journal_id", 0) or 0)
+            next_usn = int(getattr(vol, "current_usn", 0) or 0)
+            if journal_id <= 0 or next_usn <= 0:
+                continue
+            if db_update_usn_position(drive, journal_id, next_usn):
+                logger.debug("Persisted USN checkpoint for %s: %s/%s", drive, journal_id, next_usn)
 
     def get_usn_positions(self) -> dict[str, tuple[int, int]]:
         """Get current USN journal positions for all indexed volumes."""

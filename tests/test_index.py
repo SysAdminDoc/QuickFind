@@ -3,8 +3,10 @@
 import sys
 import os
 import tempfile
+from datetime import datetime
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import core.cache as cache_mod
 import core.index as index_mod
 from core.index import FileEntry, FileIndex, NTFS_ROOT_FRN
 from core.network_shares import network_source_key
@@ -12,6 +14,7 @@ from core.platform_engines import LinuxPlatformEngine, PlatformRoot
 from core.ntfs import (
     DRIVE_FIXED, FILE_ATTRIBUTE_ARCHIVE, FILE_ATTRIBUTE_DIRECTORY,
     FILE_ATTRIBUTE_HIDDEN, FILE_ATTRIBUTE_REPARSE_POINT, DriveInfo,
+    USN_REASON_CLOSE, USN_REASON_FILE_CREATE, USNRecord,
 )
 
 
@@ -263,6 +266,85 @@ class TestIndexMode:
         assert drives["C"]["next_usn"] == 99
         assert drives["E"]["mode"] == "os.scandir"
         assert drives["E"]["folders"] == 1
+
+    def test_apply_usn_changes_persists_checkpoint_after_successful_batch(self, monkeypatch, tmp_path):
+        cache_mod._close_connection()
+        monkeypatch.setattr(cache_mod, "CONFIG_DIR", tmp_path)
+        monkeypatch.setattr(cache_mod, "DB_FILE", tmp_path / "index.db")
+        monkeypatch.setattr(cache_mod, "OLD_CACHE_FILE", tmp_path / "index_cache.bin")
+        conn = cache_mod._get_connection()
+        cache_mod._init_schema(conn)
+        conn.execute(
+            "INSERT INTO drives (letter, flags, journal_id, next_usn) VALUES (?, ?, ?, ?)",
+            ("C", 0, 1, 10),
+        )
+        conn.commit()
+
+        index = FileIndex()
+        index._entries = {
+            "C": {
+                NTFS_ROOT_FRN: FileEntry(
+                    NTFS_ROOT_FRN,
+                    0,
+                    "",
+                    "C",
+                    FILE_ATTRIBUTE_DIRECTORY,
+                )
+            }
+        }
+        index._volumes["C"] = type("Volume", (), {"journal_id": 99, "current_usn": 250})()
+        record = USNRecord(
+            usn=200,
+            frn=42,
+            parent_frn=NTFS_ROOT_FRN,
+            timestamp=datetime(2026, 7, 1, 12, 0, 0),
+            reason=USN_REASON_FILE_CREATE | USN_REASON_CLOSE,
+            attributes=FILE_ATTRIBUTE_ARCHIVE,
+            name="new.txt",
+        )
+
+        index._apply_usn_changes([("C", record)])
+
+        row = conn.execute("SELECT journal_id, next_usn FROM drives WHERE letter='C'").fetchone()
+        entry_row = conn.execute("SELECT name FROM entries WHERE drive='C' AND frn=42").fetchone()
+        cache_mod._close_connection()
+        assert tuple(row) == (99, 250)
+        assert tuple(entry_row) == ("new.txt",)
+
+    def test_apply_usn_changes_does_not_checkpoint_failed_batch(self, monkeypatch):
+        index = FileIndex()
+        index._entries = {
+            "C": {
+                NTFS_ROOT_FRN: FileEntry(
+                    NTFS_ROOT_FRN,
+                    0,
+                    "",
+                    "C",
+                    FILE_ATTRIBUTE_DIRECTORY,
+                )
+            }
+        }
+        index._volumes["C"] = type("Volume", (), {"journal_id": 99, "current_usn": 250})()
+        checkpoint_calls = []
+        monkeypatch.setattr(cache_mod, "db_batch_apply", lambda *_args, **_kwargs: False)
+        monkeypatch.setattr(
+            cache_mod,
+            "db_update_usn_position",
+            lambda *args: checkpoint_calls.append(args) or True,
+        )
+        record = USNRecord(
+            usn=200,
+            frn=42,
+            parent_frn=NTFS_ROOT_FRN,
+            timestamp=datetime(2026, 7, 1, 12, 0, 0),
+            reason=USN_REASON_FILE_CREATE | USN_REASON_CLOSE,
+            attributes=FILE_ATTRIBUTE_ARCHIVE,
+            name="new.txt",
+        )
+
+        index._apply_usn_changes([("C", record)])
+
+        assert checkpoint_calls == []
 
     def test_cached_drive_states_mark_offline_drives_stale(self, monkeypatch):
         index = FileIndex()

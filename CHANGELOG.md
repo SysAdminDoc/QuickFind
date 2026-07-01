@@ -2,6 +2,12 @@
 
 All notable changes to QuickFind will be documented in this file.
 
+## [v0.8.45] - 2026-07-01
+
+- Persisted live USN journal checkpoints after successful monitor batches so restarts do not replay already-applied journal records.
+- Kept checkpoint writes behind successful entry batch persistence and added regression coverage for failed DB batches.
+- Added USN checkpoint durability coverage, expanding the passing suite to 339 tests.
+
 ## [v0.8.44] - 2026-07-01
 
 - Added a local `build.py --release-check` gate for version consistency, MSIX hash/signature status, App Installer feed URLs, winget metadata, and GitHub release asset reachability.
