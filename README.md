@@ -1,14 +1,14 @@
-# QuickFind v0.8.43
+# QuickFind v0.8.44
 
 Lightning-fast file search for Windows, powered by NTFS MFT + USN Journal.
 
 An open-source alternative to [Voidtools Everything](https://www.voidtools.com/), built with Python and PyQt6 for extensibility and customization.
 
-![Version](https://img.shields.io/badge/Version-v0.8.43-blueviolet)
+![Version](https://img.shields.io/badge/Version-v0.8.44-blueviolet)
 ![Python](https://img.shields.io/badge/Python-3.10+-blue)
 ![License](https://img.shields.io/badge/License-MIT-green)
 ![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey)
-![Tests](https://img.shields.io/badge/Tests-333%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/Tests-337%20passing-brightgreen)
 
 ## Features
 
@@ -82,7 +82,7 @@ An open-source alternative to [Voidtools Everything](https://www.voidtools.com/)
 - **Search modifier plugin API** registers custom modifier parsers, aliases, and per-entry predicates through `core.search.SearchModifierPlugin`
 - **Everything import hardening** — malformed CSV rows and invalid JSON are rejected before atomic filter/bookmark replacement
 - **Log rotation** — `RotatingFileHandler` with 5 MB max and 3 backups
-- **333 automated tests** covering startup dependency handling, cross-platform engine selection, POSIX root indexing, build/runtime matrix reporting, SQLite/FTS5 version gates, Finder-style path columns, quick preview popovers, custom search modifier plugins, theme packs, localization, accessibility metadata, offline help docs, inline file diff, Open With discovery, saved query slot expansion, bookmark workspace roots, nested boolean query parsing, hash duplicate detection, broken link/shortcut finders, Git dirty worktree filtering, remote REST docs/OpenAPI, remote web UI cards/filters, remote auth/CORS hardening, SMB/UNC network-share indexing, EFU refresh scheduling, EML/source-code content extraction, optional PDF OCR fallback, parser worker isolation, preview matched-line highlighting, Everything import validation, index/cache/service diagnostics, removable-drive stale state, dialog Quick Switch helpers, link/junction traversal loop guards, global exclude rules, reparse/EA metadata persistence, case-mode matching policy, content indexing jobs/quotas/diagnostics, content search ranking/snippets, search parsing, archive metadata caching, content adapters/cache, service IPC, duplicate detection, MFT record parsing, privilege lifecycle, settings validation, index mode UI state, results-view cache bounds, cache helpers, remote server configuration, MSIX/App Installer/winget packaging, and ignore patterns
+- **337 automated tests** covering startup dependency handling, cross-platform engine selection, POSIX root indexing, build/runtime matrix reporting, release artifact checks, SQLite/FTS5 version gates, Finder-style path columns, quick preview popovers, custom search modifier plugins, theme packs, localization, accessibility metadata, offline help docs, inline file diff, Open With discovery, saved query slot expansion, bookmark workspace roots, nested boolean query parsing, hash duplicate detection, broken link/shortcut finders, Git dirty worktree filtering, remote REST docs/OpenAPI, remote web UI cards/filters, remote auth/CORS hardening, SMB/UNC network-share indexing, EFU refresh scheduling, EML/source-code content extraction, optional PDF OCR fallback, parser worker isolation, preview matched-line highlighting, Everything import validation, index/cache/service diagnostics, removable-drive stale state, dialog Quick Switch helpers, link/junction traversal loop guards, global exclude rules, reparse/EA metadata persistence, case-mode matching policy, content indexing jobs/quotas/diagnostics, content search ranking/snippets, search parsing, archive metadata caching, content adapters/cache, service IPC, duplicate detection, MFT record parsing, privilege lifecycle, settings validation, index mode UI state, results-view cache bounds, cache helpers, remote server configuration, MSIX/App Installer/winget packaging, and ignore patterns
 - **PyInstaller and MSIX build script** for single-file, single-folder, App Installer, and winget distribution
 
 ## Requirements
@@ -93,7 +93,7 @@ An open-source alternative to [Voidtools Everything](https://www.voidtools.com/)
 
 ## Supported Runtime Matrix
 
-| Component | Supported | Tested in v0.8.43 |
+| Component | Supported | Tested in v0.8.44 |
 |-----------|-----------|------------------|
 | OS | Windows 10/11 | Windows 10.0.26100 |
 | Python | 3.10+ | 3.11.9 |
@@ -183,11 +183,17 @@ python build.py --onefile
 # Build signed MSIX package and winget manifests
 python build.py --msix --winget
 
+# Validate local release metadata and GitHub release assets
+python build.py --release-check
+
+# Pre-upload local-only check for unsigned packages
+python build.py --release-check --skip-remote --allow-unsigned
+
 # Clean build artifacts
 python build.py --clean
 ```
 
-Build output prints the tested runtime matrix before invoking PyInstaller. If PyInstaller is missing, install the pinned requirements instead of relying on an automatic build-time install. MSIX signing uses `QUICKFIND_SIGN_PFX` and optional `QUICKFIND_SIGN_PFX_PASSWORD`; without a PFX, `build.py --msix` asks `signtool` to auto-select a signing certificate from the local store.
+Build output prints the tested runtime matrix before invoking PyInstaller. If PyInstaller is missing, install the pinned requirements instead of relying on an automatic build-time install. MSIX signing uses `QUICKFIND_SIGN_PFX` and optional `QUICKFIND_SIGN_PFX_PASSWORD`; without a PFX, `build.py --msix` asks `signtool` to auto-select a signing certificate from the local store. The release check validates README/version drift, MSIX manifest version, MSIX signature status, App Installer URLs, winget URL/hash metadata, and GitHub release asset reachability.
 
 ## Search Syntax
 
@@ -322,11 +328,11 @@ QuickFind/
 ## Testing
 
 ```bash
-# Run the test suite (333 tests)
+# Run the test suite (337 tests)
 python -m pytest tests/ -v
 ```
 
-Tests cover startup dependency handling, cross-platform engine selection, POSIX root indexing, build/runtime matrix reporting, SQLite/FTS5 version gates, Finder-style path columns, quick preview geometry and thumbnail selection, custom search modifier plugins, theme packs, localization, accessibility metadata, offline help docs, inline file diff, Open With discovery, saved query slot expansion, bookmark workspace roots, nested boolean query parsing, hash duplicate detection, broken link/shortcut finders, Git dirty worktree filtering, remote REST docs/OpenAPI, remote web UI cards/filters, remote auth/CORS hardening, SMB/UNC network-share indexing, EFU refresh scheduling, EML/source-code content extraction, optional PDF OCR fallback, parser worker isolation, preview matched-line highlighting, Everything import validation, index/cache/service diagnostics, removable-drive stale state, dialog Quick Switch helpers, link/junction traversal loop guards, global exclude-rule settings, reparse/EA metadata persistence, case-mode matching policy, content indexing jobs/quotas/diagnostics, search query parsing (all modifiers), archive metadata caching, content extraction/cache, service IPC, size/date helpers, smart case sensitivity, fuzzy matching, MFT record parsing, USA fixup, USN records, cache datetime round-trip, FTS5 detection, results-view cache bounds, MSIX/App Installer/winget manifest generation, `.quickfindignore` pattern matching, and EFU file loading.
+Tests cover startup dependency handling, cross-platform engine selection, POSIX root indexing, build/runtime matrix reporting, release artifact checks, SQLite/FTS5 version gates, Finder-style path columns, quick preview geometry and thumbnail selection, custom search modifier plugins, theme packs, localization, accessibility metadata, offline help docs, inline file diff, Open With discovery, saved query slot expansion, bookmark workspace roots, nested boolean query parsing, hash duplicate detection, broken link/shortcut finders, Git dirty worktree filtering, remote REST docs/OpenAPI, remote web UI cards/filters, remote auth/CORS hardening, SMB/UNC network-share indexing, EFU refresh scheduling, EML/source-code content extraction, optional PDF OCR fallback, parser worker isolation, preview matched-line highlighting, Everything import validation, index/cache/service diagnostics, removable-drive stale state, dialog Quick Switch helpers, link/junction traversal loop guards, global exclude-rule settings, reparse/EA metadata persistence, case-mode matching policy, content indexing jobs/quotas/diagnostics, search query parsing (all modifiers), archive metadata caching, content extraction/cache, service IPC, size/date helpers, smart case sensitivity, fuzzy matching, MFT record parsing, USA fixup, USN records, cache datetime round-trip, FTS5 detection, results-view cache bounds, MSIX/App Installer/winget manifest generation, `.quickfindignore` pattern matching, and EFU file loading.
 
 ## Security
 

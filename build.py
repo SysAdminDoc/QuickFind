@@ -13,13 +13,20 @@ Usage:
 
 import importlib
 from importlib import metadata as importlib_metadata
+from dataclasses import dataclass, field
 import hashlib
 import os
 import platform
+import re
 import subprocess
 import sys
 import shutil
 import sqlite3
+import stat
+import urllib.error
+import urllib.request
+import xml.etree.ElementTree as ET
+import zipfile
 from pathlib import Path
 
 from core.version import APP_NAME, VERSION
@@ -54,6 +61,26 @@ RUNTIME_PACKAGES = [
     ("python-pptx", "python-pptx"),
     ("watchdog", "watchdog"),
 ]
+
+
+@dataclass
+class ReleaseCheckReport:
+    checks: list[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
+    errors: list[str] = field(default_factory=list)
+
+    @property
+    def passed(self) -> bool:
+        return not self.errors
+
+    def ok(self, message: str) -> None:
+        self.checks.append(message)
+
+    def warn(self, message: str) -> None:
+        self.warnings.append(message)
+
+    def fail(self, message: str) -> None:
+        self.errors.append(message)
 
 
 def _package_version(distribution: str) -> str:
@@ -96,11 +123,46 @@ def clean():
     """Remove build artifacts."""
     for d in [DIST, BUILD]:
         if d.exists():
-            shutil.rmtree(d)
+            _remove_tree(d)
             print(f"[*] Removed {d}")
     if SPEC.exists():
-        SPEC.unlink()
+        _remove_file(SPEC)
         print(f"[*] Removed {SPEC}")
+
+
+def _remove_tree(path: Path) -> None:
+    try:
+        shutil.rmtree(path, onerror=_chmod_and_retry)
+    except (OSError, PermissionError) as exc:
+        raise SystemExit(_locked_path_message(path, exc)) from exc
+
+
+def _remove_file(path: Path) -> None:
+    try:
+        path.unlink()
+    except PermissionError:
+        try:
+            os.chmod(path, stat.S_IWRITE)
+            path.unlink()
+        except (OSError, PermissionError) as exc:
+            raise SystemExit(_locked_path_message(path, exc)) from exc
+    except OSError as exc:
+        raise SystemExit(_locked_path_message(path, exc)) from exc
+
+
+def _chmod_and_retry(function, path: str, exc_info) -> None:
+    try:
+        os.chmod(path, stat.S_IWRITE)
+        function(path)
+    except Exception:
+        raise exc_info[1]
+
+
+def _locked_path_message(path: Path, exc: BaseException) -> str:
+    return (
+        f"Cannot clean {path}: {exc}. Close any running QuickFind build, "
+        "Explorer preview, terminal, or antivirus scan holding the artifact and retry."
+    )
 
 
 def msix_version(version: str = VERSION) -> str:
@@ -331,6 +393,213 @@ def write_winget_manifests(installer_url: str | None = None,
         print(f"[+] Wrote winget manifest: {path}")
 
 
+def release_check(
+    *,
+    skip_remote: bool = False,
+    allow_unsigned: bool = False,
+    url_exists=None,
+    signature_status=None,
+) -> ReleaseCheckReport:
+    """Validate local release metadata before publishing artifacts."""
+    url_exists = url_exists or _release_asset_exists
+    signature_status = signature_status or _msix_signature_status
+    report = ReleaseCheckReport()
+    expected_version = VERSION
+    expected_msix_version = msix_version(expected_version)
+    expected_msix_url = _release_asset_url(MSIX_NAME, expected_version)
+    expected_appinstaller_url = _release_asset_url(APPINSTALLER_NAME, expected_version)
+    msix_path = DIST / MSIX_NAME
+    appinstaller_path = DIST / APPINSTALLER_NAME
+    installer_manifest = WINGET / f"{PACKAGE_IDENTIFIER}.installer.yaml"
+
+    _check_readme_version(report, expected_version)
+    manifests = _read_winget_manifests(report)
+    for filename, manifest in manifests.items():
+        package_version = _manifest_value(manifest, "PackageVersion")
+        if package_version == expected_version:
+            report.ok(f"{filename} version matches {expected_version}")
+        else:
+            report.fail(f"{filename} PackageVersion is {package_version or 'missing'}, expected {expected_version}")
+
+    installer_text = manifests.get(installer_manifest.name, "")
+    installer_url = _manifest_value(installer_text, "InstallerUrl")
+    if installer_url == expected_msix_url:
+        report.ok("winget InstallerUrl matches the current release URL")
+    else:
+        report.fail(f"winget InstallerUrl is {installer_url or 'missing'}, expected {expected_msix_url}")
+
+    installer_hash = _manifest_value(installer_text, "InstallerSha256")
+    msix_hash = ""
+    if msix_path.exists():
+        msix_hash = _sha256_file(msix_path)
+        if installer_hash == msix_hash:
+            report.ok("winget InstallerSha256 matches the local MSIX")
+        else:
+            report.fail(f"winget InstallerSha256 is {installer_hash or 'missing'}, expected {msix_hash}")
+        msix_manifest_version = _msix_manifest_version(msix_path)
+        if msix_manifest_version == expected_msix_version:
+            report.ok("MSIX manifest version matches the application version")
+        else:
+            report.fail(
+                f"MSIX manifest version is {msix_manifest_version or 'missing'}, "
+                f"expected {expected_msix_version}"
+            )
+        status = signature_status(msix_path)
+        if status == "Valid":
+            report.ok("MSIX signature is valid")
+        elif allow_unsigned:
+            report.warn(f"MSIX signature status is {status}; unsigned local package allowed")
+        else:
+            report.fail(f"MSIX signature status is {status}; sign the package or pass --allow-unsigned for local-only checks")
+    else:
+        report.fail(f"Missing MSIX artifact: {msix_path}")
+
+    if appinstaller_path.exists():
+        appinstaller = _read_appinstaller(appinstaller_path)
+        _check_value(report, "App Installer Version", appinstaller.get("version"), expected_msix_version)
+        _check_value(report, "App Installer Uri", appinstaller.get("uri"), expected_appinstaller_url)
+        _check_value(report, "App Installer MainPackage Version", appinstaller.get("main_version"), expected_msix_version)
+        _check_value(report, "App Installer MainPackage Uri", appinstaller.get("main_uri"), expected_msix_url)
+    else:
+        report.fail(f"Missing App Installer feed: {appinstaller_path}")
+
+    if not skip_remote:
+        for url in (expected_msix_url, expected_appinstaller_url):
+            if url_exists(url):
+                report.ok(f"GitHub release asset exists: {url}")
+            else:
+                report.fail(f"GitHub release asset is missing or unreachable: {url}")
+    else:
+        report.warn("Skipped GitHub release asset checks")
+
+    return report
+
+
+def print_release_check_report(report: ReleaseCheckReport) -> None:
+    for message in report.checks:
+        print(f"[+] {message}")
+    for message in report.warnings:
+        print(f"[!] {message}")
+    for message in report.errors:
+        print(f"[-] {message}")
+
+
+def _read_winget_manifests(report: ReleaseCheckReport) -> dict[str, str]:
+    manifests = {}
+    for filename in (
+        f"{PACKAGE_IDENTIFIER}.yaml",
+        f"{PACKAGE_IDENTIFIER}.installer.yaml",
+        f"{PACKAGE_IDENTIFIER}.locale.en-US.yaml",
+    ):
+        path = WINGET / filename
+        if not path.exists():
+            report.fail(f"Missing winget manifest: {path}")
+            manifests[filename] = ""
+            continue
+        manifests[filename] = path.read_text(encoding="utf-8")
+    return manifests
+
+
+def _check_readme_version(report: ReleaseCheckReport, version: str) -> None:
+    readme = ROOT / "README.md"
+    if not readme.exists():
+        report.fail("README.md is missing")
+        return
+    text = readme.read_text(encoding="utf-8")
+    expected_header = f"# {APP_NAME} v{version}"
+    expected_badge = f"Version-v{version}-"
+    if expected_header in text and expected_badge in text:
+        report.ok("README version header and badge match")
+    else:
+        report.fail(f"README version header or badge does not match v{version}")
+
+
+def _manifest_value(text: str, key: str) -> str:
+    match = re.search(rf"^\s*{re.escape(key)}:\s*(.+?)\s*$", text, re.MULTILINE)
+    return match.group(1).strip() if match else ""
+
+
+def _check_value(report: ReleaseCheckReport, label: str, actual: str | None, expected: str) -> None:
+    if actual == expected:
+        report.ok(f"{label} matches")
+    else:
+        report.fail(f"{label} is {actual or 'missing'}, expected {expected}")
+
+
+def _read_appinstaller(path: Path) -> dict[str, str]:
+    root = ET.parse(path).getroot()
+    data = {
+        "version": root.attrib.get("Version", ""),
+        "uri": root.attrib.get("Uri", ""),
+    }
+    for child in root:
+        if _xml_local_name(child.tag) == "MainPackage":
+            data["main_version"] = child.attrib.get("Version", "")
+            data["main_uri"] = child.attrib.get("Uri", "")
+            break
+    return data
+
+
+def _msix_manifest_version(path: Path) -> str:
+    try:
+        with zipfile.ZipFile(path) as package:
+            manifest = ET.fromstring(package.read("AppxManifest.xml"))
+    except (OSError, KeyError, zipfile.BadZipFile, ET.ParseError):
+        return ""
+    for child in manifest:
+        if _xml_local_name(child.tag) == "Identity":
+            return child.attrib.get("Version", "")
+    return ""
+
+
+def _xml_local_name(tag: str) -> str:
+    return tag.rsplit("}", 1)[-1]
+
+
+def _msix_signature_status(path: Path) -> str:
+    if platform.system() != "Windows":
+        return "Skipped"
+    literal = str(path).replace("'", "''")
+    command = (
+        "$sig = Get-AuthenticodeSignature -LiteralPath "
+        f"'{literal}'; $sig.Status"
+    )
+    try:
+        result = subprocess.run(
+            ["powershell.exe", "-NoProfile", "-Command", command],
+            capture_output=True,
+            text=True,
+            timeout=20,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        return f"Unknown ({exc})"
+    if result.returncode != 0:
+        first_error = next((line.strip() for line in result.stderr.splitlines() if line.strip()), "")
+        return f"Unknown ({first_error or result.returncode})"
+    status = result.stdout.strip()
+    return status or f"Unknown ({result.returncode})"
+
+
+def _release_asset_exists(url: str, timeout: float = 10.0) -> bool:
+    request = urllib.request.Request(url, method="HEAD")
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            return 200 <= response.status < 400
+    except urllib.error.HTTPError as exc:
+        if exc.code != 405:
+            return False
+    except (urllib.error.URLError, TimeoutError, OSError):
+        return False
+
+    request = urllib.request.Request(url, headers={"Range": "bytes=0-0"})
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            return 200 <= response.status < 400
+    except (urllib.error.URLError, TimeoutError, OSError):
+        return False
+
+
 def build(onefile=False):
     """Build the application with PyInstaller."""
     require_pyinstaller()
@@ -407,7 +676,20 @@ def main():
     parser.add_argument('--winget', action='store_true', help='Write winget manifests for the MSIX')
     parser.add_argument('--installer-url', help='Release URL for the MSIX in App Installer and winget manifests')
     parser.add_argument('--appinstaller-url', help='Release URL for the .appinstaller update feed')
+    parser.add_argument('--release-check', action='store_true', help='Validate local release artifacts and metadata')
+    parser.add_argument('--skip-remote', action='store_true', help='Skip GitHub release asset checks during --release-check')
+    parser.add_argument('--allow-unsigned', action='store_true', help='Allow unsigned MSIX packages during --release-check')
     args = parser.parse_args()
+
+    if args.release_check:
+        report = release_check(
+            skip_remote=args.skip_remote,
+            allow_unsigned=args.allow_unsigned,
+        )
+        print_release_check_report(report)
+        if not report.passed:
+            sys.exit(1)
+        return
 
     if args.clean:
         clean()

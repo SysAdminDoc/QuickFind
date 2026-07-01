@@ -2,6 +2,12 @@
 
 All notable changes to QuickFind will be documented in this file.
 
+## [v0.8.44] - 2026-07-01
+
+- Added a local `build.py --release-check` gate for version consistency, MSIX hash/signature status, App Installer feed URLs, winget metadata, and GitHub release asset reachability.
+- Hardened `build.py --clean` so read-only artifacts are retried and locked build outputs fail with a clear close-and-retry message instead of a raw traceback.
+- Added release-check and locked-clean coverage, expanding the passing suite to 337 tests.
+
 ## [v0.8.43] - 2026-07-01
 
 - Added process-isolated worker timeouts for content extraction and archive member probing so stuck parsers fail closed instead of blocking indexing or search.
