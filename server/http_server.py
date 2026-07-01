@@ -608,14 +608,24 @@ def _openapi_spec() -> dict:
 class _RateLimiter:
     WINDOW = 60
     MAX_REQUESTS = 60
+    _CLEANUP_INTERVAL = 300
 
     def __init__(self):
         self._lock = threading.Lock()
         self._hits: dict[str, list[float]] = {}
+        self._last_cleanup = 0.0
 
     def allow(self, ip: str) -> bool:
         now = time.monotonic()
         with self._lock:
+            if now - self._last_cleanup > self._CLEANUP_INTERVAL:
+                cutoff = now - self.WINDOW
+                self._hits = {
+                    k: [t for t in v if t > cutoff]
+                    for k, v in self._hits.items()
+                    if any(t > cutoff for t in v)
+                }
+                self._last_cleanup = now
             cutoff = now - self.WINDOW
             timestamps = [t for t in self._hits.get(ip, []) if t > cutoff]
             if len(timestamps) >= self.MAX_REQUESTS:

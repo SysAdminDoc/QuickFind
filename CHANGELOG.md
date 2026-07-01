@@ -25,6 +25,9 @@ All notable changes to QuickFind will be documented in this file.
 - Fixed SQLite connection leak on health-check failure and PRAGMA initialization failure in `_get_connection`.
 - Fixed worker isolation catching `BaseException` (swallowing `SystemExit`/`KeyboardInterrupt`) — narrowed to `Exception`.
 - Removed unused ACCENT imports from bookmarks, launcher_popup modules.
+- Fixed rate limiter unbounded memory growth for stale IP entries by adding periodic cleanup.
+- Fixed `format_size` in results_view treating 0-byte files as empty string instead of "0 B".
+- Added missing PyInstaller hidden imports for new modules (dep_audit, duplicate_review, plugin_loader, portable, result_export, refresh_queue, acl, query_chips).
 - Added 8 regression tests for the above fixes, expanding the suite to 508 tests.
 
 ## [v0.8.52] - 2026-07-01

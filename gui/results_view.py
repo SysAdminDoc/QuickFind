@@ -67,7 +67,7 @@ MAX_PATH_COLUMNS = 8
 
 def format_size(size: int) -> str:
     """Format file size for display (Everything-style: KB with comma separator)."""
-    if size <= 0:
+    if size < 0:
         return ""
     if size < 1024:
         return f"{size} B"
