@@ -15,6 +15,7 @@ CHIP_MODIFIERS = [
     ("len", "Length"),
     ("attrib", "Attribute"),
     ("dupe", "Duplicate"),
+    ("duplicate", "Duplicate"),
     ("content", "Content"),
     ("archive", "Archive"),
     ("file", "Files only"),

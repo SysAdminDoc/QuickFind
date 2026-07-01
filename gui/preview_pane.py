@@ -164,6 +164,7 @@ class PreviewPane(QWidget):
         self._file_index = file_index
         self._current_path: Optional[str] = None
         self._loader_thread: Optional[QThread] = None
+        self._pending_loaders: list[QThread] = []
         self._highlight_preview_lines = False
 
         self._setup_ui()
@@ -246,16 +247,40 @@ class PreviewPane(QWidget):
         self._stack.setCurrentIndex(0)
 
     def _cleanup_loader(self):
-        """Safely clean up any previous loader thread."""
-        if self._loader_thread is not None:
-            try:
-                if self._loader_thread.isRunning():
-                    self._loader_thread.requestInterruption()
-                    self._loader_thread.wait(2000)
-            except RuntimeError:
-                # C++ object already deleted
-                pass
-            self._loader_thread = None
+        """Safely retire the previous loader thread.
+
+        A loader can block on slow/dead I/O (offline SMB path, spun-down disk).
+        If we null our only reference while it is still running, the Python
+        QThread wrapper is garbage-collected and Qt aborts the process with
+        "QThread: Destroyed while thread is still running". So a still-running
+        loader is parked in _pending_loaders and freed when it finishes; its
+        late loaded/error signals are ignored because the path no longer matches.
+        """
+        thread = self._loader_thread
+        self._loader_thread = None
+        if thread is None:
+            return
+        try:
+            if thread.isRunning():
+                thread.requestInterruption()
+                if not thread.wait(200):
+                    self._pending_loaders.append(thread)
+                    thread.finished.connect(
+                        lambda t=thread: self._discard_pending_loader(t)
+                    )
+        except RuntimeError:
+            # C++ object already deleted.
+            pass
+
+    def _discard_pending_loader(self, thread):
+        try:
+            self._pending_loaders.remove(thread)
+        except ValueError:
+            pass
+        try:
+            thread.deleteLater()
+        except RuntimeError:
+            pass
 
     def preview_entry(self, entry: Optional[FileEntry],
                       content_query: str = "",

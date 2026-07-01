@@ -62,6 +62,8 @@ def parse_args():
     parser.add_argument('-s', '--sort', default='name',
                         choices=['name', 'path', 'size', 'dm', 'dc', 'ext'],
                         help='Sort field')
+    parser.add_argument('-r', '--reverse', action='store_true',
+                        help='Reverse the sort order (default is ascending)')
     parser.add_argument('-n', '--max', type=int, default=100, help='Max results')
     parser.add_argument('-o', '--offset', type=int, default=0, help='Skip N results')
     parser.add_argument('--csv', action='store_true', help='CSV output')
@@ -147,6 +149,7 @@ def main():
         folders_only=args.folders_only,
         max_results=args.max + args.offset,
         sort_by=sort_map.get(args.sort, SortField.NAME),
+        sort_order=SortOrder.DESCENDING if args.reverse else SortOrder.ASCENDING,
     )
 
     engine = SearchEngine(file_index)

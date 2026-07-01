@@ -624,7 +624,9 @@ def parse_query(raw_query: str, base_options: Optional[SearchOptions] = None,
             elif mod_lower == 'ext':
                 if val:
                     parsed.ext_filter.extend(
-                        e.strip().lstrip('.').lower() for e in val.split(';')
+                        ext for ext in (
+                            e.strip().lstrip('.').lower() for e in val.split(';')
+                        ) if ext
                     )
                 i += 1; continue
             elif mod_lower == 'size':

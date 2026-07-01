@@ -14,7 +14,7 @@ SEARCH_MODIFIERS = (
     ("parent:folder", "Match a parent directory name."),
     ("len:>10", "Filter by filename length."),
     ("attrib:H", "Filter by file attributes such as R, H, S, D, or A."),
-    ("dupe:name / duplicate:hash", "Find duplicate names, sizes, or content hashes."),
+    ("dupe:name / dupe:hash", "Find duplicates by filename or by content hash."),
     ("broken:link / broken:shortcut", "Find broken reparse links or shortcuts."),
     ("git:dirty", "Find files inside dirty Git worktrees."),
     ("content:text", "Search extracted text cached from supported document types."),

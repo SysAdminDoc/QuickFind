@@ -9,7 +9,7 @@ def test_offline_help_includes_core_search_modifiers():
     assert "QuickFind vTest Offline Help" in html
     assert "content:text" in html
     assert "archive:report" in html
-    assert "duplicate:hash" in html
+    assert "dupe:hash" in html
     assert "Index Diagnostics" in html
 
 
