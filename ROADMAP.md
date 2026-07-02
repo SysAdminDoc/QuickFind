@@ -41,9 +41,6 @@ NTFS-MFT-backed instant file search (PyQt6 + SQLite FTS5). Voidtools Everything 
 
 ### P2 - Search Depth and Workflow Expansion
 
-- [ ] P2 — Launcher popup search runs synchronously on the GUI thread
-  Why: the launcher accepts full engine syntax, so a `content:`, `regex:`, or `dupe:hash` query freezes the whole UI per debounced keystroke and races the main window's search workers.
-  Where: gui/launcher_popup.py (`self._engine.search` on the GUI thread).
 ### P3 — Larger Features
 
 - [ ] P3 — Settings/Diagnostics/Help dialog titles and buttons ignore the Spanish catalog

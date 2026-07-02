@@ -11,7 +11,7 @@ from PyQt6.QtWidgets import (
     QListWidgetItem, QApplication, QLabel, QHBoxLayout,
     QGraphicsDropShadowEffect,
 )
-from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QPropertyAnimation, QEasingCurve
+from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QThread, QPropertyAnimation, QEasingCurve
 from PyQt6.QtGui import QFont, QColor, QKeyEvent
 
 from gui.theme import MOCHA
@@ -21,6 +21,36 @@ from core.search import SearchEngine, SearchOptions
 logger = logging.getLogger('QuickFind.Launcher')
 
 MAX_RESULTS = 10
+
+
+class _LauncherSearchWorker(QThread):
+    """Runs a launcher query off the GUI thread so content/regex/dupe queries
+    (which the launcher accepts) cannot freeze the UI per keystroke."""
+
+    results_ready = pyqtSignal(str, list)
+
+    def __init__(self, engine, query, max_results):
+        super().__init__()
+        self._engine = engine
+        self._query = query
+        self._max_results = max_results
+        self._cancelled = False
+
+    def cancel(self):
+        self._cancelled = True
+
+    def run(self):
+        try:
+            results = self._engine.search(
+                self._query,
+                max_results=self._max_results,
+                cancel_check=lambda: self._cancelled,
+            )
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.debug("Launcher search failed: %s", exc)
+            results = []
+        if not self._cancelled:
+            self.results_ready.emit(self._query, results)
 
 
 class LauncherPopup(QWidget):
@@ -34,6 +64,8 @@ class LauncherPopup(QWidget):
         self._engine = search_engine
         self._file_index = file_index
         self._dialog_quick_switch_enabled = dialog_quick_switch_enabled
+        self._worker: Optional[_LauncherSearchWorker] = None
+        self._pending_workers: list = []
         self._debounce = QTimer()
         self._debounce.setSingleShot(True)
         self._debounce.setInterval(120)
@@ -145,15 +177,45 @@ class LauncherPopup(QWidget):
 
     def _do_search(self):
         query = self._search_input.text().strip()
-        self._results_list.clear()
 
         if not query:
+            self._cancel_worker()
+            self._results_list.clear()
             self._results_list.hide()
             self._hint_label.hide()
             self.adjustSize()
             return
 
-        results = self._engine.search(query, max_results=MAX_RESULTS)
+        # Run the query off the GUI thread; results are rendered when they
+        # arrive and only if the query still matches the current input.
+        self._cancel_worker()
+        worker = _LauncherSearchWorker(self._engine, query, MAX_RESULTS)
+        worker.results_ready.connect(self._on_results_ready)
+        worker.finished.connect(lambda w=worker: self._retire_worker(w))
+        self._worker = worker
+        worker.start()
+
+    def _cancel_worker(self):
+        if self._worker is not None and self._worker.isRunning():
+            self._worker.cancel()
+            self._pending_workers.append(self._worker)
+        self._worker = None
+
+    def _retire_worker(self, worker):
+        try:
+            self._pending_workers.remove(worker)
+        except ValueError:
+            pass
+        try:
+            worker.deleteLater()
+        except RuntimeError:
+            pass
+
+    def _on_results_ready(self, query: str, results: list):
+        # Ignore stale results from a superseded query.
+        if query != self._search_input.text().strip():
+            return
+        self._results_list.clear()
 
         if not results:
             self._results_list.hide()
@@ -247,6 +309,7 @@ class LauncherPopup(QWidget):
         self._search_input.setFocus()
 
     def dismiss(self):
+        self._cancel_worker()
         self._search_input.clear()
         self._results_list.clear()
         self._results_list.hide()
