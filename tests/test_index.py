@@ -18,6 +18,27 @@ from core.ntfs import (
 )
 
 
+def test_usn_resume_decision_catchup_and_reindex():
+    from core.index import _usn_resume_decision
+    # Same journal, valid checkpoint above FirstUsn -> catch up.
+    assert _usn_resume_decision(100, 5000, 100, 1000) == "catchup"
+    # No FirstUsn known (0) -> catch up (can't prove a wrap).
+    assert _usn_resume_decision(100, 5000, 100, 0) == "catchup"
+    # Journal recreated (id changed) -> reindex.
+    assert _usn_resume_decision(100, 5000, 999, 1000) == "reindex"
+    # No saved checkpoint -> reindex.
+    assert _usn_resume_decision(100, 0, 100, 1000) == "reindex"
+    # Journal wrapped past our saved position (saved < FirstUsn) -> reindex.
+    assert _usn_resume_decision(100, 500, 100, 1000) == "reindex"
+
+
+def test_ntfs_volume_wrap_flags_default_clear():
+    import core.ntfs as ntfs
+    vol = ntfs.NTFSVolume("C")
+    assert vol.journal_wrapped is False
+    assert vol.first_usn == 0
+
+
 def test_invalidate_subtree_paths_clears_descendants_only():
     # Tree: dir(10) -> sub(11) -> file(12); plus unrelated file(20).
     entries = {

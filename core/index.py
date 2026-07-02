@@ -45,6 +45,22 @@ logger = logging.getLogger('QuickFind.Index')
 NTFS_ROOT_FRN = 5
 
 
+def _usn_resume_decision(saved_journal_id: int, saved_next_usn: int,
+                         vol_journal_id: int, vol_first_usn: int) -> str:
+    """Decide how to resume USN tracking for a cached drive.
+
+    Returns "catchup" to replay from the saved position, or "reindex" when the
+    journal was recreated (id changed / no checkpoint) or wrapped past the saved
+    position (saved_next_usn < FirstUsn), which would otherwise be silently
+    mistaken for "no changes".
+    """
+    if saved_journal_id != vol_journal_id or saved_next_usn <= 0:
+        return "reindex"
+    if vol_first_usn and saved_next_usn < vol_first_usn:
+        return "reindex"
+    return "catchup"
+
+
 @dataclass
 class DriveState:
     """Runtime trust state for a cached or indexed drive."""
@@ -679,19 +695,33 @@ class FileIndex(QObject):
 
             journal_id, next_usn = usn_positions.get(drive_letter, (0, 0))
             if vol.query_usn_journal():
-                if vol.journal_id == journal_id and next_usn > 0:
+                decision = _usn_resume_decision(
+                    journal_id, next_usn, vol.journal_id, vol.first_usn
+                )
+                if decision == "catchup":
                     logger.info(f"Catching up USN on {drive_letter}: from USN {next_usn}")
                     records = vol.read_usn_journal(start_usn=next_usn)
-                    changes = []
-                    for rec in records:
-                        if rec.is_close:
-                            changes.append((drive_letter, rec))
-                    if changes:
-                        self._apply_usn_changes(changes)
-                        total_changes += len(changes)
-                    self._mark_drive_fresh(drive_letter, drive_info)
+                    if vol.journal_wrapped:
+                        # Journal wrapped during the read; the gap is unrecoverable.
+                        logger.warning(
+                            f"USN journal wrapped during catchup on {drive_letter}, "
+                            f"full re-index needed"
+                        )
+                        needs_reindex.append((vol, drive_letter))
+                    else:
+                        changes = []
+                        for rec in records:
+                            if rec.is_close:
+                                changes.append((drive_letter, rec))
+                        if changes:
+                            self._apply_usn_changes(changes)
+                            total_changes += len(changes)
+                        self._mark_drive_fresh(drive_letter, drive_info)
                 else:
-                    logger.warning(f"USN journal recycled on {drive_letter}, full re-index needed")
+                    logger.warning(
+                        f"USN journal recycled or purged on {drive_letter} "
+                        f"(saved USN {next_usn}, first USN {vol.first_usn}), full re-index needed"
+                    )
                     needs_reindex.append((vol, drive_letter))
             else:
                 self._mark_drive_stale(
@@ -1968,6 +1998,16 @@ class USNMonitorThread(QThread):
             for drive, vol in volumes:
                 try:
                     records = vol.read_usn_journal()
+                    if vol.journal_wrapped:
+                        # The journal wrapped past our position; re-query to reset
+                        # to the current NextUsn so we resume catching new changes
+                        # instead of polling a dead position forever.
+                        logger.warning(
+                            f"USN journal wrapped on {drive} during monitoring; "
+                            f"resetting position (some changes may be missed until re-index)"
+                        )
+                        vol.query_usn_journal()
+                        continue
                     for rec in records:
                         # Only process records with CLOSE flag to avoid duplicates
                         if rec.is_close:

@@ -36,6 +36,9 @@ FSCTL_QUERY_USN_JOURNAL = 0x000900F4
 FSCTL_READ_USN_JOURNAL = 0x000900BB
 FSCTL_CREATE_USN_JOURNAL = 0x000900E7
 
+ERROR_JOURNAL_NOT_ACTIVE = 1179
+ERROR_JOURNAL_ENTRY_DELETED = 1181  # journal wrapped past the requested USN
+
 # File attributes
 FILE_ATTRIBUTE_READONLY = 0x00000001
 FILE_ATTRIBUTE_HIDDEN = 0x00000002
@@ -574,6 +577,8 @@ class NTFSVolume:
         self._volume_info: Optional[VolumeInfo] = None
         self._journal_id: int = 0
         self._next_usn: int = 0
+        self._first_usn: int = 0
+        self._journal_wrapped: bool = False
 
     def open(self) -> bool:
         """Open a handle to the NTFS volume."""
@@ -915,7 +920,7 @@ class NTFSVolume:
             err = ctypes.get_last_error()
             logger.warning(f"Failed to query USN journal on {self.drive_letter}: error {err}")
             # Try to create the journal
-            if err == 1179:  # ERROR_JOURNAL_NOT_ACTIVE
+            if err == ERROR_JOURNAL_NOT_ACTIVE:
                 return self._create_usn_journal()
             return False
 
@@ -924,6 +929,7 @@ class NTFSVolume:
             vals = struct.unpack_from('<QQQQQQQ', data, 0)
             self._journal_id = vals[0]
             first_usn = vals[1]
+            self._first_usn = first_usn
             self._next_usn = vals[2]
             logger.info(
                 f"USN Journal on {self.drive_letter}: "
@@ -936,7 +942,9 @@ class NTFSVolume:
     def _create_usn_journal(self) -> bool:
         """Create a USN journal on the volume if one doesn't exist."""
         # CREATE_USN_JOURNAL_DATA: MaximumSize(8), AllocationDelta(8)
-        input_buf = struct.pack('<QQ', 0x800000, 0x100000)  # 8MB max, 1MB delta
+        # 32MB max / 4MB delta: a larger journal wraps far less often on busy
+        # volumes, reducing forced re-indexes from overflow.
+        input_buf = struct.pack('<QQ', 0x2000000, 0x400000)  # 32MB max, 4MB delta
         bytes_returned = wintypes.DWORD(0)
 
         success = DeviceIoControl(
@@ -963,6 +971,7 @@ class NTFSVolume:
         Returns:
             List of USNRecord entries.
         """
+        self._journal_wrapped = False
         if start_usn is not None:
             self._next_usn = start_usn
 
@@ -995,6 +1004,16 @@ class NTFSVolume:
 
         records = []
         if not success:
+            err = ctypes.get_last_error()
+            if err == ERROR_JOURNAL_ENTRY_DELETED:
+                # The journal wrapped past our resume position: entries between
+                # our checkpoint and FirstUsn are gone. Signal the caller so it
+                # forces a re-index instead of silently continuing as "no change".
+                self._journal_wrapped = True
+                logger.warning(
+                    f"USN journal on {self.drive_letter} wrapped past USN "
+                    f"{self._next_usn} (entries purged); re-index required"
+                )
             return records
 
         returned = bytes_returned.value
@@ -1091,6 +1110,16 @@ class NTFSVolume:
     @property
     def current_usn(self) -> int:
         return self._next_usn
+
+    @property
+    def first_usn(self) -> int:
+        """Lowest valid USN still retained by the journal (FirstUsn)."""
+        return self._first_usn
+
+    @property
+    def journal_wrapped(self) -> bool:
+        """True if the last read failed because the journal wrapped past us."""
+        return self._journal_wrapped
 
     def __enter__(self):
         self.open()
