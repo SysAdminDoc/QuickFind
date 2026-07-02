@@ -32,9 +32,6 @@ NTFS-MFT-backed instant file search (PyQt6 + SQLite FTS5). Voidtools Everything 
 
 ### P1 - Trust, Reliability, and Observability
 
-- [ ] P1 — Directory rename/move leaves stale cached paths on descendants
-  Why: renaming an indexed folder while running keeps `_path` on every child, so results show wrong paths, opens fail, and the stale paths persist to the DB across restarts until a full re-index.
-  Where: core/index.py `_apply_usn_changes` (only the renamed entry calls `invalidate_path`); cache.py DB rows for children are never updated.
 - [ ] P1 — USN journal overflow/wrap is silently treated as "no changes"
   Why: `read_usn_journal` returns `[]` on `ERROR_JOURNAL_ENTRY_DELETED`; catchup then marks the drive fresh and the live monitor polls a dead position forever, permanently missing changes since the purge. Journal `FirstUsn` is parsed but never compared to the resume position; the self-created journal is only 8 MB.
   Where: core/index.py `usn_catchup` / `USNMonitorThread.run`; core/ntfs.py `read_usn_journal`, journal size `0x800000`.

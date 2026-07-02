@@ -18,6 +18,31 @@ from core.ntfs import (
 )
 
 
+def test_invalidate_subtree_paths_clears_descendants_only():
+    # Tree: dir(10) -> sub(11) -> file(12); plus unrelated file(20).
+    entries = {
+        10: FileEntry(frn=10, parent_frn=5, name="Projects", drive="C",
+                      attributes=FILE_ATTRIBUTE_DIRECTORY),
+        11: FileEntry(frn=11, parent_frn=10, name="sub", drive="C",
+                      attributes=FILE_ATTRIBUTE_DIRECTORY),
+        12: FileEntry(frn=12, parent_frn=11, name="a.txt", drive="C",
+                      attributes=FILE_ATTRIBUTE_ARCHIVE),
+        20: FileEntry(frn=20, parent_frn=5, name="other.txt", drive="C",
+                      attributes=FILE_ATTRIBUTE_ARCHIVE),
+    }
+    for e in entries.values():
+        e._path = r"C:\stale\path"
+
+    FileIndex._invalidate_subtree_paths(entries, 10)
+
+    # Descendants of the renamed dir are cleared; the dir itself and unrelated
+    # entries are untouched (the dir clears its own path separately).
+    assert entries[11]._path is None
+    assert entries[12]._path is None
+    assert entries[10]._path == r"C:\stale\path"
+    assert entries[20]._path == r"C:\stale\path"
+
+
 class FakeStat:
     def __init__(self, attrs: int, dev: int = 1, ino: int = 1, size: int = 0):
         self.st_file_attributes = attrs

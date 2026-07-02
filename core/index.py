@@ -1675,6 +1675,26 @@ class FileIndex(QObject):
             self._stats.last_update = datetime.now()
             self.index_updated.emit(total_changes)
 
+    @staticmethod
+    def _invalidate_subtree_paths(drive_entries: dict, root_frn: int):
+        """Clear cached _path on every descendant of root_frn within a drive.
+
+        Called after a directory rename/move so descendants re-resolve their
+        full path through the updated parent chain instead of serving a stale
+        cached path (wrong results, failed opens, persisted stale DB rows).
+        """
+        children: dict[int, list[int]] = {}
+        for frn, entry in drive_entries.items():
+            children.setdefault(entry.parent_frn, []).append(frn)
+        stack = list(children.get(root_frn, []))
+        while stack:
+            frn = stack.pop()
+            entry = drive_entries.get(frn)
+            if entry is None:
+                continue
+            entry.invalidate_path()
+            stack.extend(children.get(frn, []))
+
     def _apply_usn_changes(self, changes: list):
         """Apply USN journal changes to the index and batch-sync to DB."""
         if not changes:
@@ -1725,9 +1745,15 @@ class FileIndex(QObject):
                     # File renamed - update name
                     existing = drive_entries.get(record.frn)
                     if existing:
+                        was_dir = existing.is_dir
                         existing.name = record.name
                         existing.parent_frn = record.parent_frn
                         existing.invalidate_path()
+                        # A renamed/moved directory changes the resolved path of
+                        # every descendant; clear their cached paths so they
+                        # re-resolve through the (now-updated) parent chain.
+                        if was_dir:
+                            self._invalidate_subtree_paths(drive_entries, record.frn)
                         modified += 1
                         path = existing.get_path(self)
                         db_updates.append((existing, path))
