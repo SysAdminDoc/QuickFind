@@ -2,6 +2,39 @@
 
 All notable changes to QuickFind will be documented in this file.
 
+## [v0.8.58] - 2026-07-01
+
+Roadmap drain — CLI parity, remote hardening, search correctness, and packaging.
+
+### CLI (es.py)
+- `-x/--exec` and `-X/--exec-batch` run a command per result / once over all results, with fd-style `{}` `{/}` `{//}` `{.}` `{/.}` placeholders.
+- `--count` and `--total-size` print aggregates only; `--format` templates output; `--hyperlink` emits OSC-8 links on a TTY.
+- `--tsv`, `--no-header`, and `--export-efu` output formats.
+- `--explain` prints how a query parses (terms, modifiers, filters) without loading the index.
+
+### Remote server
+- ThreadingHTTPServer so one slow client can't block all requests; `stop()` releases the socket and joins the thread.
+- Per-token ACL enforcement wired into the search and page handlers (shared mode).
+- Per-client session tokens with a 1-hour TTL, `Max-Age` cookies, and a `POST /logout` endpoint replacing the single global token.
+
+### Search & indexing
+- Bare `dm:`/`dc:` dates (and `today`/`yesterday`) now match that whole day; period keywords stay open-ended.
+- Natural sort order for name/path (file2 before file10), in the engine and via a SQLite NATURAL collation.
+- Directory rename/move now invalidates descendant cached paths so results self-correct without a full re-index.
+- Content roots accept Everything-style `**`/`*` glob scoping.
+
+### Packaging & security
+- `pdfminer.six` pinned to the CVE-2025-64512 fix.
+- PyInstaller builds embed a Windows version resource and disable UPX (fewer AV/SmartScreen false positives).
+- `--release-check` gates on dependency advisories and emits a CycloneDX SBOM.
+
+### Reliability & cleanup
+- Launcher search runs on a cancellable worker thread instead of freezing the UI.
+- Extraction workers detect an early crash instead of blocking the full timeout.
+- `filters.json` is written atomically.
+- Removed dead code (deferred path-resolution machinery, `ColumnFilterRow`, the hidden compat `FilterBar`).
+- Suite expanded to 556 tests.
+
 ## [v0.8.57] - 2026-07-01
 
 Deep audit pass — correctness, security, UX, theming, and packaging.
