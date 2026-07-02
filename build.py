@@ -364,6 +364,7 @@ def release_check(
     allow_unsigned: bool = False,
     url_exists=None,
     signature_status=None,
+    audit_runner=None,
 ) -> ReleaseCheckReport:
     """Validate local release metadata before publishing artifacts."""
     url_exists = url_exists or _release_asset_exists
@@ -437,7 +438,40 @@ def release_check(
     else:
         report.warn("Skipped GitHub release asset checks")
 
+    _run_dependency_gate(report, audit_runner)
+
     return report
+
+
+def _run_dependency_gate(report: "ReleaseCheckReport", audit_runner) -> None:
+    """Fail the release on unwaived advisories and emit a CycloneDX SBOM.
+
+    Injectable so tests need no network; the CLI passes the live run_audit.
+    """
+    if audit_runner is None:
+        report.warn("Dependency advisory audit skipped (run 'build.py --dep-audit')")
+        return
+    try:
+        audit = audit_runner()
+    except Exception as exc:  # pragma: no cover - defensive
+        report.warn(f"Dependency audit could not run: {exc}")
+        return
+    if getattr(audit, "errors", None):
+        report.warn("Dependency advisory fetch errors: " + "; ".join(audit.errors))
+    if getattr(audit, "unwaived", None):
+        for adv in audit.unwaived:
+            report.fail(f"Unwaived {adv.severity} advisory {adv.id} in {adv.package}")
+    else:
+        report.ok(f"Dependency advisory audit passed ({len(audit.packages)} packages)")
+    try:
+        from core.dep_audit import sbom_json
+        DIST.mkdir(parents=True, exist_ok=True)
+        (DIST / "sbom.json").write_text(
+            json.dumps(sbom_json(audit), indent=2), encoding="utf-8"
+        )
+        report.ok("CycloneDX SBOM written to dist/sbom.json")
+    except Exception as exc:  # pragma: no cover - defensive
+        report.warn(f"SBOM emission failed: {exc}")
 
 
 def print_release_check_report(report: ReleaseCheckReport) -> None:
@@ -565,9 +599,47 @@ def _release_asset_exists(url: str, timeout: float = 10.0) -> bool:
         return False
 
 
+def _version_tuple() -> tuple[int, int, int, int]:
+    parts = [int(p) for p in VERSION.split('.') if p.isdigit()]
+    parts = (parts + [0, 0, 0, 0])[:4]
+    return tuple(parts)
+
+
+def version_info_text() -> str:
+    """Render a PyInstaller VSVersionInfo resource from the app version.
+
+    Embedding CompanyName/FileVersion/ProductVersion makes the exe look
+    trustworthy in Explorer properties and improves AV/SmartScreen heuristics.
+    """
+    vt = _version_tuple()
+    return (
+        "VSVersionInfo(\n"
+        f"  ffi=FixedFileInfo(filevers={vt}, prodvers={vt}, mask=0x3f, flags=0x0,\n"
+        "    OS=0x40004, fileType=0x1, subtype=0x0, date=(0, 0)),\n"
+        "  kids=[\n"
+        "    StringFileInfo([StringTable('040904B0', [\n"
+        "      StringStruct('CompanyName', 'SysAdminDoc'),\n"
+        "      StringStruct('FileDescription', 'QuickFind - Lightning-fast file search'),\n"
+        f"      StringStruct('FileVersion', '{VERSION}'),\n"
+        f"      StringStruct('InternalName', '{APP_NAME}'),\n"
+        f"      StringStruct('OriginalFilename', '{APP_NAME}.exe'),\n"
+        f"      StringStruct('ProductName', '{APP_NAME}'),\n"
+        f"      StringStruct('ProductVersion', '{VERSION}'),\n"
+        "      StringStruct('LegalCopyright', 'MIT License'),\n"
+        "    ])]),\n"
+        "    VarFileInfo([VarStruct('Translation', [1033, 1200])])\n"
+        "  ]\n"
+        ")\n"
+    )
+
+
 def build(onefile=False):
     """Build the application with PyInstaller."""
     require_pyinstaller()
+
+    BUILD.mkdir(parents=True, exist_ok=True)
+    version_file = BUILD / 'version_info.txt'
+    version_file.write_text(version_info_text(), encoding='utf-8')
 
     cmd = [
         sys.executable, '-m', 'PyInstaller',
@@ -575,6 +647,10 @@ def build(onefile=False):
         '--noconfirm',
         '--clean',
         '--windowed',
+        # UPX compression is a primary AV/SmartScreen false-positive trigger.
+        '--noupx',
+        # Embed a Windows version resource for a trustworthy Explorer identity.
+        '--version-file', str(version_file),
     ]
 
     if onefile:
@@ -667,9 +743,11 @@ def main():
         return
 
     if args.release_check:
+        from core.dep_audit import run_audit
         report = release_check(
             skip_remote=args.skip_remote,
             allow_unsigned=args.allow_unsigned,
+            audit_runner=run_audit,
         )
         print_release_check_report(report)
         if not report.passed:

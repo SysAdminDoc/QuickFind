@@ -74,18 +74,6 @@ NTFS-MFT-backed instant file search (PyQt6 + SQLite FTS5). Voidtools Everything 
   Touches: core/content/indexer.py, gui/settings_dialog.py (content roots/extensions/size).
   Acceptance: content roots accept `**`/`*` glob semantics; a documented default max file size is enforced and shown in settings.
   Complexity: M
-- [ ] P2 — PyInstaller spec hardening: embed VSVersionInfo, disable UPX for signed builds
-  Why: `QuickFind.spec` has no version resource and uses `upx=True`; both worsen AV/SmartScreen heuristics and make the exe look untrusted in Explorer properties.
-  Evidence: pyinstaller#6754 (UPX false positives); ahmedsyntax onefile guide (version resource).
-  Touches: QuickFind.spec, build.py (generate VSVersionInfo from core/version.py).
-  Acceptance: the built exe shows CompanyName/FileVersion/ProductVersion in Properties; release builds are produced without UPX.
-  Complexity: S
-- [ ] P2 — Make `--dep-audit` a build-failing pip-audit gate and attach the CycloneDX SBOM to releases
-  Why: build.py already scaffolds `--dep-audit`/`--sbom`; wiring pip-audit to fail the build and publishing the SBOM turns it into a real supply-chain gate.
-  Evidence: github.com/pypa/pip-audit; CycloneDX python.
-  Touches: build.py (`--release-check`/`--dep-audit`), release process.
-  Acceptance: a known-vulnerable pinned dep fails `--release-check`; a CycloneDX SBOM is emitted and attachable to the GitHub release.
-  Complexity: M
 - [ ] P2 — Launcher popup: inline preview + frecency ranking + scope prefixes
   Why: fzf shows a preview beside results and PowerToys Run uses scope sigils + frecency; QuickFind's popup has none, and (per project rule) actions must be clickable buttons, not keyboard shortcuts.
   Evidence: github.com/junegunn/fzf; learn.microsoft.com PowerToys Run. Depends on the existing P2 item that moves launcher search off the GUI thread.

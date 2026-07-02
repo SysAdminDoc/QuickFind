@@ -15,6 +15,18 @@ def test_version_metadata_is_consistent():
     assert build.VERSION == VERSION
 
 
+def test_version_info_text_embeds_version_and_identity():
+    text = build.version_info_text()
+    tup = build._version_tuple()
+    expected = tuple((list(int(p) for p in VERSION.split('.') if p.isdigit()) + [0, 0, 0, 0])[:4])
+    assert tup == expected
+    assert len(tup) == 4
+    assert f"filevers={tup}" in text
+    assert f"StringStruct('FileVersion', '{VERSION}')" in text
+    assert "StringStruct('ProductName', 'QuickFind')" in text
+    assert "StringStruct('CompanyName', 'SysAdminDoc')" in text
+
+
 def test_build_runtime_matrix_reports_core_dependencies():
     matrix = build.runtime_matrix()
 
@@ -121,6 +133,50 @@ def test_release_check_reports_missing_github_assets(tmp_path, monkeypatch):
 
     assert report.passed is False
     assert any("GitHub release asset" in error for error in report.errors)
+
+
+def test_release_check_fails_on_unwaived_advisory(tmp_path, monkeypatch):
+    from core.dep_audit import Advisory, AuditReport, PackageInfo
+
+    _write_release_fixture(tmp_path, monkeypatch)
+
+    def failing_audit():
+        return AuditReport(
+            packages=[PackageInfo("pdfminer.six", "pdfminer.six", "1.0", "1.0", "MIT")],
+            unwaived=[Advisory("CVE-0000-0001", "pdfminer.six", "critical", "boom")],
+        )
+
+    report = build.release_check(
+        skip_remote=True,
+        allow_unsigned=True,
+        signature_status=lambda _path: "NotSigned",
+        audit_runner=failing_audit,
+    )
+
+    assert report.passed is False
+    assert any("CVE-0000-0001" in error for error in report.errors)
+    assert (build.DIST / "sbom.json").exists()
+
+
+def test_release_check_passes_with_clean_audit(tmp_path, monkeypatch):
+    from core.dep_audit import AuditReport, PackageInfo
+
+    _write_release_fixture(tmp_path, monkeypatch)
+
+    def clean_audit():
+        return AuditReport(
+            packages=[PackageInfo("pdfminer.six", "pdfminer.six", "1.0", "1.0", "MIT")]
+        )
+
+    report = build.release_check(
+        skip_remote=True,
+        allow_unsigned=True,
+        signature_status=lambda _path: "NotSigned",
+        audit_runner=clean_audit,
+    )
+
+    assert report.passed is True
+    assert any("advisory audit passed" in msg for msg in report.checks)
 
 
 def test_clean_reports_locked_build_outputs(tmp_path, monkeypatch):
