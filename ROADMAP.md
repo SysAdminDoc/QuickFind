@@ -77,20 +77,6 @@ NTFS-MFT-backed instant file search (PyQt6 + SQLite FTS5). Voidtools Everything 
 
 ### 2026-07-01 External competitive research
 
-#### P1 — Trust, legal, and security
-- [ ] P1 — Resolve PyQt6 (GPLv3) vs MIT `LICENSE` inconsistency for the distributed binary
-  Why: the shipped exe/MSIX bundles PyQt6, which is GPLv3-or-commercial, so the distributed work is effectively GPLv3 while the repo advertises MIT — a real license conflict. User accepts copyleft, so relicensing the distributed app is the low-effort path.
-  Evidence: pythonguis PyQt6-vs-PySide6 licensing; `LICENSE`, `README.md`.
-  Touches: LICENSE, README.md (badge + a NOTICE of bundled Qt/PyQt terms), or a PySide6 migration if MIT must hold.
-  Acceptance: the distributed artifact's license is internally consistent — either GPLv3 with Qt/PyQt attribution and a written source offer, or the GUI runs on PySide6 (LGPL) and MIT is preserved.
-  Complexity: S (relicense) / XL (PySide6 migration)
-- [ ] P1 — Explicitly pin `pdfminer.six>=20251230` in requirements
-  Why: pdfplumber pulls pdfminer.six transitively; versions <20251230 carry CVE-2025-64512 (arbitrary code execution from a crafted PDF CMap, Windows high-risk). QuickFind parses untrusted PDFs, and a fresh install could resolve an older pdfminer.six.
-  Evidence: GHSA-wf5f-4jwr-ppcp; `requirements.txt` pins only pdfplumber.
-  Touches: requirements.txt (add explicit pin), build dep-audit.
-  Acceptance: a clean `pip install -r requirements.txt` installs pdfminer.six ≥20251230; `--dep-audit` reports no advisory for it.
-  Complexity: S
-
 #### P2 — CLI parity, workflow, packaging (quick wins first)
 - [ ] P2 — `es.py` smart-case default (uppercase in query ⇒ case-sensitive)
   Why: fd and ripgrep both default to smart-case; QuickFind's `-i/--case` is opt-in only, so scripts and users get surprising case-insensitive behavior with mixed-case queries.
@@ -145,12 +131,6 @@ NTFS-MFT-backed instant file search (PyQt6 + SQLite FTS5). Voidtools Everything 
   Evidence: github.com/pypa/pip-audit; CycloneDX python.
   Touches: build.py (`--release-check`/`--dep-audit`), release process.
   Acceptance: a known-vulnerable pinned dep fails `--release-check`; a CycloneDX SBOM is emitted and attachable to the GitHub release.
-  Complexity: M
-- [ ] P2 — OSS code signing (SignPath Foundation) + document SmartScreen reputation ramp
-  Why: unsigned PyInstaller exes trigger SmartScreen; SignPath offers free OV signing for qualifying OSS, and EV no longer instantly bypasses SmartScreen (reputation still ramps).
-  Evidence: MS code-signing-options docs; MS smartscreen-reputation docs. Operator-gated (external enrollment).
-  Touches: release/build process, README install notes.
-  Acceptance: release exe/MSIX is OV-signed; README documents the expected SmartScreen ramp.
   Complexity: M
 - [ ] P2 — Launcher popup: inline preview + frecency ranking + scope prefixes
   Why: fzf shows a preview beside results and PowerToys Run uses scope sigils + frecency; QuickFind's popup has none, and (per project rule) actions must be clickable buttons, not keyboard shortcuts.
