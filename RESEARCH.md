@@ -1,93 +1,95 @@
-# Research - QuickFind
+# Research — QuickFind
+Date: 2026-07-01 — replaces all prior research.
 
 ## Executive Summary
-QuickFind is a verified v0.8.42 local-first desktop search tool built around NTFS MFT/USN indexing, PyQt6, SQLite cache/FTS5 fallback, CLI search, read-only HTTP search, content/archive indexing, diagnostics, localization, accessibility metadata, and MSIX/winget packaging. Its strongest current shape is an open Everything-style search surface that already covers filename speed, content search, remote read-only access, previews, service mode, and packaging; the highest-value direction remains trust hardening and reproducible release quality before broader workflow expansion. Top opportunities: sandbox untrusted content/archive parsing, verify release/update artifacts, persist live USN checkpoints durably, harden remote sessions and browser cache headers, add privacy-preserving remote audit logs, add dependency/SBOM/advisory gates, add content-cache privacy and purge controls, export redacted support bundles, version settings/cache migrations, test rendered accessibility, expose Windows IFilter/property extraction, package modifier plugins, and add benchmark evidence.
+QuickFind (v0.8.57) is a local-first Windows file search tool: NTFS MFT/USN instant filename indexing, SQLite FTS5 content search over TXT/PDF/DOCX/PPTX/EML/source with sandboxed per-file worker adapters + optional Tesseract OCR + a Windows IFilter bridge, opt-in archive-metadata search, a scriptable CLI (`es.py`), a read-only HTTP/HTTPS server with a PWA web UI + OpenAPI, bookmarks/filters/EFU import-export, Catppuccin theme packs, a Windows service, and a custom-modifier plugin API. It is already ahead of the field on the axis that matters most: an **owned, on-disk FTS5 content index** that sidesteps Everything's in-RAM content ceiling (users report OOM at 11–60 GB), and it ships free everything Listary paywalls (dark theme, network drives, advanced syntax). The highest-value direction now is **trust/legal hardening + CLI parity + metadata breadth**, not new subsystems.
+
+Top opportunities in priority order:
+1. Resolve the PyQt6 (GPLv3) vs MIT-`LICENSE` inconsistency for the distributed binary (Verified conflict).
+2. Explicitly pin `pdfminer.six>=20251230` so fresh installs can't drift into the CVE-2025-64512 RCE (Verified — current env is patched, but the pin is only transitive via pdfplumber).
+3. `es.py` CLI parity with `fd`/`es.exe`: `-x/-X` exec, smart-case default, `-get-result-count/-get-total-size`, `--format`/`--hyperlink`, TSV/EFU export.
+4. Launcher popup: inline preview + frecency ranking + scope prefixes (fzf / PowerToys Run patterns).
+5. Property/metadata indexing (image dimensions/EXIF, audio tags) + folder-size + natural sort — Everything 1.5's headline gaps.
+6. Content search inside archive members (rga-style) + `**` include/exclude glob semantics.
+7. Packaging hardening: version resource in the spec, disable UPX for signed builds, OSS code signing (SignPath), pip-audit release gate.
+8. Recoll-style "show compiled query" debug panel + query-time synonyms (cheap differentiators).
+9. Opt-in local semantic search (FTS5 + sqlite-vec + local embeddings) as a longer-term leapfrog.
 
 ## Product Map
-- Core workflows: index local/UNC/EFU/POSIX roots, search filename/path/content/archive metadata, preview/open/recycle results, export EFU file lists, run CLI or read-only HTTP search, diagnose cache/service/index health.
-- User personas: Windows power users replacing Windows Search/Everything, sysadmins searching large local/network file sets, developers using CLI/regex/git filters, users with offline drives and document archives.
-- Platforms and distribution: Python 3.10+, Windows 10/11 primary, Linux/macOS configured roots via `os.scandir` + Watchdog, PyInstaller exe, MSIX/App Installer, winget manifests.
-- Key integrations and data flows: NTFS MFT/USN via `core/ntfs.py`, SQLite cache and content/archive tables in `core/cache.py`, PyQt6 GUI, Windows Credential Manager for SMB, Windows service IPC, HTTP/OpenAPI server, Everything EFU/filter/bookmark imports.
+- **Core workflows:** index local/UNC/EFU/POSIX roots → search filename/path/content/archive → preview/open/recycle/export → CLI or read-only HTTP search → diagnose cache/service/index health.
+- **Personas:** Windows power users replacing Windows Search/Everything; sysadmins over large local/network sets; developers using regex/git/CLI filters; users with offline drives and document archives.
+- **Platforms/distribution:** Python 3.10+, Windows 10/11 primary (MFT/USN); Linux/macOS index configured roots via `os.scandir` + Watchdog; PyInstaller exe, MSIX/App Installer, winget manifests.
+- **Integrations/data flows:** NTFS MFT/USN (`core/ntfs.py`) → SQLite cache + content/archive tables (`core/cache.py`) → PyQt6 GUI; Windows Credential Manager for SMB; Windows service IPC; HTTP/OpenAPI server; Everything EFU/filter/bookmark import.
 
 ## Competitive Landscape
-- Voidtools Everything: sets the speed/live-index bar and has filters, EFU, service mode, HTTP/SDK, property indexing, content-index include rules, and content-size statistics. Learn durable service/index reliability, content-scope controls, and metadata functions; avoid its closed-source model and filename-first content ceiling.
-- FSearch: proves fast open-source filename search and recurring demand for Everything-like live updates. Learn selective update UX; avoid Linux-only GTK assumptions and manual refresh expectations.
-- Recoll and DocFetcher: strongest open content-indexing references with web UI, Python API, external indexers, rich file filters, OCR, email/archive support, and recovery/index-failure docs. Learn pluggable extractors and shared-index web patterns; avoid heavy always-on or Java/Tika defaults unless isolated.
-- Flow Launcher, EverythingToolbar, PowerToys Command Palette: win on plugin ecosystems, launcher ergonomics, taskbar/command-palette access, and extension marketplaces. Learn plugin manifests/discovery, preview/action UX, and failed-plugin quarantine; avoid turning QuickFind into a general app launcher.
-- FileLocator Pro, UltraSearch, WizFile, Listary, Copernic, Fluent Search: commercial tools paywall content indexing, network/cloud/email search, quick switch, signed updates, duplicate tools, previews, report/export workflows, and plugins. Learn what users pay for; avoid cloud/web/AI features that weaken QuickFind's local-first privacy position.
-- Windows Search and IFilter: platform-native content/property extraction remains the broadest file-type bridge, and Microsoft documents property handlers running out-of-process for robustness. Learn from IFilter/property handlers; avoid delegating core filename speed to Windows Search.
+- **voidtools Everything (closed, Windows):** sets the filename-speed/live-index bar; 1.5 adds property indexing (EXIF/audio/dimensions), folder-size indexing, fast sort, custom columns, natural sort, FAT/mapped-drive indexing, ETP federation. Learn: metadata breadth, `**` content include/exclude globs, es.exe flag surface. Avoid: in-RAM content index (hard OOM ceiling — QuickFind's on-disk FTS5 is the win), FTP transport, closed source.
+- **fd + ripgrep (CLI stars):** smart-case default, `-x/-X` parallel exec, human-duration `--changed-within`, `--type` aliases, `--json` event stream, OSC-8 hyperlinks. Learn: make `es.py` feel like a first-class modern CLI. Avoid: nothing — pure parity target.
+- **ripgrep-all (rga):** modular content adapters (Poppler/Pandoc/FFmpeg), recursive archive descent, bounded ZSTD extraction cache. Learn: search text *inside* archive members; document user-defined adapters via `plugin_loader`. Validates QuickFind's cached-extraction design.
+- **Recoll (Xapian):** field query language, "show compiled query" debug, query-time synonyms/stemming decoupled from index, inotify monitor. Learn: the debug panel + synonym table are cheap, distinctive. Avoid: swapping FTS5 for Xapian (FTS5 already has bm25).
+- **DocFetcher / Pro:** portable index repository (USB/cloud-syncable), media-metadata search, preview highlighting. Learn: relocatable self-contained index; QuickFind's `core/portable.py` is a partial head-start. Avoid: Java/Lucene weight.
+- **Listary (commercial, $19.95):** paywalls dark theme, network-drive indexing, advanced syntax, custom actions — all of which QuickFind ships free/MIT. Its dialog Quick-Switch is the most-praised feature; QuickFind mirrors it in `core/dialog_switch.py`. Learn: match Quick-Switch reliability; market the free-vs-paywall contrast.
+- **PowerToys Run / Flow Launcher / Wox:** bottleneck on external indexers (Windows Search / Everything); Flow's content search crashes. Learn: scope prefixes (`>` `=` `?`), frecency ranking, recent-selection recall. Avoid: dependence on someone else's index — QuickFind's owned index is the differentiator.
 
 ## Security, Privacy, and Reliability
-- Verified: `core/content/adapters.py` extracts PDF/DOCX/PPTX/EML/source text in-process; parser crashes are caught, but CPU hangs, hostile parser behavior, and per-file wall-clock isolation are not enforced. py7zr 1.1.3 fixed multiple 7z vulnerabilities, which keeps worker-level archive/content quotas roadmap-worthy.
-- Verified: `core/archives.py` enumerates ZIP/7z members in-process and caches metadata in `core/cache.py`; it does not extract members, but archive metadata parsing still needs timeout/quarantine protection.
-- Verified: `core/cache.py` persists extracted full text in `content_cache.text` and mirrors it into `content_fts`; settings expose roots, extensions, size caps, and diagnostics expose cache size, but there is no purge, retention, per-root removal, or privacy warning for cached sensitive document text.
-- Verified: `build.py` prints pinned runtime versions from `requirements.txt`, but there is no local dependency advisory, license inventory, or SBOM gate for the PyQt/PyInstaller/pdfplumber/py7zr/watchdog stack.
-- Verified: `build.py` deletes `dist/` and `build/` with plain `shutil.rmtree`, and release URLs are rendered without a release-asset verification command.
-- Verified: `core/cache.py:1030` defines `db_update_usn_position()`, but `core/index.py:1945` `USNMonitorThread` only emits changes and `_apply_usn_changes()` batch-syncs file rows; durable `drives.next_usn` is refreshed on full cache saves, leaving crash windows with stale journal checkpoints.
-- Verified: `server/http_server.py` correctly rejects query-string tokens and uses Bearer/Basic/session-cookie auth, but `_session_cookie_header()` lacks `Secure` when HTTPS is enabled, `/auth` has no Origin/Referer guard, and `_send_security_headers()` does not send `Cache-Control: no-store` or `Referrer-Policy` for pages containing search results or auth fields.
-- Verified: `server/http_server.py` logs generic request messages at debug level but has no privacy-preserving audit trail for auth failures, rate limits, denied shared-mode paths, or remote query volume.
-- Verified: `gui/context_menu.py` sends delete actions straight to Recycle Bin with silent/no-confirm flags; this matches the no-confirmation product style but needs success/failure feedback and recovery affordance.
-- Missing guardrails: no redacted support bundle export, no rendered UIA/accessibility smoke run, no schema-versioned settings migration/rollback, no plugin discovery/quarantine boundary, no content-index incremental queue tied to file-change events, no report-grade GUI export with match snippets.
+- **pdfminer.six CVE-2025-64512 (RCE via crafted PDF, Windows high-risk).** Current env has the fixed 20251230, but `requirements.txt` pins only `pdfplumber==0.11.10` and lets pdfminer.six float transitively — a fresh install could regress. Add explicit `pdfminer.six>=20251230`. (Verified; `requirements.txt`.)
+- **PyQt6 is GPLv3-or-commercial; `LICENSE` is MIT.** The distributed exe/MSIX bundles PyQt6, making the shipped work effectively GPLv3 — inconsistent with an MIT badge. The user accepts copyleft, so the low-effort resolution is to relicense the *distributed app* GPLv3 (with Qt/PyQt notices) or add a clear bundled-dependency-license note; a PySide6 (LGPL) migration is the alternative if MIT must hold. (Verified conflict; `LICENSE`, `README.md`.)
+- **Untrusted-doc parsing** already runs in spawned worker isolation with per-file timeouts (`core/worker_isolation.py`, `core/content/sandbox.py`) and py7zr is pinned ≥1.1.3 (past the symlink/zip-slip CVEs) — good posture. Residual: worker blocks the full timeout on an instant crash (existing ROADMAP item); verify lxml entity resolution is disabled for docx/pptx XML.
+- **Regression found and fixed this pass:** `es.py`'s newly-added `-r/--reverse` collided with `-r/--regex`, crashing the CLI at parser build; fixed to `-R` with regression tests (`tests/test_es_cli.py`). Root cause: no test exercised `parse_args`.
+- **Remote/ACL guardrails** already tracked in ROADMAP (per-token ACL not enforced on served responses; single global session token; single-threaded server). No new remote risks surfaced.
 
 ## Architecture Assessment
-- `core/index.py` and `core/cache.py`: add a narrow journal-checkpoint write path after successful monitor batches; keep it per-drive and test journal recycle/idempotent replay.
-- `core/content/adapters.py`, `core/content/indexer.py`, `core/archives.py`: move untrusted extraction/probing into cancellable workers with timeout, byte caps, adapter failure counters, and quarantine metadata.
-- `core/cache.py`, `gui/settings_dialog.py`, `gui/diagnostics_dialog.py`: add content-cache purge/retention controls before expanding extraction depth; SQLite FTS5 supports explicit index deletion/rebuild flows that can make purge testable.
-- `server/http_server.py`: separate operational debug logs from redacted security audit events; record auth/rate-limit/search counts without raw tokens, passwords, or full result paths, and add browser no-store/referrer/HSTS behavior to the existing remote hardening item.
-- `build.py`, `requirements.txt`, `packaging/winget/`: add release verification that proves version, dependency/advisory state, SBOM/license inventory, MSIX signature/hash, appinstaller URL, winget URL/hash, and GitHub release assets agree.
-- `gui/settings_dialog.py`: settings import/export exists, but there is no explicit schema version or pre-migration backup. Add a migration boundary before future settings growth.
-- `core/localization.py`, `gui/help_docs.py`, `gui/settings_dialog.py`: Spanish catalog is a small shell subset; many help/settings/result strings remain literal. Add extraction/linting and pseudo-locale coverage before adding languages.
-- `core/search.py`: modifier plugin API is programmatic only. Add entry-point/manifest loading, disabled-on-error state, and docs/tests before encouraging third-party plugins.
-- `gui/main_window.py`, `gui/results_view.py`, `core/file_list.py`: EFU export exists for file-list interchange and CLI output supports CSV/JSON, but the GUI lacks FileLocator-style report exports with visible columns, content snippets, and reproducible search criteria.
-- Tests: `python -m pytest -q` is verified green at 329 tests, but coverage is mostly unit-level. Add smoke harnesses for rendered UI state, accessibility names, MSIX/update metadata, dependency advisory gates, remote HTTPS/auth audit behavior, content-cache purge, and report export escaping.
+- **CLI (`cli/es.py`)** is the weakest surface relative to peers: no exec, no smart-case, no aggregate output, no format template. Highest-ROI, lowest-risk area to close parity.
+- **Content adapters (`core/content/adapters.py`, `core/archives.py`)** are well-factored for extension; archive *content* descent and user-documented custom adapters are natural next steps that reuse the existing worker model.
+- **Metadata schema (`core/cache.py`)** currently stores name/path/size/dates/attrs/reparse/EA + FTS text. Property indexing (EXIF/ID3/dimensions/folder-size) needs new columns + adapters + results-view columns — the largest but highest-visibility gap vs Everything 1.5.
+- **Packaging (`QuickFind.spec`, `build.py`)** lacks a `VSVersionInfo` resource and uses `upx=True` (both worsen AV/SmartScreen heuristics). `build.py` already scaffolds `--dep-audit`/`--sbom`; wire pip-audit to fail the build and attach a CycloneDX SBOM to releases.
+- **Test gaps:** no test built the `es.py` parser (caused the shipped crash); property/metadata and content-archive-descent are unbuilt so untested. FTS5 branch is under-exercised locally because the dev SQLite (3.49.1) is below the patched minimum and falls back to LIKE — CI should run against a patched SQLite to cover the FTS path.
 
 ## Rejected Ideas
-- Replace SQLite with Xapian/Tantivy/Lucene now: Recoll/DocFetcher show their value, but QuickFind already has SQLite cache/FTS5 fallback and needs benchmarks before a storage-engine rewrite.
-- Default Java/Tika server for all content search: DocFetcher-style broad extraction is useful, but a Java runtime would add distribution and attack-surface cost; keep it optional/plugin-gated.
-- Cloud/AI semantic search as a core feature: Raycast/Fluent/Copernic show market interest, but it conflicts with QuickFind's local-first privacy and would add model/cloud dependencies before trust work is finished.
-- Multi-user shared search without ACL enforcement: shared index products show demand, but QuickFind should not expose shared indexes until ACL semantics and audit logging are explicit.
-- Web/Bing-style default search aggregation: community complaints about Windows Search point in the opposite direction; QuickFind should stay local and deterministic by default.
-- Dependabot/Renovate automation: dependency freshness matters, but this repo's operating rules ban those services; use a local advisory/SBOM gate instead.
-- Encrypted content-cache database as the first privacy step: useful for some users, but purge/retention/transparency controls are simpler, testable, and needed before key-management complexity.
+- **Apache Tika as a content backend** — JVM + REST-server dependency contradicts the lightweight sandboxed-Python-worker model; keep only as an optional exotic-format adapter. (Source: tika-python/tika-client.)
+- **Everything-style in-RAM content index** — the exact design that causes Everything's OOM complaints; QuickFind's on-disk FTS5 is already superior. (Source: voidtools forum OOM threads.)
+- **FTP/ETP transport** — QuickFind's REST/OpenAPI + PWA is a more modern remote surface than FTP; ETP *federation* (multi-host search) is interesting but deferred. (Source: voidtools ETP docs.)
+- **FastCDC content-defined chunking** — real wins only for very large append-heavy files; mtime+hash delta re-index covers ~90% at a fraction of the effort. (Source: FastCDC USENIX ATC16.)
+- **New fuzzy-search subsystem** — QuickFind already ships a `fuzzy:` modifier (`core/search.py`); no gap. (Source: repo.)
+- **FAT/exFAT/ReFS and SMB-network "gaps" from Everything analysis** — already implemented (README: FAT32/exFAT/ReFS via `os.scandir`; SMB via `core/network_shares.py`). Not gaps.
+- **Xapian backend swap** — FTS5 already provides bm25; migration cost unjustified. (Source: recoll.org.)
 
 ## Sources
-Direct OSS and adjacent:
-- https://www.voidtools.com/support/everything/using_everything/
-- https://www.voidtools.com/forum/viewtopic.php?t=9793
-- https://github.com/cboxdoerfer/fsearch
-- https://github.com/cboxdoerfer/fsearch/issues/115
-- https://www.recoll.org/pages/features.html
-- https://www.recoll.org/usermanual/webhelp/docs/RCL.PROGRAM.PYTHONAPI.INTRO.html
-- https://www.recoll.org/usermanual/webhelp/docs/RCL.PROGRAM.PYTHONAPI.UPDATE.EXTINDEXER.html
-- https://docfetcher.sourceforge.io/
-- https://github.com/srwi/EverythingToolbar
-- https://www.flowlauncher.com/plugins/
-- https://github.com/microsoft/PowerToys/issues/32451
+Competitors (OSS/commercial):
+- https://www.voidtools.com/support/everything/searching/
+- https://www.voidtools.com/forum/viewtopic.php?p=35389
+- https://www.voidtools.com/support/everything/etp/
+- https://github.com/voidtools/ES
+- https://www.voidtools.com/support/everything/http/
+- https://www.voidtools.com/forum/viewtopic.php?t=11543
+- https://github.com/sharkdp/fd
+- https://github.com/BurntSushi/ripgrep/blob/master/GUIDE.md
 - https://github.com/phiresky/ripgrep-all
-
-Commercial:
-- https://help.listary.com/quick-switch
+- https://phiresky.github.io/blog/2019/rga--ripgrep-for-zip-targz-docx-odt-epub-jpg/
+- https://github.com/junegunn/fzf
+- https://learn.microsoft.com/en-us/windows/powertoys/run
+- https://github.com/Flow-Launcher/Flow.Launcher/issues/4328
 - https://www.listary.com/pro
-- https://www.mythicsoft.com/filelocatorpro/information/
-- https://mythicsoft.com/filelocatorpro/help/save_results.htm
-- https://www.jam-software.com/ultrasearch
-- https://antibody-software.com/wizfile/about
-- https://copernic.com/en/desktop/pricing/
+- https://www.recoll.org/usermanual/webhelp/docs/RCL.SEARCH.LANG.html
+- https://docfetcherpro.com/features/
 
-Standards and platform APIs:
-- https://learn.microsoft.com/en-us/windows/win32/api/winioctl/ns-winioctl-usn_record_v4
-- https://learn.microsoft.com/en-us/windows/win32/search/-search-ifilter-about
-- https://learn.microsoft.com/en-us/windows/win32/search/-search-3x-wds-extidx-propertyhandlers
-- https://learn.microsoft.com/en-us/windows/msix/app-installer/update-settings
-- https://learn.microsoft.com/en-us/windows/package-manager/package/manifest
-- https://www.sqlite.org/fts5.html
-- https://owasp.org/www-project-desktop-app-security-top-10/
+Platform / techniques:
+- https://learn.microsoft.com/en-us/windows/win32/properties/property-system-overview
+- https://learn.microsoft.com/en-us/uwp/api/windows.storage.search
+- https://alexgarcia.xyz/blog/2024/sqlite-vec-stable-release/index.html
+- https://github.com/asg017/sqlite-vec/issues/25
+- https://tika.apache.org/2.0.0/formats.html
 
-Community, dependency, and advisory:
-- https://pyinstaller.org/en/stable/CHANGES.html
-- https://github.com/miurahr/py7zr/security/advisories/GHSA-gjrg-mpp7-g774
+Security / packaging / deps:
+- https://github.com/pdfminer/pdfminer.six/security/advisories/GHSA-wf5f-4jwr-ppcp
+- https://github.com/advisories/GHSA-m8xw-9x5x-6vh3
+- https://www.pythonguis.com/faq/licensing-differences-between-pyqt6-and-pyside6/
+- https://github.com/pyinstaller/pyinstaller/issues/6754
+- https://learn.microsoft.com/en-us/windows/msix/package/signing-package-overview
+- https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/smartscreen-reputation
 - https://github.com/pypa/pip-audit
-- https://cyclonedx.org/
+- https://doc.qt.io/qt-6/whatsnew611.html
 
 ## Open Questions
-None.
+- License intent: is the distributed binary meant to be MIT (forcing a PySide6 migration) or is GPLv3 for the shipped app acceptable (keep PyQt6, add notices)? Blocks the license fix's direction.
+- Is there appetite for an optional heavyweight dependency (local embedding model, ~hundreds of MB) to enable semantic search, or must QuickFind stay dependency-light by default? Blocks prioritizing the sqlite-vec leapfrog.
+- Target scale for property indexing — is folder-size/EXIF indexing expected on multi-million-file volumes (needs incremental, bounded computation) or only on user-selected roots? Affects the design's complexity tier.
