@@ -78,36 +78,6 @@ NTFS-MFT-backed instant file search (PyQt6 + SQLite FTS5). Voidtools Everything 
 ### 2026-07-01 External competitive research
 
 #### P2 — CLI parity, workflow, packaging (quick wins first)
-- [ ] P2 — `es.py` smart-case default (uppercase in query ⇒ case-sensitive)
-  Why: fd and ripgrep both default to smart-case; QuickFind's `-i/--case` is opt-in only, so scripts and users get surprising case-insensitive behavior with mixed-case queries.
-  Evidence: github.com/sharkdp/fd; mankier rg `-S`.
-  Touches: cli/es.py, core/search.py (case-mode selection).
-  Acceptance: `es Foo` is case-sensitive; `es foo` is insensitive; explicit `-i`/`nocase:` still override.
-  Complexity: S
-- [ ] P2 — `es.py` aggregate output: `--count` (result count) and `--total-size`
-  Why: es.exe ships `-get-result-count`/`-get-total-size`; these are the two most-scripted-against outputs and QuickFind's CLI has neither.
-  Evidence: github.com/voidtools/ES.
-  Touches: cli/es.py.
-  Acceptance: `es <q> --count` prints only the integer count; `--total-size` prints summed bytes; both suppress the result list and honor filters.
-  Complexity: S
-- [ ] P2 — `es.py` `--format` template and `--hyperlink` (OSC-8) output
-  Why: fd/rg let scripts template output and emit clickable terminal paths; QuickFind only has fixed plain/CSV/JSON.
-  Evidence: github.com/sharkdp/fd; mankier rg `--hyperlink-format`.
-  Touches: cli/es.py.
-  Acceptance: `--format "{path}\t{size}"` renders per-result placeholders; `--hyperlink` wraps paths in OSC-8 escapes in a TTY.
-  Complexity: M
-- [ ] P2 — `es.py` `-x/--exec` and `-X/--exec-batch`
-  Why: running a command per result (parallel) or once over all results is the single biggest table-stakes miss vs fd; without it QuickFind's CLI can't drive pipelines.
-  Evidence: github.com/sharkdp/fd.
-  Touches: cli/es.py.
-  Acceptance: `es <q> -x echo {}` runs per result with `{}`/`{/}`/`{.}` placeholders; `-X` runs one command with all results appended; non-zero child exit is surfaced.
-  Complexity: M
-- [ ] P2 — `es.py` TSV/EFU export and `--no-header`
-  Why: es.exe exports CSV/TSV/TXT/EFU; QuickFind has CSV/JSON only and an EFU importer but no CLI EFU export.
-  Evidence: github.com/voidtools/ES; core/file_list.py (EFU writer exists).
-  Touches: cli/es.py, core/file_list.py.
-  Acceptance: `--tsv`, `--export-efu <path>`, and `--no-header` all produce correct output reusing the existing EFU writer.
-  Complexity: S
 - [ ] P2 — Content search inside archive members (rga-style descent)
   Why: `archive:` currently searches member metadata only; rga searches extracted text inside zip/7z members, which is the natural next step and reuses the sandboxed worker model.
   Evidence: github.com/phiresky/ripgrep-all; core/archives.py, core/content/adapters.py.

@@ -34,6 +34,8 @@ import csv
 import json
 import argparse
 import multiprocessing
+import shlex
+import subprocess
 import time
 
 # Add parent directory to path
@@ -67,7 +69,24 @@ def parse_args():
     parser.add_argument('-n', '--max', type=int, default=100, help='Max results')
     parser.add_argument('-o', '--offset', type=int, default=0, help='Skip N results')
     parser.add_argument('--csv', action='store_true', help='CSV output')
+    parser.add_argument('--tsv', action='store_true', help='Tab-separated output')
     parser.add_argument('--json', action='store_true', help='JSON output')
+    parser.add_argument('--no-header', action='store_true', help='Omit the header row in CSV/TSV output')
+    parser.add_argument('--export-efu', metavar='PATH', help='Write results to an EFU file list at PATH')
+    parser.add_argument('--format', dest='format_template', metavar='TEMPLATE',
+                        help='Format each result with placeholders: '
+                             '{path} {name} {dir} {size} {ext} {dm} {dc}')
+    parser.add_argument('--hyperlink', action='store_true',
+                        help='Emit OSC-8 clickable file:// hyperlinks (TTY only)')
+    parser.add_argument('--count', action='store_true',
+                        help='Print only the number of results')
+    parser.add_argument('--total-size', action='store_true',
+                        help='Print only the summed size of results in bytes')
+    parser.add_argument('-x', '--exec', dest='exec_cmd', metavar='CMD',
+                        help='Run CMD once per result. Placeholders: {} {/} {//} {.} {/.} '
+                             '(a bare {} is appended if none are present)')
+    parser.add_argument('-X', '--exec-batch', dest='exec_batch', metavar='CMD',
+                        help='Run CMD once with all result paths (substituted for {} or appended)')
     parser.add_argument('--drives', type=str, help='Comma-separated drive letters (e.g., C,D)')
     parser.add_argument('--no-index-time', action='store_true', help='Hide indexing time')
     parser.add_argument('--reindex', action='store_true', help='Force full reindex (ignore cache)')
@@ -163,23 +182,131 @@ def main():
     if args.offset:
         results = results[args.offset:]
 
+    exit_code = 0
     try:
-        # Output
-        if args.json:
+        # Aggregate outputs suppress the result listing.
+        if args.count:
+            print(len(results))
+        elif args.total_size:
+            print(sum(int(e.size or 0) for e in results))
+        elif args.export_efu:
+            from core.file_list import save_efu
+            save_efu(results, args.export_efu, file_index)
+            print(f"Wrote {len(results)} entries to {args.export_efu}", file=sys.stderr)
+        elif args.exec_cmd:
+            exit_code = _exec_per_result(args.exec_cmd, results, file_index)
+        elif args.exec_batch:
+            exit_code = _exec_batch(args.exec_batch, results, file_index)
+        elif args.json:
             _output_json(results, file_index)
-        elif args.csv:
-            _output_csv(results, file_index)
+        elif args.csv or args.tsv:
+            _output_csv(results, file_index, delimiter='\t' if args.tsv else ',',
+                        header=not args.no_header)
+        elif args.format_template:
+            _output_format(results, file_index, args.format_template)
         else:
-            _output_text(results, file_index)
+            _output_text(results, file_index, hyperlink=args.hyperlink)
     finally:
         file_index.shutdown()
         close_all_connections()
+    sys.exit(exit_code)
 
 
-def _output_text(results, index):
+def _osc8(path: str, text: str) -> str:
+    """Wrap text in an OSC-8 hyperlink pointing at file://<abs path>."""
+    uri = 'file:///' + os.path.abspath(path).replace('\\', '/').lstrip('/')
+    return f"\x1b]8;;{uri}\x1b\\{text}\x1b]8;;\x1b\\"
+
+
+def _output_text(results, index, hyperlink=False):
     """Plain text output - one path per line."""
+    use_links = hyperlink and sys.stdout.isatty()
     for entry in results:
-        print(entry.get_path(index))
+        path = entry.get_path(index)
+        print(_osc8(path, path) if use_links else path)
+
+
+def _placeholders(path: str) -> dict:
+    """fd-style path placeholder substitutions."""
+    base = os.path.basename(path)
+    return {
+        '{}': path,
+        '{/}': base,
+        '{//}': os.path.dirname(path),
+        '{.}': os.path.splitext(path)[0],
+        '{/.}': os.path.splitext(base)[0],
+    }
+
+
+def _apply_placeholders(token: str, subs: dict) -> str:
+    for key, value in subs.items():
+        token = token.replace(key, value)
+    return token
+
+
+def _exec_per_result(template: str, results, index) -> int:
+    """Run the command once per result, substituting fd-style placeholders.
+
+    Runs sequentially so child exit codes and output are not interleaved; the
+    returned code is the highest child exit code seen.
+    """
+    tokens = shlex.split(template, posix=(os.name != 'nt'))
+    has_placeholder = any('{' in t for t in tokens)
+    worst = 0
+    for entry in results:
+        subs = _placeholders(entry.get_path(index))
+        cmd = [_apply_placeholders(t, subs) for t in tokens]
+        if not has_placeholder:
+            cmd.append(subs['{}'])
+        try:
+            worst = max(worst, subprocess.run(cmd).returncode)
+        except OSError as exc:
+            print(f"exec failed: {exc}", file=sys.stderr)
+            worst = max(worst, 1)
+    return worst
+
+
+def _exec_batch(template: str, results, index) -> int:
+    """Run the command once with all result paths substituted for {} or appended."""
+    paths = [e.get_path(index) for e in results]
+    if not paths:
+        return 0
+    tokens = shlex.split(template, posix=(os.name != 'nt'))
+    cmd = []
+    substituted = False
+    for token in tokens:
+        if '{}' in token:
+            cmd.extend(paths)
+            substituted = True
+        else:
+            cmd.append(token)
+    if not substituted:
+        cmd.extend(paths)
+    try:
+        return subprocess.run(cmd).returncode
+    except OSError as exc:
+        print(f"exec failed: {exc}", file=sys.stderr)
+        return 1
+
+
+def _output_format(results, index, template):
+    """Render each result with a {field} template."""
+    for entry in results:
+        path = entry.get_path(index)
+        fields = {
+            'path': path,
+            'name': entry.name,
+            'dir': index.resolve_parent_path(entry.drive, entry.parent_frn),
+            'size': entry.size,
+            'ext': entry.extension,
+            'dm': entry.date_modified.isoformat() if entry.date_modified else '',
+            'dc': entry.date_created.isoformat() if entry.date_created else '',
+        }
+        try:
+            print(template.format(**fields))
+        except (KeyError, IndexError, ValueError):
+            # Unknown placeholder — emit the template literally rather than crash.
+            print(template)
 
 
 _CSV_INJECTION_PREFIXES = ('=', '+', '-', '@', '\t', '\r')
@@ -193,10 +320,11 @@ def _csv_safe(value):
     return value
 
 
-def _output_csv(results, index):
-    """CSV output with headers."""
-    writer = csv.writer(sys.stdout)
-    writer.writerow(['Name', 'Path', 'Size', 'Date Modified', 'Type', 'Attributes'])
+def _output_csv(results, index, delimiter=',', header=True):
+    """CSV/TSV output, optionally with a header row."""
+    writer = csv.writer(sys.stdout, delimiter=delimiter)
+    if header:
+        writer.writerow(['Name', 'Path', 'Size', 'Date Modified', 'Type', 'Attributes'])
 
     for entry in results:
         path = index.resolve_parent_path(entry.drive, entry.parent_frn)
