@@ -429,6 +429,47 @@ def test_content_index_job_honors_roots_extensions_and_cache(temp_cache, tmp_pat
     assert cache.search_content_cache("needle") == [str(match)]
 
 
+def test_content_search_descends_into_archive_members(temp_cache, tmp_path):
+    import zipfile
+    zip_path = tmp_path / "bundle.zip"
+    with zipfile.ZipFile(zip_path, "w") as archive:
+        archive.writestr("notes/report.txt", "alpha zipneedle omega")
+        archive.writestr("image.bin", "binary blob, unsupported extension")
+    archive_entry = _file_entry(zip_path)
+
+    settings = ContentIndexSettings(extensions=frozenset({"txt"}), max_cache_bytes=100_000)
+    stats = ContentIndexJob(settings).run([archive_entry], lambda e: e.get_path(None))
+    # Only the .txt member is content-supported.
+    assert stats.indexed == 1
+
+    engine = SearchEngine(TempIndex([archive_entry]))
+    results = engine.search("content:zipneedle")
+    names = [e.name for e in results]
+    assert "report.txt" in names
+    member = next(e for e in results if e.name == "report.txt")
+    assert member.get_path(None).endswith("bundle.zip\\notes\\report.txt")
+
+
+def test_archive_member_content_dropped_when_archive_changes(temp_cache, tmp_path):
+    import os
+    import zipfile
+    zip_path = tmp_path / "bundle.zip"
+    with zipfile.ZipFile(zip_path, "w") as archive:
+        archive.writestr("a.txt", "alpha zipneedle omega")
+    archive_entry = _file_entry(zip_path)
+    ContentIndexJob(ContentIndexSettings(extensions=frozenset({"txt"}))).run(
+        [archive_entry], lambda e: e.get_path(None)
+    )
+    # Mutate the archive so its size/mtime no longer match the cached freshness.
+    with zipfile.ZipFile(zip_path, "w") as archive:
+        archive.writestr("a.txt", "completely different content here now")
+    future = zip_path.stat().st_mtime + 100
+    os.utime(zip_path, (future, future))
+
+    results = SearchEngine(TempIndex([archive_entry])).search("content:zipneedle")
+    assert [e for e in results if e.name == "a.txt"] == []
+
+
 def test_content_index_job_enforces_cache_quota(temp_cache, tmp_path):
     path = tmp_path / "large.txt"
     path.write_text("alpha needle omega", encoding="utf-8")

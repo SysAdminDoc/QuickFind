@@ -22,11 +22,26 @@ from typing import Optional, Callable, Mapping
 from core.archives import is_supported_archive, iter_archive_entries
 from core.index import FileEntry, FileIndex
 from core.query_slots import expand_query_slots
-from core.ntfs import FILE_ATTRIBUTE_REPARSE_POINT
+from core.ntfs import FILE_ATTRIBUTE_REPARSE_POINT, FILE_ATTRIBUTE_ARCHIVE
 from core.utils import parse_size as _parse_size
 from core.utils import natural_key
 
 logger = logging.getLogger('QuickFind.Search')
+
+
+def _split_archive_member_path(path: str):
+    r"""Split 'C:\d\a.zip\sub\x.txt' into ('C:\d\a.zip', 'sub\x.txt').
+
+    Returns None when the path is not inside a supported (.zip/.7z) archive.
+    """
+    lower = path.lower()
+    for ext in ('.zip', '.7z'):
+        marker = ext + '\\'
+        idx = lower.find(marker)
+        if idx != -1:
+            boundary = idx + len(ext)
+            return path[:boundary], path[boundary + 1:]
+    return None
 
 CASE_MODE_SMART = "smart"
 CASE_MODE_INSENSITIVE = "insensitive"
@@ -1116,6 +1131,17 @@ class SearchEngine:
             ):
                 results.append(entry)
 
+        # Surface content hits inside archive members (virtual paths that have no
+        # real FileEntry). They still pass the non-content constraints.
+        if content_cache:
+            for member_entry in self._archive_member_hits(content_cache):
+                if self._matches(
+                    member_entry, parsed_without_content, term_matchers,
+                    exclude_matchers, or_matchers, filter_exclude_paths,
+                    boolean_matcher,
+                ):
+                    results.append(member_entry)
+
         if cancel_check and cancel_check():
             return results
 
@@ -1129,6 +1155,48 @@ class SearchEngine:
             results = results[:limit]
 
         return results
+
+    def _archive_member_hits(self, content_cache: dict) -> list:
+        """Synthesize virtual FileEntry results for matched archive members.
+
+        A member hit is used only if its archive still exists and its size+mtime
+        match the cached freshness (member content is keyed by the archive), so
+        stale content from a changed archive is dropped.
+        """
+        synthesized = []
+        seen = set()
+        freshness = content_cache['freshness']
+        for path_key, hit in content_cache['hits'].items():
+            split = _split_archive_member_path(hit.path)
+            if split is None:
+                continue
+            archive_path, member_path = split
+            if hit.path in seen:
+                continue
+            fresh = freshness.get(path_key)
+            if fresh is None:
+                continue
+            try:
+                st = os.stat(archive_path)
+            except OSError:
+                continue
+            if (st.st_size, int(st.st_mtime * 1000)) != (fresh[0], fresh[1]):
+                continue  # archive changed since the member was indexed
+            seen.add(hit.path)
+            name = member_path.rsplit('\\', 1)[-1]
+            entry = FileEntry(
+                frn=hash(hit.path) & 0xFFFFFFFFFFFF,
+                parent_frn=0,
+                name=name,
+                drive=(archive_path[:1] or 'C'),
+                attributes=FILE_ATTRIBUTE_ARCHIVE,
+            )
+            entry._path = hit.path
+            entry._stat_loaded = True
+            entry.content_snippet = hit.snippet
+            entry.content_rank = hit.rank
+            synthesized.append(entry)
+        return synthesized
 
     def _content_cache_filter(self, parsed: ParsedQuery) -> Optional[dict]:
         if not parsed.content_search:

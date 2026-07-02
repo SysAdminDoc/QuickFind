@@ -21,6 +21,11 @@ from core.content.sandbox import (
     ExtractionOutcome,
     extract_text_with_diagnostics,
 )
+from core.archives import (
+    extract_archive_member_sandboxed,
+    is_supported_archive,
+    read_archive_members_sandboxed,
+)
 from core.index import FileEntry
 
 
@@ -113,6 +118,12 @@ class ContentIndexJob:
                 stats.skipped += 1
                 continue
 
+            if is_supported_archive(entry):
+                # Descend into archive members: extract and cache each member's
+                # text under a virtual "archive\member" path.
+                self._index_archive_members(entry, path, stats)
+                continue
+
             adapter = adapter_for_path(path)
             if adapter is None or _extension(path) not in allowed_extensions:
                 stats.skipped += 1
@@ -169,6 +180,74 @@ class ContentIndexJob:
         if self._progress_callback:
             self._progress_callback(stats)
         return stats
+
+    def _index_archive_members(self, archive_entry: FileEntry, archive_path: str,
+                               stats: ContentIndexStats) -> None:
+        """Extract and cache text for content-supported members of one archive.
+
+        Member content is keyed by the archive's own size+mtime so it invalidates
+        as a unit when the archive changes; malformed members fail closed.
+        """
+        try:
+            st = os.stat(archive_path)
+        except (OSError, PermissionError) as exc:
+            stats.record_failure("archive", str(exc))
+            return
+        archive_size = st.st_size
+        archive_mtime_ms = int(st.st_mtime * 1000)
+        allowed = self._settings.allowed_extensions
+
+        outcome = read_archive_members_sandboxed(
+            archive_path, archive_entry.extension,
+            timeout_seconds=self._settings.timeout_seconds,
+        )
+        for member in outcome.members:
+            if self._cancel_check():
+                stats.cancelled = True
+                break
+            if member.get("is_dir"):
+                continue
+            member_path = member["member_path"]
+            member_ext = _extension(member_path)
+            if member_ext not in allowed:
+                continue
+            if int(member.get("size") or 0) > self._settings.max_file_bytes:
+                stats.skipped += 1
+                continue
+
+            virtual_path = f"{archive_path}\\{member_path}"
+            if get_content_cache(virtual_path, archive_size, archive_mtime_ms) is not None:
+                stats.cached += 1
+                continue
+            if stats.bytes_cached >= self._settings.max_cache_bytes:
+                stats.quota_skipped += 1
+                continue
+
+            content, error = extract_archive_member_sandboxed(
+                archive_path, archive_entry.extension, member_path, member_ext,
+                max_chars=self._settings.max_chars,
+                max_bytes=self._settings.max_file_bytes,
+                timeout_seconds=self._settings.timeout_seconds,
+            )
+            if content is None:
+                if error:
+                    stats.record_failure(f"archive:{member_ext}", error)
+                continue
+
+            text_bytes = len(content.text.encode("utf-8", errors="ignore"))
+            if stats.bytes_cached + text_bytes > self._settings.max_cache_bytes:
+                stats.quota_skipped += 1
+                continue
+
+            upsert_content_cache(
+                path=virtual_path,
+                size=archive_size,
+                modified_ms=archive_mtime_ms,
+                extractor=content.extractor,
+                text=content.text,
+            )
+            stats.indexed += 1
+            stats.bytes_cached += text_bytes
 
 
 def _glob_to_regex(pattern: str) -> "re.Pattern[str]":

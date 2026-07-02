@@ -38,14 +38,6 @@ NTFS-MFT-backed instant file search (PyQt6 + SQLite FTS5). Voidtools Everything 
 
 ### 2026-07-01 External competitive research
 
-#### P2 — CLI parity, workflow, packaging (quick wins first)
-- [ ] P2 — Content search inside archive members (rga-style descent)
-  Why: `archive:` currently searches member metadata only; rga searches extracted text inside zip/7z members, which is the natural next step and reuses the sandboxed worker model.
-  Evidence: github.com/phiresky/ripgrep-all; core/archives.py, core/content/adapters.py.
-  Touches: core/archives.py, core/content/indexer.py, core/content/adapters.py, core/cache.py (bound + compress the extraction cache).
-  Acceptance: `content:` matches text inside supported archive members; extraction cache is size-capped; malformed members fail closed in the worker.
-  Complexity: L
-
 #### P3 — Metadata breadth, search UX, larger bets
 - [ ] P3 — Query-time synonyms / expansion table
   Why: Recoll applies a synonyms file at query time for higher recall without reindexing; cheap and distinctive for document search.

@@ -113,6 +113,92 @@ def _read_archive_members_direct(archive_path: str, extension: str) -> list[dict
     return []
 
 
+# Per-member content extraction cap (matches the default single-file content cap).
+MEMBER_CONTENT_MAX_BYTES = 10 * 1024 * 1024
+
+
+def extract_archive_member_sandboxed(
+    archive_path: str,
+    extension: str,
+    member_path: str,
+    member_ext: str,
+    max_chars: int,
+    max_bytes: int = MEMBER_CONTENT_MAX_BYTES,
+    timeout_seconds: float = DEFAULT_ARCHIVE_TIMEOUT_SECONDS,
+):
+    """Extract text from a single archive member in an isolated worker.
+
+    Returns (ExtractedContent | None, error). Malformed members, oversized
+    members, and parser crashes fail closed (None) without touching the parent.
+    """
+    outcome = run_in_worker(
+        _extract_member_text_direct,
+        archive_path,
+        extension,
+        member_path,
+        member_ext,
+        max_chars,
+        max_bytes,
+        timeout_seconds=timeout_seconds,
+    )
+    if not outcome.ok:
+        return None, outcome.error
+    return outcome.value, ""
+
+
+def _read_member_bytes(archive_path: str, extension: str, member_path: str,
+                       max_bytes: int):
+    """Return a member's bytes (up to max_bytes), or None if missing/oversized."""
+    if extension == 'zip':
+        with zipfile.ZipFile(archive_path, 'r') as archive:
+            for info in archive.infolist():
+                if info.is_dir():
+                    continue
+                if _normalize_member_path(info.filename) != member_path:
+                    continue
+                if info.file_size > max_bytes:
+                    return None
+                with archive.open(info) as fh:
+                    return fh.read(max_bytes)
+        return None
+    if extension == '7z':
+        if py7zr is None:
+            return None
+        with py7zr.SevenZipFile(archive_path, 'r') as archive:
+            targets = [
+                name for name in archive.getnames()
+                if _normalize_member_path(name) == member_path
+            ]
+            if not targets:
+                return None
+            extracted = archive.read(targets)
+            buffer = extracted.get(targets[0])
+            if buffer is None:
+                return None
+            return buffer.read(max_bytes)
+    return None
+
+
+def _extract_member_text_direct(archive_path: str, extension: str, member_path: str,
+                                member_ext: str, max_chars: int, max_bytes: int):
+    import tempfile
+    from core.content.adapters import extract_text
+
+    data = _read_member_bytes(archive_path, extension, member_path, max_bytes)
+    if not data:
+        return None
+    fd, tmp_path = tempfile.mkstemp(suffix=f".{member_ext}" if member_ext else "")
+    try:
+        with os.fdopen(fd, 'wb') as fh:
+            fh.write(data)
+        return extract_text(tmp_path, max_chars=max_chars)
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+
+
 def _iter_zip_members(archive_path: str):
     with zipfile.ZipFile(archive_path, 'r') as archive:
         for info in archive.infolist():
