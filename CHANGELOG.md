@@ -2,7 +2,7 @@
 
 All notable changes to QuickFind will be documented in this file.
 
-## [Unreleased]
+## [v0.8.59] - 2026-07-02
 
 - Query-time synonym expansion: an optional `~/.quickfind/synonyms.json` (term -> [synonyms]) expands a query term into an OR group so any synonym matches. Disabled until the file exists.
 - `content:` search now descends into archive members: text inside supported zip/7z members is extracted in an isolated worker (malformed/oversized members fail closed), cached under a virtual `archive\member` path keyed by the archive's size+mtime, and surfaced as results that drop automatically when the archive changes.

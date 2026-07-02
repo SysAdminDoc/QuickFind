@@ -1,14 +1,14 @@
-# QuickFind v0.8.58
+# QuickFind v0.8.59
 
 Lightning-fast file search for Windows, powered by NTFS MFT + USN Journal.
 
 An open-source alternative to [Voidtools Everything](https://www.voidtools.com/), built with Python and PyQt6 for extensibility and customization.
 
-![Version](https://img.shields.io/badge/Version-v0.8.58-blueviolet)
+![Version](https://img.shields.io/badge/Version-v0.8.59-blueviolet)
 ![Python](https://img.shields.io/badge/Python-3.10+-blue)
 ![License](https://img.shields.io/badge/License-MIT-green)
 ![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey)
-![Tests](https://img.shields.io/badge/Tests-557%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/Tests-577%20passing-brightgreen)
 
 ## Features
 
@@ -82,7 +82,7 @@ An open-source alternative to [Voidtools Everything](https://www.voidtools.com/)
 - **Search modifier plugin API** registers custom modifier parsers, aliases, and per-entry predicates through `core.search.SearchModifierPlugin`
 - **Everything import hardening** — malformed CSV rows and invalid JSON are rejected before atomic filter/bookmark replacement
 - **Log rotation** — `RotatingFileHandler` with 5 MB max and 3 backups
-- **557 automated tests** covering startup dependency handling, cross-platform engine selection, POSIX root indexing, build/runtime matrix reporting, support bundle redaction/export, settings schema migration/rollback, recoverable delete feedback, rendered accessibility smoke coverage, release artifact checks, SQLite/FTS5 version gates, Finder-style path columns, quick preview popovers, custom search modifier plugins, theme packs, localization, accessibility metadata, offline help docs, inline file diff, Open With discovery, saved query slot expansion, bookmark workspace roots, nested boolean query parsing, hash duplicate detection, broken link/shortcut finders, Git dirty worktree filtering, USN checkpoint durability, remote REST docs/OpenAPI, remote web UI cards/filters, remote auth/CORS hardening, remote same-origin session checks, SMB/UNC network-share indexing, EFU refresh scheduling, EML/source-code content extraction, optional PDF OCR/Windows IFilter fallback, parser worker isolation, preview matched-line highlighting, Everything import validation, index/cache/service diagnostics, removable-drive stale state, dialog Quick Switch helpers, link/junction traversal loop guards, global exclude rules, reparse/EA metadata persistence, case-mode matching policy, content indexing jobs/quotas/diagnostics, content search ranking/snippets, search parsing, archive metadata caching, content adapters/cache, service IPC, duplicate detection, MFT record parsing, privilege lifecycle, settings validation, index mode UI state, results-view cache bounds, cache helpers, remote server configuration, MSIX/App Installer/winget packaging, and ignore patterns
+- **577 automated tests** covering startup dependency handling, cross-platform engine selection, POSIX root indexing, build/runtime matrix reporting, support bundle redaction/export, settings schema migration/rollback, recoverable delete feedback, rendered accessibility smoke coverage, release artifact checks, SQLite/FTS5 version gates, Finder-style path columns, quick preview popovers, custom search modifier plugins, theme packs, localization, accessibility metadata, offline help docs, inline file diff, Open With discovery, saved query slot expansion, bookmark workspace roots, nested boolean query parsing, hash duplicate detection, broken link/shortcut finders, Git dirty worktree filtering, USN checkpoint durability, remote REST docs/OpenAPI, remote web UI cards/filters, remote auth/CORS hardening, remote same-origin session checks, SMB/UNC network-share indexing, EFU refresh scheduling, EML/source-code content extraction, optional PDF OCR/Windows IFilter fallback, parser worker isolation, preview matched-line highlighting, Everything import validation, index/cache/service diagnostics, removable-drive stale state, dialog Quick Switch helpers, link/junction traversal loop guards, global exclude rules, reparse/EA metadata persistence, case-mode matching policy, content indexing jobs/quotas/diagnostics, content search ranking/snippets, search parsing, archive metadata caching, content adapters/cache, service IPC, duplicate detection, MFT record parsing, privilege lifecycle, settings validation, index mode UI state, results-view cache bounds, cache helpers, remote server configuration, MSIX/App Installer/winget packaging, and ignore patterns
 - **PyInstaller and MSIX build script** for single-file, single-folder, App Installer, and winget distribution
 
 ## Requirements
@@ -93,7 +93,7 @@ An open-source alternative to [Voidtools Everything](https://www.voidtools.com/)
 
 ## Supported Runtime Matrix
 
-| Component | Supported | Tested in v0.8.58 |
+| Component | Supported | Tested in v0.8.59 |
 |-----------|-----------|------------------|
 | OS | Windows 10/11 | Windows 10.0.26100 |
 | Python | 3.10+ | 3.11.9 |
@@ -328,7 +328,7 @@ QuickFind/
 ## Testing
 
 ```bash
-# Run the test suite (557 tests)
+# Run the test suite (577 tests)
 python -m pytest tests/ -v
 ```
 
