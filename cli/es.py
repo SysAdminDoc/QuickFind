@@ -62,7 +62,7 @@ def parse_args():
     parser.add_argument('-s', '--sort', default='name',
                         choices=['name', 'path', 'size', 'dm', 'dc', 'ext'],
                         help='Sort field')
-    parser.add_argument('-r', '--reverse', action='store_true',
+    parser.add_argument('-R', '--reverse', action='store_true',
                         help='Reverse the sort order (default is ascending)')
     parser.add_argument('-n', '--max', type=int, default=100, help='Max results')
     parser.add_argument('-o', '--offset', type=int, default=0, help='Skip N results')
