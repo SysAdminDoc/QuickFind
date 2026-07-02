@@ -1046,6 +1046,7 @@ class SearchEngine:
                query_slots: Optional[Mapping[str, str]] = None) -> list[FileEntry]:
         """Execute a search and return matching FileEntry results."""
         parsed = parse_query(query, base_options, query_slots=query_slots)
+        self._apply_synonyms(parsed)
         if max_results:
             parsed.options.max_results = max_results
 
@@ -1075,6 +1076,26 @@ class SearchEngine:
 
         # Fall back to in-memory search
         return self._memory_search(parsed, active_filter, cancel_check)
+
+    def _apply_synonyms(self, parsed: ParsedQuery) -> None:
+        """Expand plain terms into OR groups using the user synonyms file.
+
+        Disabled unless ~/.quickfind/synonyms.json exists; skipped for boolean
+        expressions (which have their own term structure).
+        """
+        if not parsed.terms or parsed.boolean_expression is not None:
+            return
+        try:
+            from core.synonyms import load_synonyms, expand_query_terms
+            synonyms = load_synonyms()
+            if not synonyms:
+                return
+            remaining, groups = expand_query_terms(parsed.terms, synonyms)
+            if groups:
+                parsed.terms = remaining
+                parsed.or_groups = parsed.or_groups + groups
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.debug("Synonym expansion skipped: %s", exc)
 
     def _memory_search(self, parsed: ParsedQuery,
                        active_filter: Optional[SearchFilter],

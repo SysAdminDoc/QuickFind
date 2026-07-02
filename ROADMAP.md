@@ -39,12 +39,6 @@ NTFS-MFT-backed instant file search (PyQt6 + SQLite FTS5). Voidtools Everything 
 ### 2026-07-01 External competitive research
 
 #### P3 — Metadata breadth, search UX, larger bets
-- [ ] P3 — Query-time synonyms / expansion table
-  Why: Recoll applies a synonyms file at query time for higher recall without reindexing; cheap and distinctive for document search.
-  Evidence: recoll.org Python API (synonyms).
-  Touches: core/search.py (query expansion), a user-editable synonyms store, settings.
-  Acceptance: with a synonyms entry, a query for one term also matches its configured synonyms; disabled by default.
-  Complexity: M
 - [ ] P3 — Property/metadata indexing: image dimensions + EXIF, audio (ID3) tags
   Why: Everything 1.5's headline feature and DocFetcher indexes media metadata; QuickFind indexes no rich file properties, only name/size/dates/attrs + FTS text.
   Evidence: voidtools 1.5 properties thread (t=9788); docfetcher.sourceforge.io.
