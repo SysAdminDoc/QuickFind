@@ -90,6 +90,8 @@ def parse_args():
     parser.add_argument('--drives', type=str, help='Comma-separated drive letters (e.g., C,D)')
     parser.add_argument('--no-index-time', action='store_true', help='Hide indexing time')
     parser.add_argument('--reindex', action='store_true', help='Force full reindex (ignore cache)')
+    parser.add_argument('--explain', action='store_true',
+                        help='Print how the query parses (terms, modifiers, filters) and exit')
 
     return parser.parse_args()
 
@@ -102,6 +104,14 @@ def main():
         print("Usage: es <search-query>", file=sys.stderr)
         print("Try 'es --help' for more information.", file=sys.stderr)
         sys.exit(1)
+
+    if args.explain:
+        # Parsing needs no index, so answer immediately.
+        from core.search import explain_query
+        info = explain_query(query, query_slots=load_saved_query_slots())
+        json.dump(info, sys.stdout, indent=2)
+        print()
+        return
 
     file_index = FileIndex()
 

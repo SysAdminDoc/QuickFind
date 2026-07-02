@@ -65,6 +65,10 @@ def _get_connection() -> sqlite3.Connection:
         conn.execute("PRAGMA cache_size=-16000")
         conn.execute("PRAGMA temp_store=MEMORY")
         conn.execute("PRAGMA mmap_size=268435456")
+        # Natural ordering so name/path sorts match the in-memory engine
+        # (e.g. file2 before file10).
+        from core.utils import natural_collation
+        conn.create_collation("NATURAL", natural_collation)
     except Exception:
         conn.close()
         raise
@@ -1263,8 +1267,8 @@ def db_search(query: str, match_path: bool = False,
 
     # Validate sort column
     valid_sorts = {
-        'name': 'e.name COLLATE NOCASE',
-        'path': 'e.path COLLATE NOCASE',
+        'name': 'e.name COLLATE NATURAL',
+        'path': 'e.path COLLATE NATURAL',
         'size': 'e.size',
         'date_modified_ms': 'e.date_modified_ms',
         'date_created_ms': 'e.date_created_ms',

@@ -70,18 +70,6 @@ NTFS-MFT-backed instant file search (PyQt6 + SQLite FTS5). Voidtools Everything 
   Complexity: M
 
 #### P3 — Metadata breadth, search UX, larger bets
-- [ ] P3 — Natural (human) sort order for name/path columns
-  Why: Everything defaults to natural sort (file2 < file10); QuickFind's lexical sort orders file10 before file2, which power users notice immediately.
-  Evidence: voidtools 1.5 thread (p=35389).
-  Touches: core/search.py sort comparators, cache.py ORDER BY (or a natural-key collation), gui/results_view.py.
-  Acceptance: sorting by name orders `file2` before `file10`; toggleable if lexical is needed.
-  Complexity: S
-- [ ] P3 — "Show compiled query" debug panel
-  Why: Recoll exposes the parsed/compiled query so users can understand why a search matched; QuickFind's rich modifier parser is opaque when a query misbehaves.
-  Evidence: recoll.org query-language docs.
-  Touches: core/search.py (expose parsed structure), a read-only GUI panel + `es.py --explain`.
-  Acceptance: a query can be inspected to show parsed modifiers, terms, and the resulting FTS5 MATCH / filter predicates.
-  Complexity: S
 - [ ] P3 — Query-time synonyms / expansion table
   Why: Recoll applies a synonyms file at query time for higher recall without reindexing; cheap and distinctive for document search.
   Evidence: recoll.org Python API (synonyms).

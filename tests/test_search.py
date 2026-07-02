@@ -207,6 +207,27 @@ class TestParseQuery:
         assert parsed.date_create_after is not None
         assert parsed.date_create_before is None
 
+
+def test_explain_query_summarizes_modifiers():
+    from core.search import explain_query
+    info = explain_query("report ext:pdf size:>1mb")
+    assert info["terms"] == ["report"]
+    assert info["ext_filter"] == ["pdf"]
+    assert info["size_min"] == 1048576
+    # Default/empty constraints are omitted for readability.
+    assert "parent_filter" not in info
+    assert "content_search" not in info
+
+
+def test_natural_key_orders_numbers_humanly():
+    from core.utils import natural_key, natural_collation
+    names = ["file10.txt", "file2.txt", "file1.txt", "File20.txt"]
+    ordered = sorted(names, key=natural_key)
+    assert ordered == ["file1.txt", "file2.txt", "file10.txt", "File20.txt"]
+    assert natural_collation("file2", "file10") == -1
+    assert natural_collation("file10", "file2") == 1
+    assert natural_collation("abc", "abc") == 0
+
     def test_path_modifier(self):
         parsed = parse_query("path:src\\utils")
         assert parsed.options.match_path is True

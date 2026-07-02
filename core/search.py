@@ -24,6 +24,7 @@ from core.index import FileEntry, FileIndex
 from core.query_slots import expand_query_slots
 from core.ntfs import FILE_ATTRIBUTE_REPARSE_POINT
 from core.utils import parse_size as _parse_size
+from core.utils import natural_key
 
 logger = logging.getLogger('QuickFind.Search')
 
@@ -802,6 +803,51 @@ def parse_query(raw_query: str, base_options: Optional[SearchOptions] = None,
 
 # ── Sort field mapping for DB queries ────────────────────
 
+def explain_query(raw_query: str, base_options: Optional[SearchOptions] = None,
+                  query_slots: Optional[Mapping[str, str]] = None) -> dict:
+    """Return a structured summary of how a query parses, for --explain / debug.
+
+    Only non-default constraints are included so the output stays readable.
+    """
+    parsed = parse_query(raw_query, base_options, query_slots=query_slots)
+    o = parsed.options
+    info: dict = {
+        "terms": list(parsed.terms),
+        "match_case": o.match_case,
+        "match_path": o.match_path,
+        "use_regex": o.use_regex,
+        "use_wildcards": getattr(o, "use_wildcards", False),
+        "files_only": o.files_only,
+        "folders_only": o.folders_only,
+        "sort_by": getattr(o.sort_by, "name", str(o.sort_by)),
+    }
+
+    def _iso(dt):
+        return dt.isoformat() if dt else None
+
+    optional = {
+        "ext_filter": list(getattr(parsed, "ext_filter", []) or []),
+        "size_min": getattr(parsed, "size_min", 0),
+        "size_max": getattr(parsed, "size_max", 0),
+        "date_mod_after": _iso(getattr(parsed, "date_mod_after", None)),
+        "date_mod_before": _iso(getattr(parsed, "date_mod_before", None)),
+        "date_create_after": _iso(getattr(parsed, "date_create_after", None)),
+        "date_create_before": _iso(getattr(parsed, "date_create_before", None)),
+        "path_includes": list(getattr(parsed, "path_includes", []) or []),
+        "parent_filter": getattr(parsed, "parent_filter", ""),
+        "exclude_terms": list(getattr(parsed, "exclude_terms", []) or []),
+        "content_search": getattr(parsed, "content_search", ""),
+        "dupe_mode": getattr(parsed, "dupe_mode", ""),
+        "archive_mode": getattr(parsed, "archive_mode", False),
+        "boolean_expression": bool(getattr(parsed, "boolean_expression", None)),
+        "or_groups": [list(g) for g in getattr(parsed, "or_groups", []) or []],
+    }
+    for key, value in optional.items():
+        if value:
+            info[key] = value
+    return info
+
+
 _SORT_FIELD_TO_DB = {
     SortField.NAME: 'name',
     SortField.PATH: 'path',
@@ -1570,8 +1616,8 @@ class SearchEngine:
         _dt_min = datetime.min
 
         key_funcs = {
-            SortField.NAME: lambda e: e.name.lower(),
-            SortField.PATH: lambda e: e.get_path(self._index).lower(),
+            SortField.NAME: lambda e: natural_key(e.name),
+            SortField.PATH: lambda e: natural_key(e.get_path(self._index)),
             SortField.SIZE: lambda e: e.size if e._stat_loaded else -1,
             SortField.EXTENSION: lambda e: e.extension,
             SortField.DATE_MODIFIED: lambda e: e.date_modified or _dt_min,
