@@ -45,12 +45,6 @@ NTFS-MFT-backed instant file search (PyQt6 + SQLite FTS5). Voidtools Everything 
   Touches: core/archives.py, core/content/indexer.py, core/content/adapters.py, core/cache.py (bound + compress the extraction cache).
   Acceptance: `content:` matches text inside supported archive members; extraction cache is size-capped; malformed members fail closed in the worker.
   Complexity: L
-- [ ] P2 — Launcher popup: inline preview + frecency ranking + scope prefixes
-  Why: fzf shows a preview beside results and PowerToys Run uses scope sigils + frecency; QuickFind's popup has none, and (per project rule) actions must be clickable buttons, not keyboard shortcuts.
-  Evidence: github.com/junegunn/fzf; learn.microsoft.com PowerToys Run. Depends on the existing P2 item that moves launcher search off the GUI thread.
-  Touches: gui/launcher_popup.py, gui/preview_pane.py, core/search.py (frecency), core/query_slots.py (prefixes).
-  Acceptance: selecting a result shows a preview in the popup; recently/frequently opened files rank higher; `>` scopes to content and `=` to calculator, alongside the existing `@slot`.
-  Complexity: M
 
 #### P3 — Metadata breadth, search UX, larger bets
 - [ ] P3 — Query-time synonyms / expansion table

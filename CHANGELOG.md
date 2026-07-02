@@ -4,6 +4,7 @@ All notable changes to QuickFind will be documented in this file.
 
 ## [Unreleased]
 
+- Launcher popup gained scope prefixes (`>` content search, `=` calculator, `@slot` expansion), frecency ranking (frequently-opened files first), and an inline metadata preview for the selected result.
 - Fixed USN journal overflow being silently treated as "no changes": catchup now compares the saved checkpoint against the journal's FirstUsn and forces a re-index when the journal was recreated or wrapped past the saved position; `read_usn_journal` surfaces `ERROR_JOURNAL_ENTRY_DELETED`, and the live monitor resets its position on wrap instead of polling a dead USN forever. Self-created journals grew from 8 MB to 32 MB to wrap less often.
 
 ## [v0.8.58] - 2026-07-01
