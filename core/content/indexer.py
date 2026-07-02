@@ -1,6 +1,7 @@
 """Background content indexing job with quotas and diagnostics."""
 
 import os
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Iterable
@@ -170,9 +171,41 @@ class ContentIndexJob:
         return stats
 
 
+def _glob_to_regex(pattern: str) -> "re.Pattern[str]":
+    """Translate an Everything-style content-scope glob to a regex.
+
+    ``**`` matches any characters including path separators (recursive), ``*``
+    matches within a single path segment, and ``?`` matches one non-separator
+    character. Patterns are matched against normcase'd absolute paths.
+    """
+    sep = re.escape(os.sep)
+    out = ["^"]
+    i = 0
+    while i < len(pattern):
+        if pattern[i:i + 2] == "**":
+            out.append(".*")
+            i += 2
+        elif pattern[i] == "*":
+            out.append(f"[^{sep}]*")
+            i += 1
+        elif pattern[i] == "?":
+            out.append(f"[^{sep}]")
+            i += 1
+        else:
+            out.append(re.escape(pattern[i]))
+            i += 1
+    out.append("$")
+    return re.compile("".join(out))
+
+
 def _path_within_roots(path: str, roots: tuple[str, ...]) -> bool:
     normalized = os.path.normcase(os.path.abspath(path))
     for root in roots:
+        if "*" in root or "?" in root:
+            # Glob scope (e.g. c:\docs\**.pdf recursive, c:\docs\*.docx one level).
+            if _glob_to_regex(root).match(normalized):
+                return True
+            continue
         try:
             common = os.path.commonpath([normalized, root])
         except ValueError:

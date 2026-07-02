@@ -11,8 +11,22 @@ import core.content.adapters as adapters_module
 from core.content import adapter_diagnostics, extract_text, matched_line_context
 from core.content.adapters import PdfAdapter, WindowsSearchAdapter
 from core.content.sandbox import ExtractionOutcome
-from core.content.indexer import ContentIndexJob, ContentIndexSettings
+from core.content.indexer import ContentIndexJob, ContentIndexSettings, _path_within_roots
 from core.index import FileEntry
+
+
+def _norm(path):
+    import os
+    return os.path.normcase(os.path.abspath(path))
+
+
+def test_content_scope_recursive_and_single_level_globs():
+    # ** is recursive; * is one level; a bare directory is a prefix.
+    assert _path_within_roots(r"C:\docs\a\b\report.pdf", (_norm(r"C:\docs\**.pdf"),))
+    assert not _path_within_roots(r"C:\docs\a\b\report.pdf", (_norm(r"C:\docs\*.pdf"),))
+    assert _path_within_roots(r"C:\docs\report.pdf", (_norm(r"C:\docs\*.pdf"),))
+    assert _path_within_roots(r"C:\docs\a\b\x.txt", (_norm(r"C:\docs"),))
+    assert not _path_within_roots(r"C:\docs\report.txt", (_norm(r"C:\docs\**.pdf"),))
 from core.search import SearchEngine
 
 

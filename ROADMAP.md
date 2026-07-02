@@ -53,12 +53,6 @@ NTFS-MFT-backed instant file search (PyQt6 + SQLite FTS5). Voidtools Everything 
   Touches: core/archives.py, core/content/indexer.py, core/content/adapters.py, core/cache.py (bound + compress the extraction cache).
   Acceptance: `content:` matches text inside supported archive members; extraction cache is size-capped; malformed members fail closed in the worker.
   Complexity: L
-- [ ] P2 — Content include/exclude `**` glob semantics + explicit max-file-size default
-  Why: Everything 1.5 scopes content indexing with `c:\docs\**.docx` (`**`=recursive, `*`=one level) and a size cap; aligning avoids surprising over/under-indexing.
-  Evidence: voidtools content-index forum (t=9833), searching docs.
-  Touches: core/content/indexer.py, gui/settings_dialog.py (content roots/extensions/size).
-  Acceptance: content roots accept `**`/`*` glob semantics; a documented default max file size is enforced and shown in settings.
-  Complexity: M
 - [ ] P2 — Launcher popup: inline preview + frecency ranking + scope prefixes
   Why: fzf shows a preview beside results and PowerToys Run uses scope sigils + frecency; QuickFind's popup has none, and (per project rule) actions must be clickable buttons, not keyboard shortcuts.
   Evidence: github.com/junegunn/fzf; learn.microsoft.com PowerToys Run. Depends on the existing P2 item that moves launcher search off the GUI thread.
