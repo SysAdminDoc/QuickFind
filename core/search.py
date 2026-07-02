@@ -294,6 +294,28 @@ def _parse_date(date_str: str) -> Optional[datetime]:
     return None
 
 
+_PERIOD_KEYWORDS = frozenset({
+    'thisweek', 'lastweek', 'thismonth', 'lastmonth', 'thisyear', 'lastyear',
+})
+
+
+def _parse_date_range(date_str: str) -> tuple[Optional[datetime], Optional[datetime]]:
+    """Resolve a bare date/keyword to an inclusive (start, end) range.
+
+    An explicit calendar date or a single-day keyword (today/yesterday) means
+    that whole day, matching Everything's semantics; multi-day period keywords
+    keep open-ended "on or after" semantics.
+    """
+    start = _parse_date(date_str)
+    if start is None:
+        return None, None
+    if date_str.strip().lower() in _PERIOD_KEYWORDS:
+        return start, None
+    day_start = start.replace(hour=0, minute=0, second=0, microsecond=0)
+    day_end = day_start + timedelta(days=1) - timedelta(microseconds=1)
+    return day_start, day_end
+
+
 @dataclass
 class ParsedQuery:
     """A parsed search query with extracted modifiers."""
@@ -650,7 +672,10 @@ def parse_query(raw_query: str, base_options: Optional[SearchOptions] = None,
                 elif val.startswith('<'):
                     parsed.date_mod_before = _parse_date(val[1:])
                 else:
-                    parsed.date_mod_after = _parse_date(val)
+                    after, before = _parse_date_range(val)
+                    parsed.date_mod_after = after
+                    if before is not None:
+                        parsed.date_mod_before = before
                 i += 1; continue
             elif mod_lower in ('dc', 'datecreated'):
                 if val.startswith('>'):
@@ -658,7 +683,10 @@ def parse_query(raw_query: str, base_options: Optional[SearchOptions] = None,
                 elif val.startswith('<'):
                     parsed.date_create_before = _parse_date(val[1:])
                 else:
-                    parsed.date_create_after = _parse_date(val)
+                    after, before = _parse_date_range(val)
+                    parsed.date_create_after = after
+                    if before is not None:
+                        parsed.date_create_before = before
                 i += 1; continue
             elif mod_lower == 'parent':
                 parsed.parent_filter = val

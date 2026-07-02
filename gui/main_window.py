@@ -44,7 +44,6 @@ from gui.accessibility import describe_widget
 from gui.results_view import ResultsView
 from gui.preview_pane import PreviewPane, QuickPreviewPopover
 from gui.diff_dialog import DiffCompareDialog
-from gui.filters import FilterBar
 from gui.bookmarks import BookmarkManager, BookmarksPanel, Bookmark
 from gui.help_docs import OfflineHelpDialog
 from gui.context_menu import RecycleResult, build_context_menu
@@ -459,9 +458,6 @@ class MainWindow(QMainWindow):
         self._progress_bar.hide()
         self._status_bar.addPermanentWidget(self._progress_bar)
 
-        # Keep FilterBar reference for compatibility (hidden, manages custom filters)
-        self._filter_bar = FilterBar()
-        self._filter_bar.hide()
         self._apply_theme_styles()
         self._setup_accessibility()
 
@@ -2236,8 +2232,12 @@ class MainWindow(QMainWindow):
                     'macro': f.macro,
                     'exclude_paths': f.exclude_paths,
                 })
-            with open(FILTERS_FILE, 'w') as fp:
+            # Atomic write (tmp + replace) so a crash mid-write can't corrupt
+            # the user's custom filters, matching the pattern used elsewhere.
+            tmp_path = FILTERS_FILE.with_name(FILTERS_FILE.name + '.tmp')
+            with open(tmp_path, 'w', encoding='utf-8') as fp:
                 json.dump(data, fp, indent=2)
+            os.replace(tmp_path, FILTERS_FILE)
             self._build_filter_combo()
 
     # ── Hidden paths management ────────────────────────

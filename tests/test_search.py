@@ -193,6 +193,20 @@ class TestParseQuery:
         parsed = parse_query("dc:thisweek")
         assert parsed.date_create_after is not None
 
+    def test_bare_date_is_a_full_day_range(self):
+        parsed = parse_query("dm:2024-01-15")
+        assert parsed.date_mod_after is not None
+        assert parsed.date_mod_before is not None
+        assert parsed.date_mod_after.hour == 0 and parsed.date_mod_after.minute == 0
+        assert (parsed.date_mod_after.year, parsed.date_mod_after.month, parsed.date_mod_after.day) == (2024, 1, 15)
+        assert (parsed.date_mod_before.year, parsed.date_mod_before.month, parsed.date_mod_before.day) == (2024, 1, 15)
+        assert parsed.date_mod_before > parsed.date_mod_after
+
+    def test_period_keyword_stays_open_ended(self):
+        parsed = parse_query("dc:thisweek")
+        assert parsed.date_create_after is not None
+        assert parsed.date_create_before is None
+
     def test_path_modifier(self):
         parsed = parse_query("path:src\\utils")
         assert parsed.options.match_path is True

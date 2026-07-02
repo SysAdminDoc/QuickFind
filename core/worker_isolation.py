@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import multiprocessing
 import queue
+import time
 import traceback
 from dataclasses import dataclass
 from typing import Any, Callable
@@ -36,9 +37,32 @@ def run_in_worker(
     )
     process.start()
 
-    try:
-        status, payload = result_queue.get(timeout=timeout_seconds)
-    except queue.Empty:
+    # Poll the result queue and the process together so an early crash (a worker
+    # that dies without producing a result) is detected within a poll interval
+    # instead of blocking for the whole timeout.
+    deadline = time.monotonic() + timeout_seconds
+    status = payload = None
+    got_result = False
+    while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        try:
+            status, payload = result_queue.get(timeout=min(0.1, remaining))
+            got_result = True
+            break
+        except queue.Empty:
+            if not process.is_alive():
+                # Worker exited early; make one last non-blocking read in case the
+                # result raced the process exit, then stop waiting.
+                try:
+                    status, payload = result_queue.get_nowait()
+                    got_result = True
+                except queue.Empty:
+                    pass
+                break
+
+    if not got_result:
         timed_out = process.is_alive()
         if timed_out:
             process.terminate()

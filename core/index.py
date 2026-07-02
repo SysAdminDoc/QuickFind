@@ -14,7 +14,6 @@ import fnmatch
 import logging
 import threading
 import re
-from collections import deque
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import datetime
@@ -44,10 +43,6 @@ logger = logging.getLogger('QuickFind.Index')
 
 # Root directory FRN for NTFS is always 5
 NTFS_ROOT_FRN = 5
-
-# Deferred path resolution: batch resolve paths on a timer instead of per-entry
-_PATH_RESOLVE_INTERVAL_MS = 500
-_PATH_RESOLVE_BATCH_SIZE = 1000
 
 
 @dataclass
@@ -211,10 +206,6 @@ class FileIndex(QObject):
         self._index_case_mode: str = "smart"
         self._usn_poll_interval_ms: int = 1000
         self._drive_rescan_intervals: dict[str, int] = {}
-
-        # Deferred path resolution queue
-        self._path_resolve_queue: deque[FileEntry] = deque()
-        self._path_resolve_timer: Optional[QTimer] = None
 
     @property
     def stats(self) -> IndexStats:
@@ -522,40 +513,6 @@ class FileIndex(QObject):
 
     def _is_cancelled(self) -> bool:
         return self._cancel_flag
-
-    # ── Deferred Path Resolution ─────────────────────────
-
-    def queue_path_resolve(self, entry: FileEntry):
-        """Queue an entry for deferred path resolution."""
-        self._path_resolve_queue.append(entry)
-
-    def _start_path_resolve_timer(self):
-        """Start the deferred path resolution timer."""
-        if self._path_resolve_timer is None:
-            self._path_resolve_timer = QTimer()
-            self._path_resolve_timer.setInterval(_PATH_RESOLVE_INTERVAL_MS)
-            self._path_resolve_timer.timeout.connect(self._flush_path_resolve)
-        if not self._path_resolve_timer.isActive():
-            self._path_resolve_timer.start()
-
-    def _flush_path_resolve(self):
-        """Resolve queued paths in a batch."""
-        if not self._path_resolve_queue:
-            if self._path_resolve_timer:
-                self._path_resolve_timer.stop()
-            return
-
-        batch = []
-        count = 0
-        while self._path_resolve_queue and count < _PATH_RESOLVE_BATCH_SIZE:
-            entry = self._path_resolve_queue.popleft()
-            if entry._path is None:
-                entry._path = self.resolve_path(entry.drive, entry.frn)
-                batch.append(entry)
-            count += 1
-
-        if batch:
-            logger.debug(f"Deferred path resolve: {len(batch)} entries")
 
     # ── Cache Load/Save ──────────────────────────────────
 
@@ -1650,7 +1607,6 @@ class FileIndex(QObject):
                     self._platform_engine.watcher,
                     len(self._platform_roots),
                 )
-            self._start_path_resolve_timer()
             return
 
         if self._monitor_thread and self._monitor_thread.isRunning():
@@ -1671,9 +1627,6 @@ class FileIndex(QObject):
                 self._rescan_thread.start()
                 logger.info(f"FAT rescan thread started for drives: {', '.join(sorted(self._walked_drives))}")
 
-        # Start deferred path resolution timer
-        self._start_path_resolve_timer()
-
     def stop_monitoring(self):
         """Stop the USN journal monitor thread and FAT rescan thread."""
         if self._platform_watch_thread:
@@ -1691,12 +1644,6 @@ class FileIndex(QObject):
             self._rescan_thread.wait(5000)
             self._rescan_thread = None
             logger.info("FAT rescan thread stopped")
-        if self._path_resolve_timer:
-            self._path_resolve_timer.stop()
-        while self._path_resolve_queue:
-            entry = self._path_resolve_queue.popleft()
-            if entry._path is None:
-                entry._path = self.resolve_path(entry.drive, entry.frn)
 
     def _on_fat_rescan(self, changes: int):
         """Handle FAT rescan completion.

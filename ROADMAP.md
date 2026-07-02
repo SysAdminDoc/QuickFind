@@ -46,18 +46,6 @@ NTFS-MFT-backed instant file search (PyQt6 + SQLite FTS5). Voidtools Everything 
 - [ ] P3 — Settings/Diagnostics/Help dialog titles and buttons ignore the Spanish catalog
   Why: `settings.*`, `diagnostics.*`, and `help.*` keys exist but the dialogs hardcode English, so `language = "es"` leaves these dialogs untranslated.
   Where: gui/settings_dialog.py, gui/diagnostics_dialog.py, gui/help_docs.py.
-- [ ] P3 — Bare `dm:`/`dc:` date means "on or after" instead of that day's range
-  Why: a bare date sets only the `_after` bound, unlike Everything which treats it as a full-day range.
-  Where: core/search.py date-modifier parsing.
-- [ ] P3 — Extraction worker blocks the full timeout on an instant crash
-  Why: the parent only waits on `result_queue.get(timeout=...)`, so a worker that dies in milliseconds still costs the full 10 s; poll `process.sentinel` to detect early death.
-  Where: core/worker_isolation.py.
-- [ ] P3 — Dead code: `queue_path_resolve` machinery, `ColumnFilterRow`, hidden compat `FilterBar`
-  Why: unused paths advertised in docstrings/menus that never run; remove to reduce confusion.
-  Where: core/index.py deferred path-resolution; gui/results_view.py `ColumnFilterRow`; gui/main_window.py hidden `FilterBar`.
-- [ ] P3 — `filters.json` written non-atomically in main window
-  Why: `open('w')` + `json.dump` (unlike the atomic tmp+replace used elsewhere) can corrupt custom filters on a crash mid-write.
-  Where: gui/main_window.py `_show_manage_filters`.
 
 ### 2026-07-01 External competitive research
 
