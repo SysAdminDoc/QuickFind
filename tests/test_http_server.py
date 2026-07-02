@@ -39,13 +39,53 @@ def test_default_server_url_uses_http_scheme():
     assert server.url == "http://127.0.0.1:8080"
 
 
+def test_apply_acl_passthrough_when_shared_disabled():
+    handler = _handler()
+    payloads = [{"path": r"C:\a\1.txt"}, {"path": r"C:\b\2.txt"}]
+    assert handler._apply_acl(payloads) == payloads
+
+
+def test_apply_acl_filters_results_outside_token_roots():
+    from server.acl import SharedServerConfig, TokenACL
+
+    config = SharedServerConfig(
+        enabled=True,
+        token_acls=[TokenACL(token="tok123", allowed_roots=(r"C:\allowed",))],
+    )
+    handler = _handler(headers={"Authorization": "Bearer tok123"})
+    handler.shared_config = config
+    payloads = [{"path": r"C:\allowed\inside.txt"}, {"path": r"C:\other\outside.txt"}]
+
+    filtered = handler._apply_acl(payloads)
+
+    assert filtered == [{"path": r"C:\allowed\inside.txt"}]
+
+
+def test_check_auth_accepts_valid_shared_token():
+    from server.acl import SharedServerConfig, TokenACL
+
+    config = SharedServerConfig(
+        enabled=True,
+        token_acls=[TokenACL(token="tok123", allowed_roots=(r"C:\allowed",))],
+    )
+    ok = _handler(headers={"Authorization": "Bearer tok123"})
+    ok.auth_token = ""
+    ok.shared_config = config
+    assert ok._check_auth() is True
+
+    bad = _handler(headers={"Authorization": "Bearer wrong"})
+    bad.auth_token = ""
+    bad.shared_config = config
+    assert bad._check_auth() is False
+
+
 def test_https_server_wraps_socket_with_tls_context():
     httpd = MagicMock()
     original_socket = httpd.socket
     wrapped_socket = object()
 
     with (
-        patch("server.http_server.HTTPServer", return_value=httpd),
+        patch("server.http_server.ThreadingHTTPServer", return_value=httpd),
         patch("server.http_server.ssl.SSLContext") as context_cls,
         patch("server.http_server.threading.Thread") as thread_cls,
     ):
@@ -77,7 +117,7 @@ def test_https_server_wraps_socket_with_tls_context():
 def test_https_server_requires_certificate_file():
     httpd = MagicMock()
 
-    with patch("server.http_server.HTTPServer", return_value=httpd):
+    with patch("server.http_server.ThreadingHTTPServer", return_value=httpd):
         server = QuickFindHTTPServer(
             MagicMock(),
             MagicMock(),
@@ -131,6 +171,7 @@ def test_successful_auth_post_sets_same_origin_session_cookie():
         "Content-Length": str(len(body)),
     })
     handler.rfile = BytesIO(body)
+    handler._create_session = lambda: "issued"  # deterministic per-client token
 
     handler._handle_auth_post()
 
@@ -138,7 +179,7 @@ def test_successful_auth_post_sets_same_origin_session_cookie():
     handler.send_header.assert_any_call("Location", "/")
     handler.send_header.assert_any_call(
         "Set-Cookie",
-        f"{_SESSION_COOKIE_NAME}=session; HttpOnly; Path=/; SameSite=Strict",
+        f"{_SESSION_COOKIE_NAME}=issued; HttpOnly; Path=/; SameSite=Strict; Max-Age=3600",
     )
 
 
@@ -147,8 +188,35 @@ def test_https_auth_cookie_sets_secure_flag():
     handler.use_https = True
 
     assert handler._session_cookie_header() == (
-        f"{_SESSION_COOKIE_NAME}=session; HttpOnly; Path=/; SameSite=Strict; Secure"
+        f"{_SESSION_COOKIE_NAME}=session; HttpOnly; Path=/; SameSite=Strict; Max-Age=3600; Secure"
     )
+
+
+def test_session_expiry_and_logout():
+    handler = _handler()
+    handler.session_token = ""  # use only the per-client store
+    token = handler._create_session()
+    assert handler._session_valid(token) is True
+
+    # Logout clears the session and expires the cookie.
+    logout = _handler({"Cookie": f"{_SESSION_COOKIE_NAME}={token}"})
+    logout.session_token = ""
+    logout._handle_logout()
+    logout.send_header.assert_any_call(
+        "Set-Cookie",
+        f"{_SESSION_COOKIE_NAME}=; HttpOnly; Path=/; SameSite=Strict; Max-Age=0",
+    )
+    assert handler._session_valid(token) is False
+
+
+def test_expired_session_token_is_rejected():
+    handler = _handler()
+    handler.session_token = ""
+    token = handler._create_session()
+    # Force the stored expiry into the past.
+    with handler._sessions_lock:
+        handler._sessions[token] = 0.0
+    assert handler._session_valid(token) is False
 
 
 def test_auth_post_rejects_cross_origin_submit():

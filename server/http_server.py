@@ -16,7 +16,7 @@ import ssl
 import time
 import threading
 from http.cookies import SimpleCookie
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from http.server import HTTPServer, ThreadingHTTPServer, BaseHTTPRequestHandler
 from typing import Any, Callable, Optional
 from urllib.parse import urlparse, parse_qs
 
@@ -669,34 +669,104 @@ class SearchHandler(BaseHTTPRequestHandler):
     file_index: FileIndex = None
     search_engine: SearchEngine = None
     auth_token: str = ""
-    session_token: str = ""
+    session_token: str = ""  # legacy single-token (tests/back-compat); prod uses _sessions
     use_https: bool = False
+    shared_config = None  # Optional server.acl.SharedServerConfig
+    SESSION_TTL_SECONDS: int = 3600
+    _sessions: dict = {}  # per-client session token -> expiry epoch
+    _sessions_lock = threading.Lock()
 
     def log_message(self, format, *args):
         logger.debug(format % args)
 
+    def _presented_token(self) -> str:
+        """Return the raw Bearer/Basic token the client presented, if any."""
+        auth_header = self.headers.get('Authorization', '')
+        if auth_header.startswith('Bearer '):
+            return auth_header[7:]
+        if auth_header.startswith('Basic '):
+            return self._basic_auth_password(auth_header[6:])
+        return ''
+
+    def _resolve_token_acl(self):
+        """Resolve the presented token to its ACL when shared mode is enabled."""
+        config = self.shared_config
+        if config is None or not getattr(config, "enabled", False):
+            return None
+        token = self._presented_token()
+        return config.acl_for_token(token) if token else None
+
+    def _apply_acl(self, payloads):
+        """Filter result payloads by the request's token ACL (shared mode only)."""
+        acl = self._resolve_token_acl()
+        if acl is None:
+            return payloads
+        from server.acl import filter_results_by_acl
+        outcome = filter_results_by_acl(payloads, acl)
+        if outcome.denied_count:
+            _audit.denied_path(
+                self.client_address[0],
+                self.path,
+                reason=f"{outcome.denied_count} results outside token roots",
+            )
+        return outcome.allowed
+
     def _check_auth(self) -> bool:
         """Validate token if authentication is enabled."""
-        if not self.auth_token:
+        config = self.shared_config
+        shared_enabled = config is not None and getattr(config, "enabled", False)
+        if not self.auth_token and not shared_enabled:
             return True
 
         auth_header = self.headers.get('Authorization', '')
         if auth_header.startswith('Bearer '):
             request_token = auth_header[7:]
-            if secrets.compare_digest(request_token, self.auth_token):
+            if self.auth_token and secrets.compare_digest(request_token, self.auth_token):
+                return True
+            if shared_enabled and config.acl_for_token(request_token) is not None:
                 return True
 
         if auth_header.startswith('Basic '):
             password = self._basic_auth_password(auth_header[6:])
-            if password and secrets.compare_digest(password, self.auth_token):
+            if password and self.auth_token and secrets.compare_digest(password, self.auth_token):
+                return True
+            if password and shared_enabled and config.acl_for_token(password) is not None:
                 return True
 
-        session_cookie = self._session_cookie_value()
-        return bool(
-            self.session_token
-            and session_cookie
-            and secrets.compare_digest(session_cookie, self.session_token)
-        )
+        return self._session_valid(self._session_cookie_value())
+
+    def _create_session(self) -> str:
+        """Mint a per-client session token with a bounded lifetime."""
+        token = secrets.token_urlsafe(32)
+        with self._sessions_lock:
+            self._prune_sessions_locked()
+            self._sessions[token] = time.time() + self.SESSION_TTL_SECONDS
+        return token
+
+    def _prune_sessions_locked(self):
+        now = time.time()
+        for expired in [t for t, exp in self._sessions.items() if exp <= now]:
+            self._sessions.pop(expired, None)
+
+    def _session_valid(self, token: str) -> bool:
+        if not token:
+            return False
+        # Legacy single-token path (used by tests / back-compat; unset in prod).
+        if self.session_token and secrets.compare_digest(token, self.session_token):
+            return True
+        with self._sessions_lock:
+            expiry = self._sessions.get(token)
+            if expiry is None:
+                return False
+            if expiry <= time.time():
+                self._sessions.pop(token, None)
+                return False
+            return True
+
+    def _clear_session(self, token: str):
+        if token:
+            with self._sessions_lock:
+                self._sessions.pop(token, None)
 
     def _basic_auth_password(self, encoded_credentials: str) -> str:
         try:
@@ -721,12 +791,26 @@ class SearchHandler(BaseHTTPRequestHandler):
         except Exception:
             return ''
 
-    def _session_cookie_header(self) -> str:
+    def _session_cookie_header(self, token: str | None = None) -> str:
+        value = token if token is not None else self.session_token
         parts = [
-            f"{_SESSION_COOKIE_NAME}={self.session_token}",
+            f"{_SESSION_COOKIE_NAME}={value}",
             "HttpOnly",
             "Path=/",
             "SameSite=Strict",
+            f"Max-Age={self.SESSION_TTL_SECONDS}",
+        ]
+        if self.use_https:
+            parts.append("Secure")
+        return "; ".join(parts)
+
+    def _expired_cookie_header(self) -> str:
+        parts = [
+            f"{_SESSION_COOKIE_NAME}=",
+            "HttpOnly",
+            "Path=/",
+            "SameSite=Strict",
+            "Max-Age=0",
         ]
         if self.use_https:
             parts.append("Secure")
@@ -807,10 +891,22 @@ class SearchHandler(BaseHTTPRequestHandler):
             return
 
         parsed = urlparse(self.path)
+        if parsed.path == '/logout':
+            self._handle_logout()
+            return
         if parsed.path != '/auth':
             self.send_error(404)
             return
         self._handle_auth_post()
+
+    def _handle_logout(self):
+        """Invalidate this client's session and clear its cookie."""
+        self._clear_session(self._session_cookie_value())
+        self.send_response(303)
+        self.send_header('Location', '/')
+        self.send_header('Set-Cookie', self._expired_cookie_header())
+        self._send_security_headers()
+        self.end_headers()
 
     def _handle_auth_post(self):
         if not self.auth_token:
@@ -846,9 +942,10 @@ class SearchHandler(BaseHTTPRequestHandler):
             submitted_token = parse_qs(body).get('token', [''])[0]
 
         if secrets.compare_digest(submitted_token, self.auth_token):
+            token = self._create_session()
             self.send_response(303)
             self.send_header('Location', '/')
-            self.send_header('Set-Cookie', self._session_cookie_header())
+            self.send_header('Set-Cookie', self._session_cookie_header(token))
             self._send_security_headers()
             self.end_headers()
             return
@@ -898,7 +995,7 @@ class SearchHandler(BaseHTTPRequestHandler):
             len(results),
         )
 
-        result_items = self._build_result_payloads(results)
+        result_items = self._apply_acl(self._build_result_payloads(results))
         cards_html = self._build_result_cards_from_payloads(result_items)
 
         response = json.dumps({
@@ -925,9 +1022,8 @@ class SearchHandler(BaseHTTPRequestHandler):
             search_query,
             max_results=max_results,
         ) if search_query else []
-        cards_html = self._build_result_cards_from_payloads(
-            self._build_result_payloads(results)
-        )
+        page_items = self._apply_acl(self._build_result_payloads(results))
+        cards_html = self._build_result_cards_from_payloads(page_items)
 
         page_html = HTML_TEMPLATE.format(
             bg=MOCHA['base'], text=MOCHA['text'], mantle=MOCHA['mantle'],
@@ -939,7 +1035,7 @@ class SearchHandler(BaseHTTPRequestHandler):
             type_files='selected' if type_filter == 'files' else '',
             type_folders='selected' if type_filter == 'folders' else '',
             max_results=max_results,
-            count=len(results),
+            count=len(page_items),
             cards=cards_html,
         )
 
@@ -1086,7 +1182,8 @@ class QuickFindHTTPServer:
 
     def __init__(self, file_index: FileIndex, search_engine: SearchEngine,
                  host: str = '127.0.0.1', port: int = 8080, auth_token: str = '',
-                 use_https: bool = False, certfile: str = '', keyfile: str = ''):
+                 use_https: bool = False, certfile: str = '', keyfile: str = '',
+                 shared_config=None):
         self._host = host
         self._port = port
         self._use_https = use_https
@@ -1102,15 +1199,20 @@ class QuickFindHTTPServer:
                 "file_index": file_index,
                 "search_engine": search_engine,
                 "auth_token": auth_token,
-                "session_token": secrets.token_urlsafe(32) if auth_token else "",
+                # Per-client sessions are minted on /auth; no shared token.
+                "session_token": "",
+                "_sessions": {},
                 "use_https": use_https,
+                "shared_config": shared_config,
             },
         )
 
     def start(self):
         """Start the HTTP server in a background thread."""
         try:
-            self._server = HTTPServer((self._host, self._port), self._handler_class)
+            # ThreadingHTTPServer so one slow client (or the per-result stat loop)
+            # cannot block every other request on the single accept thread.
+            self._server = ThreadingHTTPServer((self._host, self._port), self._handler_class)
             if self._use_https:
                 if not self._certfile:
                     raise ValueError("HTTPS requires a TLS certificate file")
@@ -1136,11 +1238,15 @@ class QuickFindHTTPServer:
             return False
 
     def stop(self):
-        """Stop the HTTP server."""
+        """Stop the HTTP server and release the listening socket."""
         if self._server:
             self._server.shutdown()
+            self._server.server_close()
             self._server = None
-            logger.info("HTTP server stopped")
+        if self._thread and self._thread.is_alive():
+            self._thread.join(timeout=5)
+        self._thread = None
+        logger.info("HTTP server stopped")
 
     @property
     def url(self) -> str:

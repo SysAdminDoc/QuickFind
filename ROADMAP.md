@@ -44,13 +44,6 @@ NTFS-MFT-backed instant file search (PyQt6 + SQLite FTS5). Voidtools Everything 
 - [ ] P2 — Launcher popup search runs synchronously on the GUI thread
   Why: the launcher accepts full engine syntax, so a `content:`, `regex:`, or `dupe:hash` query freezes the whole UI per debounced keystroke and races the main window's search workers.
   Where: gui/launcher_popup.py (`self._engine.search` on the GUI thread).
-- [ ] P2 — Per-token ACL is not enforced on the HTTP search surface
-  Why: `filter_results_by_acl` has no callers outside tests; `_handle_api_search` returns unfiltered results, so shared-mode path restrictions are not applied to served responses.
-  Where: server/acl.py, server/http_server.py `_handle_api_search`.
-- [ ] P2 — Remote server is single-threaded and leaks its socket on stop
-  Why: `HTTPServer` (not `ThreadingHTTPServer`) means one slow client (or the per-result stat loop) blocks all requests; `stop()` calls `shutdown()` but never `server_close()` or joins the thread.
-  Where: server/http_server.py server construction and `stop()`.
-
 ### P3 — Larger Features
 
 - [ ] P3 — Settings/Diagnostics/Help dialog titles and buttons ignore the Spanish catalog
@@ -62,12 +55,6 @@ NTFS-MFT-backed instant file search (PyQt6 + SQLite FTS5). Voidtools Everything 
 - [ ] P3 — Extraction worker blocks the full timeout on an instant crash
   Why: the parent only waits on `result_queue.get(timeout=...)`, so a worker that dies in milliseconds still costs the full 10 s; poll `process.sentinel` to detect early death.
   Where: core/worker_isolation.py.
-- [ ] P3 — Remote UI uses one global session token with no expiry or logout
-  Why: every authenticated client shares the same token; a leaked cookie grants all sessions until restart, and there is no `/logout` or `Max-Age`.
-  Where: server/http_server.py session handling.
-- [ ] P3 — Remote `max` up to 10000 is silently capped at 1000 in the payload builder
-  Why: `_coerce_remote_max_results`/OpenAPI advertise 10000 but `_build_result_payloads` slices results (fixed to honor search's max this pass; verify no other cap remains).
-  Where: server/http_server.py.
 - [ ] P3 — Dead code: `queue_path_resolve` machinery, `ColumnFilterRow`, hidden compat `FilterBar`
   Why: unused paths advertised in docstrings/menus that never run; remove to reduce confusion.
   Where: core/index.py deferred path-resolution; gui/results_view.py `ColumnFilterRow`; gui/main_window.py hidden `FilterBar`.
