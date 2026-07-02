@@ -33,7 +33,8 @@ Roadmap drain — CLI parity, remote hardening, search correctness, and packagin
 - Extraction workers detect an early crash instead of blocking the full timeout.
 - `filters.json` is written atomically.
 - Removed dead code (deferred path-resolution machinery, `ColumnFilterRow`, the hidden compat `FilterBar`).
-- Suite expanded to 556 tests.
+- Settings, Diagnostics, and Offline Help dialogs now use the localization catalog (titles, tabs, buttons, and help section headers translate under `language = "es"`).
+- Suite expanded to 557 tests.
 
 ## [v0.8.57] - 2026-07-01
 

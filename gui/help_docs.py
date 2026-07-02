@@ -2,6 +2,7 @@
 
 from PyQt6.QtWidgets import QDialog, QDialogButtonBox, QTextEdit, QVBoxLayout
 
+from core.localization import tr
 from core.version import APP_TITLE
 from gui.accessibility import describe_widget
 from gui.theme import MOCHA
@@ -62,15 +63,15 @@ def build_offline_help_html(app_title: str = APP_TITLE) -> str:
 </head>
 <body>
   <h1>{app_title} Offline Help</h1>
-  <p>This cheat sheet is bundled with QuickFind and does not require network access.</p>
+  <p>{tr("help.intro", "This cheat sheet is bundled with QuickFind and does not require network access.")}</p>
 
-  <h2>Search Syntax</h2>
+  <h2>{tr("help.search_syntax", "Search Syntax")}</h2>
   <table>{_rows(SEARCH_MODIFIERS)}</table>
 
-  <h2>Core Workflows</h2>
+  <h2>{tr("help.workflows", "Core Workflows")}</h2>
   <table>{_rows(WORKFLOWS)}</table>
 
-  <h2>Troubleshooting</h2>
+  <h2>{tr("help.troubleshooting", "Troubleshooting")}</h2>
   <table>{_rows(TROUBLESHOOTING)}</table>
 </body>
 </html>"""
@@ -81,7 +82,7 @@ class OfflineHelpDialog(QDialog):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("QuickFind Offline Help")
+        self.setWindowTitle(tr("help.title", "QuickFind Offline Help"))
         self.setMinimumSize(760, 560)
         describe_widget(
             self,

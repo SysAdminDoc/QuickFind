@@ -31,3 +31,15 @@ def test_offline_help_uses_active_theme_colors():
         assert "#45475a" not in html
     finally:
         set_active_theme(original)
+
+
+def test_offline_help_uses_active_language_for_section_headers():
+    from core.localization import set_language, active_language
+    original = active_language()
+    try:
+        set_language("es")
+        html = build_offline_help_html()
+        assert "Sintaxis de búsqueda" in html  # help.search_syntax (es)
+        assert "Solución de problemas" in html  # help.troubleshooting (es)
+    finally:
+        set_language(original)

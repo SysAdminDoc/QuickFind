@@ -280,7 +280,7 @@ class SettingsDialog(QDialog):
 
     def __init__(self, settings: Settings, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("QuickFind - Settings")
+        self.setWindowTitle(tr("settings.title", "QuickFind - Settings"))
         self.setMinimumSize(600, 500)
         self._settings = Settings(**asdict(settings))  # Work on a copy
 
@@ -363,7 +363,7 @@ class SettingsDialog(QDialog):
 
         general_layout.addWidget(search_group)
         general_layout.addStretch()
-        tabs.addTab(general, "General")
+        tabs.addTab(general, tr("settings.general", "General"))
 
         # -- UI Tab ----------------------------------------
         ui = QWidget()
@@ -516,40 +516,41 @@ class SettingsDialog(QDialog):
         content_group = QGroupBox("Content Indexing")
         content_form = QFormLayout(content_group)
 
-        self._content_index_enabled = QCheckBox("Enable background content indexing after file indexing")
+        self._content_index_enabled = QCheckBox(
+            tr("settings.content.enable", "Enable background content indexing after file indexing"))
         content_form.addRow(self._content_index_enabled)
 
         self._content_index_roots = QLineEdit()
         self._content_index_roots.setPlaceholderText("Blank = all indexed paths; separate roots with semicolons")
-        content_form.addRow("Roots:", self._content_index_roots)
+        content_form.addRow(tr("settings.content.roots", "Roots:"), self._content_index_roots)
 
         self._content_index_extensions = QLineEdit()
         self._content_index_extensions.setPlaceholderText("Blank = all supported; example: txt;pdf;docx;pptx")
-        content_form.addRow("Extensions:", self._content_index_extensions)
+        content_form.addRow(tr("settings.content.extensions", "Extensions:"), self._content_index_extensions)
 
         self._content_index_max_cache = QSpinBox()
         self._content_index_max_cache.setRange(1, 102400)
         self._content_index_max_cache.setSuffix(" MB")
-        content_form.addRow("Cache quota:", self._content_index_max_cache)
+        content_form.addRow(tr("settings.content.cache_quota", "Cache quota:"), self._content_index_max_cache)
 
         self._content_index_max_file = QSpinBox()
         self._content_index_max_file.setRange(1, 1024)
         self._content_index_max_file.setSuffix(" MB")
-        content_form.addRow("Max file size:", self._content_index_max_file)
+        content_form.addRow(tr("settings.content.max_file_size", "Max file size:"), self._content_index_max_file)
 
         content_layout.addWidget(content_group)
 
-        cache_group = QGroupBox("Content Cache")
+        cache_group = QGroupBox(tr("settings.content.cache_group", "Content Cache"))
         cache_layout = QVBoxLayout(cache_group)
         self._content_cache_status = QLabel("")
         self._content_cache_status.setWordWrap(True)
         self._content_cache_status.setStyleSheet(f"color: {MOCHA['subtext0']}; font-size: 11px;")
         cache_layout.addWidget(self._content_cache_status)
         cache_buttons = QHBoxLayout()
-        self._purge_cache_btn = QPushButton("Purge All Content Cache")
+        self._purge_cache_btn = QPushButton(tr("settings.content.purge_all", "Purge All Content Cache"))
         self._purge_cache_btn.clicked.connect(self._purge_all_content_cache)
         cache_buttons.addWidget(self._purge_cache_btn)
-        self._purge_root_btn = QPushButton("Purge Root...")
+        self._purge_root_btn = QPushButton(tr("settings.content.purge_root", "Purge Root..."))
         self._purge_root_btn.clicked.connect(self._purge_content_cache_root)
         cache_buttons.addWidget(self._purge_root_btn)
         cache_buttons.addStretch()
@@ -570,7 +571,7 @@ class SettingsDialog(QDialog):
         self._content_adapter_status.setStyleSheet(f"color: {MOCHA['subtext0']}; font-size: 11px;")
         content_layout.addWidget(self._content_adapter_status)
         content_layout.addStretch()
-        tabs.addTab(content_tab, "Content")
+        tabs.addTab(content_tab, tr("settings.content", "Content"))
 
         # -- HTTP Server Tab -------------------------------
         http_tab = QWidget()
@@ -614,7 +615,7 @@ class SettingsDialog(QDialog):
 
         http_layout.addWidget(http_group)
         http_layout.addStretch()
-        tabs.addTab(http_tab, "HTTP Server")
+        tabs.addTab(http_tab, tr("settings.http_server", "HTTP Server"))
 
         # -- Export/Import + Dialog buttons ----------------
         bottom_layout = QHBoxLayout()

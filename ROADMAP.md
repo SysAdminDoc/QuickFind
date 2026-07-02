@@ -40,10 +40,6 @@ NTFS-MFT-backed instant file search (PyQt6 + SQLite FTS5). Voidtools Everything 
 
 ### P3 — Larger Features
 
-- [ ] P3 — Settings/Diagnostics/Help dialog titles and buttons ignore the Spanish catalog
-  Why: `settings.*`, `diagnostics.*`, and `help.*` keys exist but the dialogs hardcode English, so `language = "es"` leaves these dialogs untranslated.
-  Where: gui/settings_dialog.py, gui/diagnostics_dialog.py, gui/help_docs.py.
-
 ### 2026-07-01 External competitive research
 
 #### P2 — CLI parity, workflow, packaging (quick wins first)
