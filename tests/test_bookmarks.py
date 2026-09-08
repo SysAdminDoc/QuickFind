@@ -30,7 +30,7 @@ def test_bookmark_loads_workspace_roots(monkeypatch, tmp_path):
             {
                 "name": "Repos",
                 "query": "*.py",
-                "workspace_roots": [r"C:\Users\--\repos", r" c:\users\--\repos\ "],
+                "workspace_roots": [r"C:\Users\dev\repos", r" c:\users\dev\repos\ "],
             },
         ]),
         encoding="utf-8",
@@ -38,7 +38,7 @@ def test_bookmark_loads_workspace_roots(monkeypatch, tmp_path):
 
     manager = bookmarks.BookmarkManager()
 
-    assert manager.bookmarks[0].workspace_roots == [r"C:\Users\--\repos"]
+    assert manager.bookmarks[0].workspace_roots == [r"C:\Users\dev\repos"]
 
 
 def test_bookmark_tooltip_includes_workspace_roots():
